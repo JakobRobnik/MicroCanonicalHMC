@@ -102,6 +102,48 @@ class Sampler:
         return np.array(X), np.array(w)
 
 
+    def ess(self, x0, free_steps, max_steps = 10000000):
+
+        """Determines the effective sample size by monitoring the bias in the estimated variance.
+            Args:
+                x0: initial condition for x (initial p will be of unit length with random direction)
+                free_steps: how many steps are performed before a bounce occurs
+
+            Returns:
+                ess: effective sample size
+        """
+
+        # initial conditions
+        x = x0
+        g = self.Target.grad_nlogp(x0)
+        r = 0.0
+        w = np.exp(r) / self.Target.d
+
+        F = np.square(x) #<f(x)> estimate after one step
+        W = w #sum of weights
+
+        for k in range(max_steps // free_steps):  # number of bounces
+            # bounce
+            u = self.random_unit_vector()
+
+            # evolve
+            for i in range(free_steps):
+                x, u, g, r = self.step(x, u, g, r)
+                w= np.exp(r) / self.Target.d
+
+                F = (F + w * np.square(x) / W) / (1 + w / W)
+                W += w
+
+                bias = np.sqrt(np.average(np.square((F - self.Target.variance) / self.Target.variance)))
+                if bias < 0.1:
+                    return 200.0 / (k*free_steps + i)
+
+        print('Maximum number of steps exceeded')
+        return 0.0
+
+
+
+
     def random_unit_vector(self):
         u = np.random.normal(size=self.Target.d)
         u /= np.sqrt(np.sum(np.square(u)))

@@ -7,7 +7,7 @@ from bias import *
 tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
 
 
-def plot_bounce_frequency():
+def bias_bounce_frequency():
     nn = [1, 10, 100, 1000, 10000, 100000]
     d = 50
     fig, ax = plt.subplots()
@@ -41,6 +41,36 @@ def plot_bounce_frequency():
     plt.savefig('Tests/bounce_frequency.png')
     plt.show()
 
+
+def ess_free_time():
+
+    X = np.load('Tests/free_time1.npy')
+    plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
+
+
+    X = np.load('Tests/free_time.npy')
+    plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
+
+
+    X = np.load('Tests/free_time2.npy')
+    plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
+
+
+    plt.ylabel('ESS')
+    plt.xlabel("rescaled time between bounces")
+    plt.savefig('Tests/free_time_fine_tuning.png')
+    plt.show()
+
+
+def ess_epsilon():
+
+    X = np.load('Tests/eps.npy')
+    plt.plot(X[:, 2], X[:, 0], '.', color = 'black')
+
+    plt.ylabel('ESS')
+    plt.xlabel(r"$\epsilon$")
+    plt.savefig('Tests/eps_fine_tuning.png')
+    plt.show()
 
 
 def plot_kappa():
@@ -212,8 +242,7 @@ def kappa_comparisson():
     plt.savefig('Tests/kappa_comparisson.png')
     plt.show()
 
-kappa_comparisson()
-#plot_bounce_f+requency()
-
+#kappa_comparisson()
+ess_free_time()
 #plot_energy()
 #plot_kappa()
