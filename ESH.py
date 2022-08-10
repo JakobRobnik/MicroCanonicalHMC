@@ -83,7 +83,7 @@ class Sampler:
         X = [x0, ]
         r = 0.0
         w = [np.exp(r) / self.Target.d, ]
-        u = self.random_unit_vector()
+        #u = self.random_unit_vector()
 
         for k in range(total_steps//free_steps): #number of bounces
             # bounce

@@ -51,7 +51,7 @@ def plot_kappa():
     fig, ax = plt.subplots()
 
     for n in range(len(kappa)):
-        target = targets.IllConcitionedGaussian(d=d, condition_number=kappa[n])
+        target = targets.IllConditionedGaussian(d=d, condition_number=kappa[n])
 
         X = np.load('Tests/kappa/X'+str(kappa[n])+'.npy')
         w = np.load('Tests/kappa/w'+str(kappa[n])+'.npy')
@@ -96,7 +96,8 @@ def ess_axis(ax):
 
 
 def plot_eps():
-    eps_arr = [0.05, 0.1, 0.5, 1, 2]
+    eps_arr = np.logspace(np.log10(0.05), np.log10(0.5), 6)
+    #[0.05, 0.1, 0.5, 1, 2]
     d= 50
 
     target = targets.StandardNormal(d=d)
@@ -119,7 +120,7 @@ def plot_eps():
     plt.ylabel('bias')
     plt.xlim(1, 1e6)
     ess_axis(ax)
-    plt.savefig('Tests/eps.png')
+    #plt.savefig('Tests/eps.png')
     plt.show()
 
 
@@ -161,8 +162,58 @@ def point_reduction(points, reduction_factor):
     return indexes
 
 
+def plot_bounce_condition():
+    d = 50
+    fig, ax = plt.subplots()
 
+    esh = ESH.Sampler(Target= targets.StandardNormal(d=d), eps=0.1)
+
+
+    num_bounces = 1
+
+    X = np.load('Tests/bounce_frequency/X'+str(num_bounces)+'.npy')
+    w = np.load('Tests/bounce_frequency/w'+str(num_bounces)+'.npy')
+
+    variance_bias = bias(X, w, esh.Target.variance)
+    plt.plot(variance_bias, label = '# bounces = ' + str(num_bounces))
+
+
+
+    #plt.plot([0, len(variance_bias)], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
+    plt.legend()
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.xlabel('# evaluations')
+    plt.ylabel('bias')
+    #plt.xlim(1, 1e3)
+    #ess_axis(ax)
+    #plt.savefig('Tests/bounce_frequency.png')
+    plt.show()
+
+
+
+def kappa_comparisson():
+    kappa_mchmc = [1, 10, 100, 1000]
+    ess_mchmc = [0.00796591, 0.00345943, 0.00129648, 0.00030617]
+    kappa_hmc = np.logspace(0, 4, 15)
+
+
+    ess_hmc = [0.045207956600361664, 0.06207324643078833, 0.020695364238410598, 0.015683814303638646, 0.00991866693116445, 0.0061502506227128755, 0.0023066188427693264, 0.0014471465887137037, 0.0009537116071471148, 0.00030081611411760103, 0.00033305800538221736, 0.000291579192908794, 0.00012951547612803123, 9.597615184578936e-05, 2.8260107156674315e-05]
+        #[0.04527960153950645, 0.05140066820868671, 0.02563116749967961, 0.00956892014736137, 0.0056228738508251564, 0.002301469488268259, 0.0014498216719343521, 0.0006908057212529834, 0.0003906494155884743, 0.0004268642763690071]
+
+    plt.plot(kappa_hmc, ess_hmc, 'o:', color = 'gold', label = 'NUTS')
+    plt.plot(kappa_mchmc, ess_mchmc, 'o:', color = 'black', label = 'MCHMC')
+
+
+    plt.xlabel('condition number')
+    plt.ylabel('ESS')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.savefig('Tests/kappa_comparisson.png')
+    plt.show()
+
+kappa_comparisson()
 #plot_bounce_f+requency()
-#plot_eps()
+
 #plot_energy()
-plot_kappa()
+#plot_kappa()

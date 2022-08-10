@@ -22,7 +22,7 @@ class StandardNormal():
 
 
 
-class IllConcitionedGaussian():
+class IllConditionedGaussian():
     """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber to condition_number."""
 
     def __init__(self, d, condition_number):

@@ -18,6 +18,21 @@ def bias(X, w, var_true):
 
     return np.sqrt(np.average(np.square((var - var_true) / var_true), axis = 1))
 
+def cutoff_crossing(X, w, var_true):
+    b = bias(X, w, var_true)
+    cutoff = 0.1
+    #
+    # if b[-1] > cutoff:
+    #     return None
+
+    i = 0#len(b)-1
+    while b[i] > cutoff:
+        i+=1
+        if i == len(b):
+            return None
+
+    return i
+
 
 def moving_median_trend(flux, band_half_width, average, borders):
     """smoothing by a moving average method.
@@ -47,6 +62,7 @@ def moving_median_trend(flux, band_half_width, average, borders):
             smooth[i] = smooth[indeks_maks]
 
     return smooth
+
 
 
 def estimate_ess(X, w, var_true):
@@ -82,6 +98,7 @@ def estimate_ess(X, w, var_true):
 
 
 
+
 def ess_bootstrap(X, w, var_true):
     """reduces the ess estimate variance"""
     num = 100
@@ -97,7 +114,7 @@ def ess_bootstrap(X, w, var_true):
 
 
 def compute_bounce_frequency(n):
-    nn = [1, 10, 100, 1000, 10000, 100000]
+    nn = (np.logspace(1, 3, 6)).astype(int)#[1, 10, 100, 1000, 10000, 100000]
 
     d = 50
     total_num = 1000000
@@ -106,15 +123,15 @@ def compute_bounce_frequency(n):
     x0 = esh.Target.draw(1)[0]
 
     X, w = esh.sample(x0, total_num //num_bounces, total_num)
-    np.save('Tests/bounce_frequency/X_half_sphere_'+str(num_bounces)+'.npy', X)
-    np.save('Tests/bounce_frequency/w_half_sphere_'+str(num_bounces)+'.npy', w)
+    np.save('Tests/bounce_frequency/X_fine'+str(num_bounces)+'.npy', X)
+    np.save('Tests/bounce_frequency/w_fine'+str(num_bounces)+'.npy', w)
 
 
 def compute_eps_dependence(n):
-    eps_arr = [0.05, 0.1, 0.5, 1, 2]
+    eps_arr = np.logspace(np.log10(0.05), np.log10(0.5), 6)
     eps = eps_arr[n]
     d = 50
-    total_num = 1000000
+    total_num = 100000
     esh = ESH.Sampler(Target=StandardNormal(d=d), eps=eps)
     np.random.seed(0)
     x0 = esh.Target.draw(1)[0]
@@ -128,7 +145,7 @@ def compute_kappa(n):
     kappa = ([1, 10, 100, 1000])[n]
     d = 50
     total_num = 1000000
-    esh = ESH.Sampler(Target=IllConcitionedGaussian(d=d, condition_number=kappa), eps=0.1)
+    esh = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=0.1)
     np.random.seed(0)
     x0 = esh.Target.draw(1)[0]
 
@@ -142,7 +159,7 @@ def compute_energy(n):
     eps = eps_arr[n]
     d = 50
     total_num = 1000000
-    esh = ESH.Sampler(Target=StandardNormal(d=d), eps=eps)
+    esh = ESH.Sampler(Target=StandardNormal(d=d), eps= eps)
     np.random.seed(0)
     x0 = esh.Target.draw(1)[0]
 
@@ -150,7 +167,27 @@ def compute_energy(n):
     np.save('Tests/energy/E'+str(n)+'.npy', E)
 
 
+def get_ess():
+    kappa = [1, 10, 100, 1000]
+    d = 50
+    ess_arr = np.zeros(len(kappa))
+
+    for n in range(len(kappa)):
+        target = IllConditionedGaussian(d=d, condition_number=kappa[n])
+
+        X = np.load('Tests/kappa/X' + str(kappa[n]) + '.npy')
+        w = np.load('Tests/kappa/w' + str(kappa[n]) + '.npy')
+
+
+        n_crossing = cutoff_crossing(X, w, target.variance)
+
+        ess_arr[n] = 200.0 / n_crossing
+
+    print(ess_arr)
+
+
 
 if __name__ == '__main__':
-    parallel.run_void(compute_kappa, 4, 1)
+    #parallel.run_void(compute_bounce_frequency, 6, 1)
 
+    get_ess()
