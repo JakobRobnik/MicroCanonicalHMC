@@ -18,8 +18,8 @@ def bias(X, w, var_true):
     return np.sqrt(np.average(np.square((var - var_true) / var_true), axis = 1))
 
 
-def ess_cutoff_crossing(X, w, step_cost, var_true):
-    b = bias(X, w, var_true)
+def ess_cutoff_crossing(b, step_cost):
+
     cutoff = 0.1
 
     n_crossing = 0
@@ -28,7 +28,7 @@ def ess_cutoff_crossing(X, w, step_cost, var_true):
         if n_crossing == len(b):
             return 0, n_crossing
 
-    return 200.0 / np.sum(step_cost[:n_crossing + 1])
+    return 200.0 / np.sum(step_cost[:n_crossing + 1]), n_crossing
 
 
 def moving_median_trend(flux, band_half_width, average, borders):

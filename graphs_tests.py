@@ -42,34 +42,36 @@ def bias_bounce_frequency():
     plt.show()
 
 
+
 def ess_free_time():
 
-    X = np.load('Tests/free_time1.npy')
+    X = np.load('Tests/free_time_ill.npy')
     plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
 
 
-    X = np.load('Tests/free_time.npy')
-    plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
+    # X = np.load('Tests/free_time.npy')
+    # plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
 
-
-    X = np.load('Tests/free_time2.npy')
-    plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
+    #
+    # X = np.load('Tests/free_time2.npy')
+    # plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
 
 
     plt.ylabel('ESS')
+    plt.yscale('log')
     plt.xlabel("rescaled time between bounces")
-    plt.savefig('Tests/free_time_fine_tuning.png')
+    #plt.savefig('Tests/free_time_fine_tuning.png')
     plt.show()
 
 
 def ess_epsilon():
 
-    X = np.load('Tests/eps.npy')
-    plt.plot(X[:, 2], X[:, 0], '.', color = 'black')
+    X = np.load('Tests/eps3.npy')
+    plt.plot(X[:, 2], X[:, 0] , '.', color = 'black')
 
     plt.ylabel('ESS')
     plt.xlabel(r"$\epsilon$")
-    plt.savefig('Tests/eps_fine_tuning.png')
+    #plt.savefig('Tests/eps_fine_tuning.png')
     plt.show()
 
 
@@ -223,26 +225,32 @@ def plot_bounce_condition():
 
 
 def kappa_comparisson():
-    kappa_mchmc = [1, 10, 100, 1000]
-    ess_mchmc = [0.00796591, 0.00345943, 0.00129648, 0.00030617]
-    kappa_hmc = np.logspace(0, 4, 15)
+    #kappa_mchmc = [1, 10, 100, 1000]
+    #ess_mchmc = [0.00796591, 0.00345943, 0.00129648, 0.00030617]
+    kappa = np.logspace(0, 3, 12)
+    kappa_nuts = np.logspace(0, 4, 18)
 
 
-    ess_hmc = [0.045207956600361664, 0.06207324643078833, 0.020695364238410598, 0.015683814303638646, 0.00991866693116445, 0.0061502506227128755, 0.0023066188427693264, 0.0014471465887137037, 0.0009537116071471148, 0.00030081611411760103, 0.00033305800538221736, 0.000291579192908794, 0.00012951547612803123, 9.597615184578936e-05, 2.8260107156674315e-05]
+    ess_mchmc = np.load('Tests/kappa.npy')[:, 0]
+    ess_nuts = np.load('Tests/kappa_NUTS.npy')[:18]
+
+
+    #ess_hmc = [0.045207956600361664, 0.06207324643078833, 0.020695364238410598, 0.015683814303638646, 0.00991866693116445, 0.0061502506227128755, 0.0023066188427693264, 0.0014471465887137037, 0.0009537116071471148, 0.00030081611411760103, 0.00033305800538221736, 0.000291579192908794, 0.00012951547612803123, 9.597615184578936e-05, 2.8260107156674315e-05]
         #[0.04527960153950645, 0.05140066820868671, 0.02563116749967961, 0.00956892014736137, 0.0056228738508251564, 0.002301469488268259, 0.0014498216719343521, 0.0006908057212529834, 0.0003906494155884743, 0.0004268642763690071]
 
-    plt.plot(kappa_hmc, ess_hmc, 'o:', color = 'gold', label = 'NUTS')
-    plt.plot(kappa_mchmc, ess_mchmc, 'o:', color = 'black', label = 'MCHMC')
+    plt.plot(kappa_nuts, ess_nuts, 'o:', color = 'gold', label = 'NUTS')
+    plt.plot(kappa, ess_mchmc, 'o:', color = 'black', label = 'MCHMC')
 
 
     plt.xlabel('condition number')
     plt.ylabel('ESS')
     plt.xscale('log')
     plt.yscale('log')
+    plt.legend()
     plt.savefig('Tests/kappa_comparisson.png')
     plt.show()
 
+bias_bounce_frequency()
 #kappa_comparisson()
-ess_free_time()
 #plot_energy()
 #plot_kappa()

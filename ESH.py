@@ -1,5 +1,5 @@
 import numpy as np
-
+import bias
 
 class Sampler:
     """the esh sampler"""
@@ -102,7 +102,28 @@ class Sampler:
         return np.array(X), np.array(w)
 
 
-    def ess(self, x0, free_steps, max_steps = 10000000):
+    def ess_with_averaging(self, x0_arr, free_steps):
+        """x0_arr must have shape (num_averaging, d)"""
+
+        num_averaging = len(x0_arr)
+
+        required_number_estimate = (int)(200 / self.ess(x0_arr[0], free_steps)) #run ess once to get an estimate of the required number of steps
+
+        u = self.ess(x0_arr[0], free_steps, max_steps=required_number_estimate, terminate=False)
+
+        B = np.array([self.ess(x0_arr[i], free_steps, max_steps= required_number_estimate, terminate= False) for i in range(num_averaging)]) #array of biases for different realizations
+
+        print(np.shape(B))
+        b_median = np.median(B, axis=0)
+        b_upper_quarter = [np.median((B[:, i])[B[:, i] > b_median[i]]) for i in range(len(b_median))]
+        b_lower_quarter = [np.median((B[:, i])[B[:, i] < b_median[i]]) for i in range(len(b_median))]
+
+        return bias.ess_cutoff_crossing(b_median, np.ones(len(B)))[0],\
+               bias.ess_cutoff_crossing(b_upper_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging),\
+               bias.ess_cutoff_crossing(b_lower_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging)
+
+
+    def ess(self, x0, free_steps, max_steps = 1000000, terminate = True):
 
         """Determines the effective sample size by monitoring the bias in the estimated variance.
             Args:
@@ -122,6 +143,9 @@ class Sampler:
         F = np.square(x) #<f(x)> estimate after one step
         W = w #sum of weights
 
+        if not terminate:
+            bias_arr = []
+
         for k in range(max_steps // free_steps):  # number of bounces
             # bounce
             u = self.random_unit_vector()
@@ -131,16 +155,25 @@ class Sampler:
                 x, u, g, r = self.step(x, u, g, r)
                 w= np.exp(r) / self.Target.d
 
-                F = (F + w * np.square(x) / W) / (1 + w / W)
+                F = (F + (w * np.square(x) / W)) / (1 + (w / W))
                 W += w
 
                 bias = np.sqrt(np.average(np.square((F - self.Target.variance) / self.Target.variance)))
-                if bias < 0.1:
-                    return 200.0 / (k*free_steps + i)
 
-        print('Maximum number of steps exceeded')
-        return 0.0
+                if terminate:
+                    if bias < 0.1:
+                        return 200.0 / (k*free_steps + i)
 
+                else:
+                    bias_arr.append(bias)
+
+
+        if terminate:
+            print('Maximum number of steps exceeded')
+            return 0.0
+
+        else:
+            return bias_arr
 
 
 

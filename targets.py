@@ -40,3 +40,36 @@ class IllConditionedGaussian():
         """direct sampler from a target"""
         return np.random.normal(size = (num_samples, self.d)) * np.sqrt(self.variance)
 
+
+
+class Funnel():
+    """Noise-less funnel"""
+
+    def __init__(self, d):
+
+        self.d = d
+        self.sigma_theta= 3.0
+        #self.variance = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
+
+    def nlogp(self, x):
+        """- log p of the target distribution
+                x = [z_0, z_1, ... z_{d-1}, theta] """
+
+        return 0.5* np.square(x[-1] / self.sigma_theta) + 0.25 * (self.d - 1) * x[-1] + 0.5 * np.exp(-x[-1]) * np.sum(np.square(x[:-1]))
+
+
+    def grad_nlogp(self, x):
+        theta = x[-1]
+        return np.append(np.exp(-theta) * x[:self.d - 1], (theta / self.sigma_theta**2) + 0.25 * (self.d - 1) - 0.5 * np.sum(np.square(x[:-1])) * np.exp(-theta))
+
+
+    def draw(self, num_samples):
+        """direct sampler from a target"""
+        return self.inverse_gaussianize(np.random.normal(size = (num_samples, self.d)))
+
+
+    def inverse_gaussianize(self, xtilde):
+        x= np.empty(np.shape(xtilde))
+        x[:, -1] = 3 * xtilde[:, -1]
+        x[:, -1] = xtilde[:, -1] * np.exp(0.5*x[:, -1])
+
