@@ -1,6 +1,7 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+
 import ESH
 import parallel
 from targets import *
@@ -81,8 +82,26 @@ def compute_energy(n):
     np.save('Tests/energy/E'+str(n)+'.npy', E)
 
 
+def compute_mode_mixing(n):
+    mu = ([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])[n]
+
+    eps, free_steps = 1.0, 16
+    d = 50
+    esh = ESH.Sampler(Target= BiModal(d=d, mu= mu), eps=eps)
+    np.random.seed(0)
+
+    avg_island_size = esh.mode_mixing(free_steps)
+    print(avg_island_size)
+    sys.stdout.flush()
+
+    return [avg_island_size, free_steps, eps, d, mu]
+
+
+
+
+
 if __name__ == '__main__':
 
     #parallel run:
-    parallel.run_collect(compute_free_time, num_cores= 4, runs= 1, working_folder= 'working/', name_results= 'Tests/dimension')
+    parallel.run_collect(compute_mode_mixing, num_cores= 4, runs= 2, working_folder= 'working/', name_results= 'Tests/mode_mixing')
 

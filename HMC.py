@@ -29,7 +29,8 @@ def funnel_noiseless(d):
     theta = numpyro.sample("theta", dist.Normal(0, 3))
     z = numpyro.sample("z", dist.Normal(jnp.zeros(d - 1), jnp.exp(0.5 * theta)) )
 
-
+def bimodal(d, mu):
+    c_i = numpyro.sample('c_i', dist.Bernoulli(0.5))
 
 
 def sample_nuts(target, target_params, num_samples, names_output = None):

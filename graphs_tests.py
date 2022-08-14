@@ -250,7 +250,20 @@ def kappa_comparisson():
     plt.savefig('Tests/kappa_comparisson.png')
     plt.show()
 
-bias_bounce_frequency()
+
+def mode_mixing():
+
+    num_mixing = np.load('Tests/mode_mixing.npy')[:, 0]
+    mu = np.arange(1, 9)
+
+    plt.plot(mu, num_mixing, 'o:')
+    plt.yscale('log')
+    plt.xlabel(r'$\mu$')
+    plt.ylabel('average mixing number of steps')
+
+    plt.show()
+
+mode_mixing()
 #kappa_comparisson()
 #plot_energy()
 #plot_kappa()

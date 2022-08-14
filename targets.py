@@ -49,7 +49,7 @@ class Funnel():
 
         self.d = d
         self.sigma_theta= 3.0
-        #self.variance = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
+
 
     def nlogp(self, x):
         """- log p of the target distribution
@@ -72,4 +72,35 @@ class Funnel():
         x= np.empty(np.shape(xtilde))
         x[:, -1] = 3 * xtilde[:, -1]
         x[:, -1] = xtilde[:, -1] * np.exp(0.5*x[:, -1])
+
+
+
+class BiModal():
+    """Mixture of two Gaussians, one centered at x0 = mu/2, the other at x0 = -mu/2"""
+
+    def __init__(self, d, mu):
+
+        self.d = d
+        self.mu = mu
+
+    def nlogp(self, x):
+        """- log p of the target distribution"""
+
+        return 0.5 * np.sum(np.square(x)) - np.log(np.cosh(0.5*self.mu*x[0]))
+
+
+    def grad_nlogp(self, x):
+        grad = np.copy(x)
+        grad[0] -= 0.5*self.mu * np.tanh(0.5 * self.mu * x[0])
+
+        return grad
+
+    def draw(self, num_samples):
+        """direct sampler from a target"""
+        X = np.random.normal(size = (num_samples, self.d))
+        mask = np.random.uniform(num_samples) < 0.5
+        X[mask, 0] += 0.5*self.mu
+        X[~mask, 0] -= 0.5 * self.mu
+
+        return X
 
