@@ -251,3 +251,5 @@ class Sampler:
 
         print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
         return max_steps
+
+

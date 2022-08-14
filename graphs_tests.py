@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import norm
+
 import ESH
 import targets
 from bias import *
@@ -256,14 +258,79 @@ def mode_mixing():
     num_mixing = np.load('Tests/mode_mixing.npy')[:, 0]
     mu = np.arange(1, 9)
 
-    plt.plot(mu, num_mixing, 'o:')
+    plt.plot(mu, num_mixing, 'o:', label = 'MCHMC')
+
+    num_mixing = np.load('Tests/mode_mixing_NUTS.npy')[0]
+    mu = np.load('Tests/mode_mixing_NUTS.npy')[1]
+
+    plt.plot(mu, num_mixing, 'o:', label= 'NUTS')
+
+
     plt.yscale('log')
     plt.xlabel(r'$\mu$')
-    plt.ylabel('average mixing number of steps')
+    plt.ylabel('average steps spent in a mode')
+    plt.legend()
+    plt.savefig('mode_mixing.png')
 
     plt.show()
 
-mode_mixing()
+
+def plot_funnel():
+
+    samples = np.load('funnel_samples.npy')
+    w = np.load('funnel_w.npy')
+
+    d = 20
+    theta, z = samples[:, -1], samples[:, :d-1]
+
+    #z0, theta = samples['z'][:, 0], samples['theta']
+
+    plt.figure(figsize=(15, 5))
+    plt.subplot(2, 2, 1)
+    plt.title('Original coordinates')
+    plt.hist2d(z[:, 0], theta, weights= w, bins = 30, density=True )
+    plt.xlim(-30, 30)
+    plt.xlabel(r'$z_0$')
+    plt.ylabel(r'$\theta$')
+
+    plt.subplot(2, 2, 2)
+    plt.title('Gaussianized coordinates')
+    Gz, Gtheta = gaussianize(z, theta)
+    plt.hist2d(Gz[:, 0], Gtheta, weights= w, bins = 20, density=True )
+
+
+    p_level = np.array([0.6827, 0.9545])
+    x_level = np.sqrt(-2 * np.log(1 - p_level))
+    phi = np.linspace(0, 2* np.pi, 100)
+    for i in range(2):
+        plt.plot(x_level[i] * np.cos(phi), x_level[i] * np.sin(phi), color = 'black', alpha= ([0.1, 0.5])[i])
+
+    plt.xlabel(r'$\widetilde{z_0}$')
+    plt.ylabel(r'$\widetilde{\theta}$')
+    plt.xlim(-4, 4)
+    plt.ylim(-4, 4)
+
+    plt.subplot(2, 2, 3)
+    plt.title(r'$\theta$-marginal')
+    plt.hist(theta, weights= w, color='tab:blue', cumulative=True, density=True, bins = 1000)
+
+    t= np.linspace(-10, 10, 100)
+    plt.plot(t, norm.cdf(t, scale= 3.0), color= 'black')
+
+    plt.xlabel(r'$\theta$')
+    plt.ylabel('CDF')
+    plt.savefig('funnel_nuts')
+
+    plt.show()
+
+
+def gaussianize(z, theta):
+    return (z.T * np.exp(-0.5 * theta)).T, 0.3 * theta
+
+
+
+plot_funnel()
+
 #kappa_comparisson()
 #plot_energy()
 #plot_kappa()

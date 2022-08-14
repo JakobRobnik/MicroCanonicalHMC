@@ -52,7 +52,7 @@ class Funnel():
 
 
     def nlogp(self, x):
-        """- log p of the target distribution
+        """ - log p of the target distribution
                 x = [z_0, z_1, ... z_{d-1}, theta] """
 
         return 0.5* np.square(x[-1] / self.sigma_theta) + 0.25 * (self.d - 1) * x[-1] + 0.5 * np.exp(-x[-1]) * np.sum(np.square(x[:-1]))
@@ -76,7 +76,7 @@ class Funnel():
 
 
 class BiModal():
-    """Mixture of two Gaussians, one centered at x0 = mu/2, the other at x0 = -mu/2"""
+    """Mixture of two Gaussians, one centered at x = [mu/2, 0, 0, ...], the other at x = [-mu/2, 0, 0, ...]"""
 
     def __init__(self, d, mu):
 
@@ -104,3 +104,36 @@ class BiModal():
 
         return X
 
+
+def check_gradient(target, x):
+    """check the analytical gradient of the target at point x"""
+
+    from scipy import optimize
+
+    approx_grad= optimize.approx_fprime(x, target.nlogp, 1e-8)
+
+    grad= target.grad_nlogp(x)
+
+    print('numerical grad: ', approx_grad)
+    print('analytical grad: ', grad)
+    print('ratio: ', grad / approx_grad)
+
+
+
+if __name__ == '__main__':
+    #target = Funnel(d= 20)
+    #check_gradient(target, np.random.normal(size = 20))
+
+    target = Funnel(d = 2)
+
+    z0, theta = np.linspace(-20, 20, 1000), np.linspace(-8, 5, 1000)
+
+    Z0, Theta = np.meshgrid(z0, theta)
+    logp = np.array([[-target.nlogp(np.array([z0[i], theta[j]])) for i in range(len(z0))] for j in range(len(Theta))])
+    cutoff = -20.0
+    logp[logp< cutoff] = cutoff
+    import matplotlib.pyplot as plt
+    plt.contourf(Z0, Theta, logp, levels= 20)#, levels = [0, 1, 10, 100, 1000])
+    plt.colorbar()
+    plt.savefig('funnel_2d_logp.png')
+    plt.show()

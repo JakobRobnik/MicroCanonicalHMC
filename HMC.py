@@ -7,7 +7,6 @@ from numpyro.infer import MCMC, NUTS
 import numpyro
 import numpyro.distributions as dist
 
-from scipy.stats import norm
 
 import bias
 
@@ -27,10 +26,22 @@ def funnel(d, sigma):
 
 def funnel_noiseless(d):
     theta = numpyro.sample("theta", dist.Normal(0, 3))
-    z = numpyro.sample("z", dist.Normal(jnp.zeros(d - 1), jnp.exp(0.5 * theta)) )
+    numpyro.sample("z", dist.Normal(jnp.zeros(d - 1), jnp.exp(0.5 * theta)) )
+
 
 def bimodal(d, mu):
-    c_i = numpyro.sample('c_i', dist.Bernoulli(0.5))
+    avg= np.zeros(d)
+    avg[0]= mu
+
+    mix = dist.Categorical(np.ones(2) / 2.0)
+
+    component_dist = dist.Normal(loc=np.array([avg, -avg]).T)#, scale=np.ones(shape = (d, 2)))
+
+    mixture = dist.MixtureSameFamily(mix, component_dist)
+
+    numpyro.sample('x', mixture)
+
+
 
 
 def sample_nuts(target, target_params, num_samples, names_output = None):
@@ -114,6 +125,50 @@ def ess_kappa():
 
     np.save('Tests/kappa_NUTS.npy', np.concatenate((ess_arr, kappa_arr)).T)
 
+def avg_mode_mixing_steps(signs, steps):
+    L = []
+    current_sign = signs[0]
+    island_size = steps[0]
+    for n in range(1, len(signs)):
+        sign = signs[n]
+        if sign != current_sign:
+            L.append(island_size)
+            island_size = 1
+            current_sign = sign
+        else:
+            island_size += steps[n]
+
+        if len(L) == 10:
+            return np.average(L)
+
+    print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
+    return len(signs)
+
+
+def mode_mixing():
+
+    def f(mu, num_samples):
+        d = 50
+        X, steps = sample_nuts(bimodal, [d, mu], num_samples)
+
+        return avg_mode_mixing_steps(np.sign(X[:, 0]), steps)
+
+
+    mu_arr = np.arange(1, 6)
+
+    avg_steps_mode = np.zeros(len(mu_arr))
+    num_samples= 10000
+
+    for i in range(len(avg_steps_mode)):
+        print(i, num_samples)
+
+        avg_num = f(mu_arr[i], num_samples)
+
+        avg_steps_mode[i] = avg_num
+
+        num_samples = (int)(avg_num * 10 * 30)
+
+    np.save('Tests/mode_mixing_NUTS.npy', np.array([avg_steps_mode, mu_arr]))
 
 
 
@@ -123,51 +178,7 @@ def funnel_samples():
     samples, steps= sample_funnel()
     print(np.sum(steps))
 
-    plt.figure(figsize=(15, 5))
-    plt.subplot(1, 3, 1)
-    plt.title('Original coordinates')
-    plt.plot(samples['z'][:, 0], samples['theta'], '.', color = 'tab:blue')
-    plt.xlim(-30, 30)
-    plt.xlabel(r'$z_0$')
-    plt.ylabel(r'$\theta$')
-
-    plt.subplot(1, 3, 2)
-    plt.title('Gaussianized coordinates')
-    gaussianized_samples = gaussianize(samples)
-    plt.plot(gaussianized_samples['z'][:, 0], gaussianized_samples['theta'], '.', color='tab:blue')
-
-    p_level = np.array([0.6827, 0.9545])
-    x_level = np.sqrt(-2 * np.log(1 - p_level))
-    phi = np.linspace(0, 2* np.pi, 100)
-    for i in range(2):
-        plt.plot(x_level[i] * np.cos(phi), x_level[i] * np.sin(phi), color = 'black', alpha= ([0.1, 0.5])[i])
-
-    plt.xlabel(r'$\widetilde{z_0}$')
-    plt.ylabel(r'$\widetilde{\theta}$')
-    plt.xlim(-4, 4)
-    plt.ylim(-4, 4)
-
-    plt.subplot(1, 3, 3)
-    plt.title(r'$\theta$-marginal')
-    plt.hist(samples['theta'], color='tab:blue', cumulative=True, density=True, bins = 1000)
-
-    t= np.linspace(-10, 10, 100)
-    plt.plot(t, norm.cdf(t, scale= 3.0), color= 'black')
-
-    plt.xlabel(r'$\theta$')
-    plt.ylabel('CDF')
-    plt.savefig('funnel_nuts')
-
-    plt.show()
 
 
-def gaussianize(samples):
-    return {'theta': 0.3 * samples['theta'], 'z': (samples['z'].T * np.exp(-0.5 * samples['theta'])).T }
-
-
-
-funnel_samples()
-
-
-
+mode_mixing()
 

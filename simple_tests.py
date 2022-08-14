@@ -83,10 +83,10 @@ def compute_energy(n):
 
 
 def compute_mode_mixing(n):
-    mu = ([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])[n]
+    mu = np.arange(1, 9)[n]
 
     eps, free_steps = 1.0, 16
-    d = 50
+    d = 2
     esh = ESH.Sampler(Target= BiModal(d=d, mu= mu), eps=eps)
     np.random.seed(0)
 
@@ -99,9 +99,24 @@ def compute_mode_mixing(n):
 
 
 
+def funnel():
+
+    eps, free_steps = 0.01, 1600
+    d = 20
+    esh = ESH.Sampler(Target= Funnel(d=d), eps=eps)
+    np.random.seed(0)
+    x0 = np.zeros(d)
+    samples, w = esh.sample(x0, free_steps, 1000000)
+    np.save('funnel_samples.npy', samples)
+    np.save('funnel_w.npy', w)
+
+
+
+
 
 if __name__ == '__main__':
 
+    funnel()
     #parallel run:
-    parallel.run_collect(compute_mode_mixing, num_cores= 4, runs= 2, working_folder= 'working/', name_results= 'Tests/mode_mixing')
+    #parallel.run_collect(compute_mode_mixing, num_cores= 4, runs= 2, working_folder= 'working/', name_results= 'Tests/mode_mixing_2d')
 
