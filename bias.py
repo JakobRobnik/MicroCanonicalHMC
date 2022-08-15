@@ -107,24 +107,3 @@ def ess_bootstrap(X, w, var_true):
     return np.median(ess)#, np.std(ess)/ np.sqrt(num)
 
 
-
-# def get_ess():
-#     kappa = [1, 10, 100, 1000]
-#     d = 50
-#     ess_arr = np.zeros(len(kappa))
-#
-#     for n in range(len(kappa)):
-#         target = IllConditionedGaussian(d=d, condition_number=kappa[n])
-#
-#         X = np.load('Tests/kappa/X' + str(kappa[n]) + '.npy')
-#         w = np.load('Tests/kappa/w' + str(kappa[n]) + '.npy')
-#
-#
-#         n_crossing = cutoff_crossing(X, w, target.variance)
-#
-#         ess_arr[n] = 200.0 / n_crossing
-#
-#     print(ess_arr)
-
-
-

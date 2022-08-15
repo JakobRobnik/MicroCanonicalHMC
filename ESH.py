@@ -198,3 +198,58 @@ class Sampler:
         projection = np.dot(u, v)
 
         return v - projection * u
+
+
+
+    def mode_mixing(self, free_steps, max_steps = 10000000):
+
+        """Determines the mode mixing property by monitoring the number of steps the sampler spends in one mode.
+            Args:
+                x0: initial condition for x (initial p will be of unit length with random direction)
+                free_steps: how many steps are performed before a bounce occurs
+
+            Returns:
+                ess: average number of steps spent in a mode (time of computation is such that the mode is switched 10 times
+        """
+
+
+
+        # initial conditions
+
+        x = np.random.normal(size= self.Target.d)
+        x[0] = self.Target.mu
+        g = self.Target.grad_nlogp(x)
+        r = 0.0
+        w = np.exp(r) / self.Target.d
+
+
+        L = []
+        current_sign = 1
+        island_size = 1
+
+        for k in range(max_steps // free_steps):  # number of bounces
+            # bounce
+            u = self.random_unit_vector()
+
+            # evolve
+            for i in range(free_steps):
+                x, u, g, r = self.step(x, u, g, r)
+                w= np.exp(r) / self.Target.d
+
+                sign = np.sign(x[0])
+                if sign != current_sign:
+                    L.append(island_size)
+                    island_size = 1
+                    current_sign = sign
+
+                else:
+                    island_size += 1
+
+                if len(L) == 10:
+                    return np.average(L)
+
+
+        print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
+        return max_steps
+
+

@@ -1,38 +1,15 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 from jax import random
-import jax.numpy as jnp
 from numpyro.infer import MCMC, NUTS
-import numpyro
-import numpyro.distributions as dist
-
-from scipy.stats import norm
 
 import bias
-
-
-
-
-def ill_conditioned_gaussian(d, condition_number):
-    variance_true = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
-    numpyro.sample('x', dist.Normal(np.zeros(d), np.sqrt(variance_true)) )
-
-
-def funnel(d, sigma):
-    theta = numpyro.sample("theta", dist.Normal(0, 3))
-    z = numpyro.sample("z", dist.Normal(jnp.zeros(d - 1), jnp.exp(0.5 * theta)) )
-    numpyro.sample("z", dist.Normal(z, sigma))
-
-
-def funnel_noiseless(d):
-    theta = numpyro.sample("theta", dist.Normal(0, 3))
-    z = numpyro.sample("z", dist.Normal(jnp.zeros(d - 1), jnp.exp(0.5 * theta)) )
-
+import targets_HMC as targets
 
 
 
 def sample_nuts(target, target_params, num_samples, names_output = None):
+    """ 'default' nuts, tunes the step size with a prerun"""
 
     # setup
     nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=False)  # originally: nuts_kernel
@@ -56,7 +33,7 @@ def sample_nuts(target, target_params, num_samples, names_output = None):
 
 
 
-def sample_funnel():
+def funnel():
 
     d= 20
     thinning= 5
@@ -64,7 +41,7 @@ def sample_funnel():
     stepsize= 0.01
 
     # setup
-    nuts_setup = NUTS(funnel_noiseless, adapt_step_size=False, adapt_mass_matrix=False, step_size= stepsize)
+    nuts_setup = NUTS(targets.funnel_noiseless, adapt_step_size=False, adapt_mass_matrix=False, step_size= stepsize)
     sampler = MCMC(nuts_setup, num_warmup=0, num_samples=num_samples, num_chains=1, progress_bar=True, thinning= thinning)
 
     random_seed = random.PRNGKey(0)
@@ -75,20 +52,44 @@ def sample_funnel():
     # get results
     numpyro_samples = sampler.get_samples()
 
-    X = {name: np.array(numpyro_samples[name]) for name in ['theta', 'z']}
+    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+
+    np.savez('funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
+
+
+
+
+def rosenbrock():
+
+    d= 36
+    thinning= 5
+    num_samples= 1000*thinning
+    stepsize= 0.01
+
+    # setup
+    nuts_setup = NUTS(targets.rosenbrock, adapt_step_size=True, adapt_mass_matrix=True, step_size= stepsize)
+    sampler = MCMC(nuts_setup, num_warmup=1000, num_samples= num_samples, num_chains= 1, progress_bar= True, thinning= thinning)
+
+    # run
+    sampler.run(random.PRNGKey(0), d, extra_fields=['num_steps'])
+
+    # get results
+    numpyro_samples = sampler.get_samples()
+
+    #X = {name:  for name in ['x', 'y']}
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
 
-    print(len(steps), len(X['theta']))
-    return X, steps
+    np.savez('rosenbrock_HMC2', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
 
 
 
-def ess_kappa():
+def ill_conditioned_gaussian():
+
 
     def f(condition_number, num_samples):
         d = 100
-        X, steps = sample_nuts(ill_conditioned_gaussian, [d, condition_number], num_samples)
+        X, steps = sample_nuts(targets.ill_conditioned_gaussian, [d, condition_number], num_samples)
 
         variance_true = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
 
@@ -116,57 +117,55 @@ def ess_kappa():
 
 
 
-def funnel_samples():
+def bimodal():
 
+    def avg_mode_mixing_steps(signs, steps):
+        L = []
+        current_sign = signs[0]
+        island_size = steps[0]
+        for n in range(1, len(signs)):
+            sign = signs[n]
+            if sign != current_sign:
+                L.append(island_size)
+                island_size = 1
+                current_sign = sign
+            else:
+                island_size += steps[n]
 
-    samples, steps= sample_funnel()
-    print(np.sum(steps))
+            if len(L) == 10:
+                return np.average(L)
 
-    plt.figure(figsize=(15, 5))
-    plt.subplot(1, 3, 1)
-    plt.title('Original coordinates')
-    plt.plot(samples['z'][:, 0], samples['theta'], '.', color = 'tab:blue')
-    plt.xlim(-30, 30)
-    plt.xlabel(r'$z_0$')
-    plt.ylabel(r'$\theta$')
-
-    plt.subplot(1, 3, 2)
-    plt.title('Gaussianized coordinates')
-    gaussianized_samples = gaussianize(samples)
-    plt.plot(gaussianized_samples['z'][:, 0], gaussianized_samples['theta'], '.', color='tab:blue')
-
-    p_level = np.array([0.6827, 0.9545])
-    x_level = np.sqrt(-2 * np.log(1 - p_level))
-    phi = np.linspace(0, 2* np.pi, 100)
-    for i in range(2):
-        plt.plot(x_level[i] * np.cos(phi), x_level[i] * np.sin(phi), color = 'black', alpha= ([0.1, 0.5])[i])
-
-    plt.xlabel(r'$\widetilde{z_0}$')
-    plt.ylabel(r'$\widetilde{\theta}$')
-    plt.xlim(-4, 4)
-    plt.ylim(-4, 4)
-
-    plt.subplot(1, 3, 3)
-    plt.title(r'$\theta$-marginal')
-    plt.hist(samples['theta'], color='tab:blue', cumulative=True, density=True, bins = 1000)
-
-    t= np.linspace(-10, 10, 100)
-    plt.plot(t, norm.cdf(t, scale= 3.0), color= 'black')
-
-    plt.xlabel(r'$\theta$')
-    plt.ylabel('CDF')
-    plt.savefig('funnel_nuts')
-
-    plt.show()
-
-
-def gaussianize(samples):
-    return {'theta': 0.3 * samples['theta'], 'z': (samples['z'].T * np.exp(-0.5 * samples['theta'])).T }
+        print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
+        return len(signs)
 
 
 
-funnel_samples()
+    def f(mu, num_samples):
+        d = 50
+        X, steps = sample_nuts(targets.bimodal, [d, mu], num_samples)
+
+        return avg_mode_mixing_steps(np.sign(X[:, 0]), steps)
+
+
+    mu_arr = np.arange(1, 6)
+
+    avg_steps_mode = np.zeros(len(mu_arr))
+    num_samples= 10000
+
+    for i in range(len(avg_steps_mode)):
+        print(i, num_samples)
+
+        avg_num = f(mu_arr[i], num_samples)
+
+        avg_steps_mode[i] = avg_num
+
+        num_samples = (int)(avg_num * 10 * 30)
+
+    np.save('Tests/mode_mixing_NUTS.npy', np.array([avg_steps_mode, mu_arr]))
 
 
 
 
+if __name__ == '__main__':
+
+    funnel()

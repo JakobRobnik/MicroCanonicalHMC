@@ -1,10 +1,12 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+
 import ESH
 import parallel
 from targets import *
 import bias
+
 
 
 def compute_free_time(n):
@@ -27,6 +29,7 @@ def compute_free_time(n):
     # np.save('Tests/bounce_frequency/w_fine'+str(free_steps)+'.npy', w)
 
 
+
 def compute_eps(n):
     eps_arr = np.logspace(np.log10(0.1), np.log10(16), 6)
     eps = eps_arr[n]
@@ -39,6 +42,7 @@ def compute_eps(n):
     ess = esh.ess(x0, free_steps)
 
     return [ess, free_steps, eps, d]
+
 
 
 def compute_kappa(n):
@@ -68,6 +72,7 @@ def compute_dimension(n):
     return [ess, ess_upper, ess_lower, free_steps, eps, d]
 
 
+
 def compute_energy(n):
     eps_arr = [0.05, 0.1, 0.5, 1, 2]
     eps = eps_arr[n]
@@ -81,8 +86,51 @@ def compute_energy(n):
     np.save('Tests/energy/E'+str(n)+'.npy', E)
 
 
-if __name__ == '__main__':
 
+def compute_mode_mixing(n):
+    mu = np.arange(1, 9)[n]
+
+    eps, free_steps = 1.0, 16
+    d = 2
+    esh = ESH.Sampler(Target= BiModal(d=d, mu= mu), eps=eps)
+    np.random.seed(0)
+
+    avg_island_size = esh.mode_mixing(free_steps)
+    print(avg_island_size)
+    sys.stdout.flush()
+
+    return [avg_island_size, free_steps, eps, d, mu]
+
+
+
+def funnel():
+
+    eps = 0.01
+    free_steps = (int)(16 / eps)
+    d = 20
+    esh = ESH.Sampler(Target= Funnel(d=d), eps=eps)
+    np.random.seed(0)
+    x0 = np.zeros(d)
+    samples, w = esh.sample(x0, free_steps, 1000000)
+    np.savez('Tests/data/funnel', z = samples[:, :-1], theta= samples[:, -1], w = w)
+
+
+
+def rosenbrock():
+
+    eps = 0.001
+    free_steps = (int)(1 / eps)
+    d = 36
+    esh = ESH.Sampler(Target= Rosenbrock(d=d), eps=eps)
+    np.random.seed(0)
+    x0 = np.zeros(d)
+    samples, w = esh.sample(x0, free_steps, 10000000)
+    np.savez('Tests/data/rosenbrock3', samples = samples[::10, :], w = w[::10])
+
+
+
+if __name__ == '__main__':
+    funnel()
     #parallel run:
-    parallel.run_collect(compute_free_time, num_cores= 4, runs= 1, working_folder= 'working/', name_results= 'Tests/dimension')
+    #parallel.run_collect(compute_mode_mixing, num_cores= 4, runs= 2, working_folder= 'working/', name_results= 'Tests/mode_mixing_2d')
 

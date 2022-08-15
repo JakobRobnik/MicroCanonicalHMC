@@ -1,5 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import norm
+
 import ESH
 import targets
 from bias import *
@@ -45,7 +48,7 @@ def bias_bounce_frequency():
 
 def ess_free_time():
 
-    X = np.load('Tests/free_time_ill.npy')
+    X = np.load('Tests/data/free_time_ill.npy')
     plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
 
 
@@ -116,6 +119,7 @@ def plot_kappa():
     ess_axis(ax)
     plt.savefig('Tests/kappa.png')
     plt.show()
+
 
 def ess_axis(ax):
 
@@ -193,34 +197,34 @@ def point_reduction(points, reduction_factor):
     indexes=  np.concatenate((np.arange(1, 1 + points//reduction_factor, dtype = int), np.arange(1 + points//reduction_factor, points, reduction_factor, dtype = int)))
     return indexes
 
-
-def plot_bounce_condition():
-    d = 50
-    fig, ax = plt.subplots()
-
-    esh = ESH.Sampler(Target= targets.StandardNormal(d=d), eps=0.1)
-
-
-    num_bounces = 1
-
-    X = np.load('Tests/bounce_frequency/X'+str(num_bounces)+'.npy')
-    w = np.load('Tests/bounce_frequency/w'+str(num_bounces)+'.npy')
-
-    variance_bias = bias(X, w, esh.Target.variance)
-    plt.plot(variance_bias, label = '# bounces = ' + str(num_bounces))
-
-
-
-    #plt.plot([0, len(variance_bias)], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
-    plt.legend()
-    plt.yscale('log')
-    plt.xscale('log')
-    plt.xlabel('# evaluations')
-    plt.ylabel('bias')
-    #plt.xlim(1, 1e3)
-    #ess_axis(ax)
-    #plt.savefig('Tests/bounce_frequency.png')
-    plt.show()
+#
+# def plot_bounce_condition():
+#     d = 50
+#     fig, ax = plt.subplots()
+#
+#     esh = ESH.Sampler(Target= targets.StandardNormal(d=d), eps=0.1)
+#
+#
+#     num_bounces = 1
+#
+#     X = np.load('Tests/bounce_frequency/X'+str(num_bounces)+'.npy')
+#     w = np.load('Tests/bounce_frequency/w'+str(num_bounces)+'.npy')
+#
+#     variance_bias = bias(X, w, esh.Target.variance)
+#     plt.plot(variance_bias, label = '# bounces = ' + str(num_bounces))
+#
+#
+#
+#     #plt.plot([0, len(variance_bias)], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
+#     plt.legend()
+#     plt.yscale('log')
+#     plt.xscale('log')
+#     plt.xlabel('# evaluations')
+#     plt.ylabel('bias')
+#     #plt.xlim(1, 1e3)
+#     #ess_axis(ax)
+#     #plt.savefig('Tests/bounce_frequency.png')
+#     plt.show()
 
 
 
@@ -231,8 +235,8 @@ def kappa_comparisson():
     kappa_nuts = np.logspace(0, 4, 18)
 
 
-    ess_mchmc = np.load('Tests/kappa.npy')[:, 0]
-    ess_nuts = np.load('Tests/kappa_NUTS.npy')[:18]
+    ess_mchmc = np.load('Tests/data/kappa.npy')[:, 0]
+    ess_nuts = np.load('Tests/data/kappa_NUTS.npy')[:18]
 
 
     #ess_hmc = [0.045207956600361664, 0.06207324643078833, 0.020695364238410598, 0.015683814303638646, 0.00991866693116445, 0.0061502506227128755, 0.0023066188427693264, 0.0014471465887137037, 0.0009537116071471148, 0.00030081611411760103, 0.00033305800538221736, 0.000291579192908794, 0.00012951547612803123, 9.597615184578936e-05, 2.8260107156674315e-05]
@@ -250,7 +254,161 @@ def kappa_comparisson():
     plt.savefig('Tests/kappa_comparisson.png')
     plt.show()
 
-bias_bounce_frequency()
-#kappa_comparisson()
-#plot_energy()
-#plot_kappa()
+
+def mode_mixing():
+
+    num_mixing = np.load('Tests/data/mode_mixing.npy')[:, 0]
+    mu = np.arange(1, 9)
+
+    plt.plot(mu, num_mixing, 'o:', label = 'MCHMC')
+
+    num_mixing = np.load('Tests/data/mode_mixing_NUTS.npy')[0]
+    mu = np.load('Tests/mode_mixing_NUTS.npy')[1]
+
+    plt.plot(mu, num_mixing, 'o:', label= 'NUTS')
+
+
+    plt.yscale('log')
+    plt.xlabel(r'$\mu$')
+    plt.ylabel('average steps spent in a mode')
+    plt.legend()
+    plt.savefig('Tests/mode_mixing.png')
+
+    plt.show()
+
+
+def plot_funnel():
+
+    def gaussianize(z, theta):
+        return (z.T * np.exp(-0.5 * theta)).T, 0.3 * theta
+
+    d = 20
+    data = np.load('Tests/data/funnel.npz')
+    z, theta, w = data['z'], data['theta'], data['w']
+
+
+    data = np.load('Tests/data/funnel_HMC.npz')
+    zHMC, thetaHMC = data['z'], data['theta']
+
+    plt.figure(figsize=(10, 10))
+    plt.subplot(2, 2, 1)
+    plt.title('Original coordinates')
+    plt.plot(z[:, 0], theta, color = 'tab:blue', lw = 0.1, label = 'MCHMC')
+    #plt.hist2d(z[:, 0], theta, weights= w, bins = 100, density=True, label = 'MCHMC')
+    plt.plot(zHMC[:, 0], thetaHMC, '.', ms= 1, color = 'tab:orange', label = 'NUTS')
+    plt.xlim(-30, 30)
+    plt.ylim(-8, 8)
+    plt.xlabel(r'$z_0$')
+    plt.ylabel(r'$\theta$')
+
+
+
+    plt.subplot(2, 2, 2)
+    plt.title('Gaussianized coordinates')
+    Gz, Gtheta = gaussianize(z, theta)
+    plt.hist2d(Gz[:, 0], Gtheta, cmap = 'Blues', weights= w, bins = 50, density=True, range= [[-4, 4], [-4, 4]], label ='MCHMC')
+    GzHMC, GthetaHMC = gaussianize(zHMC, thetaHMC)
+    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 1, color = 'tab:orange', label ='NUTS')
+
+    #level sets
+    p_level = np.array([0.6827, 0.9545])
+    x_level = np.sqrt(-2 * np.log(1 - p_level))
+    phi = np.linspace(0, 2* np.pi, 100)
+    for i in range(2):
+        plt.plot(x_level[i] * np.cos(phi), x_level[i] * np.sin(phi), color = 'black', alpha= ([1, 0.5])[i])
+
+    plt.xlabel(r'$\widetilde{z_0}$')
+    plt.ylabel(r'$\widetilde{\theta}$')
+    plt.xlim(-4, 4)
+    plt.ylim(-4, 4)
+
+
+    plt.subplot(2, 2, 3)
+    plt.title(r'$\theta$-marginal')
+    plt.hist(thetaHMC, color='tab:orange', cumulative=True, density=True, bins = 1000, histtype='step', label = 'NUTS')
+    plt.hist(theta, weights= w, color='tab:blue', cumulative=True, density=True, bins = 1000, histtype='step', label = 'MCHMC')
+
+    t= np.linspace(-10, 10, 100)
+    plt.plot(t, norm.cdf(t, scale= 3.0), color= 'black')
+
+    xmax = np.min([np.max(thetaHMC), np.max(theta)])
+    plt.xlim(-xmax, xmax)
+    plt.ylim(0, 1)
+
+    plt.legend()
+    plt.xlabel(r'$\theta$')
+    plt.ylabel('CDF')
+    plt.savefig('Tests/funnel.png')
+
+    plt.show()
+
+
+
+
+
+
+def plot_rosenbrock():
+
+
+    xmin, xmax, ymin, ymax = -2.3, 3.9, -2, 16
+
+    plot = sns.JointGrid(height=10, xlim=(xmin, xmax), ylim=(ymin, ymax))
+    ff = 16
+
+    # MCHMC
+    d = 36
+    X = np.load('Tests/data/rosenbrock.npz')
+    x, y = X['samples'][:, 0], X['samples'][:, d // 2]
+    w = X['w']
+    sns.histplot(x=x, y=y, weights=w, bins=200, ax=plot.ax_joint)
+
+    #sns.scatterplot(x=[], y=[], ax= plot.ax_joint, color = 'tab:blue')
+
+    # # marginals
+    sns.histplot(x=x, weights=w, bins= 20, fill=False, element= 'step', linewidth=2, ax=plot.ax_marg_x, stat='density', color='tab:blue', label= 'MCHMC')
+    sns.histplot(y=y, weights=w, bins= 20, fill=False, element= 'step', linewidth=2, ax=plot.ax_marg_y, stat='density', color='tab:blue', label= 'MCHMC')
+
+
+    # NUTS
+    X= np.load('Tests/data/rosenbrock_HMC2.npz')
+    x, y = X['x'][:, 0], X['y'][:, 0]
+    sns.scatterplot(x, y, s=10, linewidth=0, ax=plot.ax_joint, color='tab:orange')
+
+    # marginals
+    sns.histplot(x=x, bins= 20, fill=False, element= 'step', linewidth=2, ax=plot.ax_marg_x, stat='density', color='tab:orange')
+    sns.histplot(y=y, bins= 20, fill=False, element= 'step', linewidth=2, ax=plot.ax_marg_y, stat='density', color='tab:orange', label= 'NUTS')
+
+    plot.ax_marg_y.legend()
+
+    plot.set_axis_labels(r'$x_0$', r'$y_0$', fontsize=ff)
+    plt.tight_layout()
+    plt.savefig('Tests/rosenbrock.png')
+    plt.show()
+
+
+def funnel_debug():
+
+    data = np.load('Tests/data/funnel.npz')
+    z, theta, w = data['z'], data['theta'], data['w']
+
+    data = np.load('Tests/data/funnel_HMC.npz')
+    zHMC, thetaHMC = data['z'], data['theta']
+
+
+    num = 100000
+    plt.plot(z[:num, 0], theta[:num])
+    plt.plot(zHMC[:, 0], thetaHMC, '.', ms=1, color='tab:orange', label='NUTS')
+    # plt.xlim(-30, 30)
+    # plt.ylim(-8, 8)
+    plt.xlabel(r'$z_0$')
+    plt.ylabel(r'$\theta$')
+    plt.show()
+
+
+d = 36
+X = np.load('Tests/data/rosenbrock.npz')
+x, y = X['samples'][:, 0], X['samples'][:, d // 2]
+w = X['w']
+plt.plot(x[:10000], y[:10000])
+plt.show()
+
