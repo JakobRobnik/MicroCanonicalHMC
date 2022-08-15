@@ -13,6 +13,8 @@ Curently the files are:
 - simple_tests.py: hyperparameter tuning, condition number dependence, funnel...
 - graphs_tests.py: for visualizing results from simple_tests.py
 - targets.py: example distributions that we sample from
+- targets_HMC.py: same distributions but in numpyro form
+
 
 
 **Example**:
