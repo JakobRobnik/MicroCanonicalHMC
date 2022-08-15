@@ -21,9 +21,17 @@ class Sampler:
 
         uhalf = f(self.eps * 0.5, gg, u)
         xnew = x + self.eps * uhalf
-        gg_new = self.Target.grad_nlogp(xnew)
-        unew = f(self.eps * 0.5, gg_new, uhalf)
-        rnew = r - self.eps * 0.5 *(np.dot(u, gg) + np.dot(unew, gg_new)) / self.Target.d
+
+        #Boundary condition: a reflective box
+        if np.isinf(xnew): ## gives an array with the same shape as xnew and True at the position of infinite component
+            unew = u-2*u*np.isinf(xnew)  ## bounce back the momentum in the infinite direction. Is it better to use uhalf here?
+            xnew = x
+            gg_new = gg
+            rnew = r
+        else:
+            gg_new = self.Target.grad_nlogp(xnew)
+            unew = f(self.eps * 0.5, gg_new, uhalf)
+            rnew = r - self.eps * 0.5 *(np.dot(u, gg) + np.dot(unew, gg_new)) / self.Target.d
 
         return xnew, unew, gg_new, rnew
 
