@@ -23,7 +23,7 @@ class Sampler:
         xnew = x + self.eps * uhalf
 
         #Boundary condition: a reflective box
-        if np.isinf(xnew): ## gives an array with the same shape as xnew and True at the position of infinite component
+        if np.isinf(xnew).any(): ## gives an array with the same shape as xnew and True at the position of infinite component
             unew = u-2*u*np.isinf(xnew)  ## bounce back the momentum in the infinite direction. Is it better to use uhalf here?
             xnew = x
             gg_new = gg
