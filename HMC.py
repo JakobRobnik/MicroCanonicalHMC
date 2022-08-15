@@ -1,50 +1,15 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 from jax import random
-import jax.numpy as jnp
 from numpyro.infer import MCMC, NUTS
-import numpyro
-import numpyro.distributions as dist
-
 
 import bias
-
-
-
-
-def ill_conditioned_gaussian(d, condition_number):
-    variance_true = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
-    numpyro.sample('x', dist.Normal(np.zeros(d), np.sqrt(variance_true)) )
-
-
-def funnel(d, sigma):
-    theta = numpyro.sample("theta", dist.Normal(0, 3))
-    z = numpyro.sample("z", dist.Normal(jnp.zeros(d - 1), jnp.exp(0.5 * theta)) )
-    numpyro.sample("z", dist.Normal(z, sigma))
-
-
-def funnel_noiseless(d):
-    theta = numpyro.sample("theta", dist.Normal(0, 3))
-    numpyro.sample("z", dist.Normal(jnp.zeros(d - 1), jnp.exp(0.5 * theta)) )
-
-
-def bimodal(d, mu):
-    avg= np.zeros(d)
-    avg[0]= mu
-
-    mix = dist.Categorical(np.ones(2) / 2.0)
-
-    component_dist = dist.Normal(loc=np.array([avg, -avg]).T)#, scale=np.ones(shape = (d, 2)))
-
-    mixture = dist.MixtureSameFamily(mix, component_dist)
-
-    numpyro.sample('x', mixture)
-
+import targets_HMC as targets
 
 
 
 def sample_nuts(target, target_params, num_samples, names_output = None):
+    """ 'default' nuts, tunes the step size with a prerun"""
 
     # setup
     nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=False)  # originally: nuts_kernel
@@ -68,7 +33,7 @@ def sample_nuts(target, target_params, num_samples, names_output = None):
 
 
 
-def sample_funnel():
+def funnel():
 
     d= 20
     thinning= 5
@@ -76,7 +41,7 @@ def sample_funnel():
     stepsize= 0.01
 
     # setup
-    nuts_setup = NUTS(funnel_noiseless, adapt_step_size=False, adapt_mass_matrix=False, step_size= stepsize)
+    nuts_setup = NUTS(targets.funnel_noiseless, adapt_step_size=False, adapt_mass_matrix=False, step_size= stepsize)
     sampler = MCMC(nuts_setup, num_warmup=0, num_samples=num_samples, num_chains=1, progress_bar=True, thinning= thinning)
 
     random_seed = random.PRNGKey(0)
@@ -87,20 +52,44 @@ def sample_funnel():
     # get results
     numpyro_samples = sampler.get_samples()
 
-    X = {name: np.array(numpyro_samples[name]) for name in ['theta', 'z']}
+    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+
+    np.savez('funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
+
+
+
+
+def rosenbrock():
+
+    d= 36
+    thinning= 5
+    num_samples= 1000*thinning
+    stepsize= 0.01
+
+    # setup
+    nuts_setup = NUTS(targets.rosenbrock, adapt_step_size=True, adapt_mass_matrix=True, step_size= stepsize)
+    sampler = MCMC(nuts_setup, num_warmup=1000, num_samples= num_samples, num_chains= 1, progress_bar= True, thinning= thinning)
+
+    # run
+    sampler.run(random.PRNGKey(0), d, extra_fields=['num_steps'])
+
+    # get results
+    numpyro_samples = sampler.get_samples()
+
+    #X = {name:  for name in ['x', 'y']}
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
 
-    print(len(steps), len(X['theta']))
-    return X, steps
+    np.savez('rosenbrock_HMC2', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
 
 
 
-def ess_kappa():
+def ill_conditioned_gaussian():
+
 
     def f(condition_number, num_samples):
         d = 100
-        X, steps = sample_nuts(ill_conditioned_gaussian, [d, condition_number], num_samples)
+        X, steps = sample_nuts(targets.ill_conditioned_gaussian, [d, condition_number], num_samples)
 
         variance_true = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
 
@@ -125,31 +114,35 @@ def ess_kappa():
 
     np.save('Tests/kappa_NUTS.npy', np.concatenate((ess_arr, kappa_arr)).T)
 
-def avg_mode_mixing_steps(signs, steps):
-    L = []
-    current_sign = signs[0]
-    island_size = steps[0]
-    for n in range(1, len(signs)):
-        sign = signs[n]
-        if sign != current_sign:
-            L.append(island_size)
-            island_size = 1
-            current_sign = sign
-        else:
-            island_size += steps[n]
-
-        if len(L) == 10:
-            return np.average(L)
-
-    print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
-    return len(signs)
 
 
-def mode_mixing():
+
+def bimodal():
+
+    def avg_mode_mixing_steps(signs, steps):
+        L = []
+        current_sign = signs[0]
+        island_size = steps[0]
+        for n in range(1, len(signs)):
+            sign = signs[n]
+            if sign != current_sign:
+                L.append(island_size)
+                island_size = 1
+                current_sign = sign
+            else:
+                island_size += steps[n]
+
+            if len(L) == 10:
+                return np.average(L)
+
+        print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
+        return len(signs)
+
+
 
     def f(mu, num_samples):
         d = 50
-        X, steps = sample_nuts(bimodal, [d, mu], num_samples)
+        X, steps = sample_nuts(targets.bimodal, [d, mu], num_samples)
 
         return avg_mode_mixing_steps(np.sign(X[:, 0]), steps)
 
@@ -172,13 +165,7 @@ def mode_mixing():
 
 
 
-def funnel_samples():
 
+if __name__ == '__main__':
 
-    samples, steps= sample_funnel()
-    print(np.sum(steps))
-
-
-
-mode_mixing()
-
+    funnel()

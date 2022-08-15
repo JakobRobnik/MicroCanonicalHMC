@@ -8,6 +8,7 @@ from targets import *
 import bias
 
 
+
 def compute_free_time(n):
     #free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
     free_steps_arr = [1, 10, 100, 1000]
@@ -28,6 +29,7 @@ def compute_free_time(n):
     # np.save('Tests/bounce_frequency/w_fine'+str(free_steps)+'.npy', w)
 
 
+
 def compute_eps(n):
     eps_arr = np.logspace(np.log10(0.1), np.log10(16), 6)
     eps = eps_arr[n]
@@ -40,6 +42,7 @@ def compute_eps(n):
     ess = esh.ess(x0, free_steps)
 
     return [ess, free_steps, eps, d]
+
 
 
 def compute_kappa(n):
@@ -69,6 +72,7 @@ def compute_dimension(n):
     return [ess, ess_upper, ess_lower, free_steps, eps, d]
 
 
+
 def compute_energy(n):
     eps_arr = [0.05, 0.1, 0.5, 1, 2]
     eps = eps_arr[n]
@@ -80,6 +84,7 @@ def compute_energy(n):
 
     t, X, P, E = esh.trajectory(x0, total_num)
     np.save('Tests/energy/E'+str(n)+'.npy', E)
+
 
 
 def compute_mode_mixing(n):
@@ -98,24 +103,33 @@ def compute_mode_mixing(n):
 
 
 
-
 def funnel():
 
-    eps, free_steps = 0.01, 1600
+    eps = 0.01
+    free_steps = (int)(16 / eps)
     d = 20
     esh = ESH.Sampler(Target= Funnel(d=d), eps=eps)
     np.random.seed(0)
     x0 = np.zeros(d)
     samples, w = esh.sample(x0, free_steps, 1000000)
-    np.save('funnel_samples.npy', samples)
-    np.save('funnel_w.npy', w)
+    np.savez('Tests/data/funnel', z = samples[:, :-1], theta= samples[:, -1], w = w)
 
 
+
+def rosenbrock():
+
+    eps = 0.001
+    free_steps = (int)(1 / eps)
+    d = 36
+    esh = ESH.Sampler(Target= Rosenbrock(d=d), eps=eps)
+    np.random.seed(0)
+    x0 = np.zeros(d)
+    samples, w = esh.sample(x0, free_steps, 10000000)
+    np.savez('Tests/data/rosenbrock3', samples = samples[::10, :], w = w[::10])
 
 
 
 if __name__ == '__main__':
-
     funnel()
     #parallel run:
     #parallel.run_collect(compute_mode_mixing, num_cores= 4, runs= 2, working_folder= 'working/', name_results= 'Tests/mode_mixing_2d')
