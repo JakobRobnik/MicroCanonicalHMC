@@ -132,5 +132,5 @@ def rosenbrock():
 if __name__ == '__main__':
     funnel()
     #parallel run:
-    #parallel.run_collect(compute_mode_mixing, num_cores= 4, runs= 2, working_folder= 'working/', name_results= 'Tests/mode_mixing_2d')
+    parallel.run_collect(compute_mode_mixing, num_cores= 4, runs= 2, working_folder= 'working/', name_results= 'Tests/mode_mixing_2d')
 
