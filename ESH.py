@@ -6,7 +6,7 @@ class Sampler:
 
     def __init__(self, Target, eps):
         self.Target, self.eps = Target, eps
-        self.stop_bouncing_threshold = 1e-15
+        self.stop_bouncing_threshold = 1e-1
 
 
     def step(self, x, u, gg, r):
@@ -92,6 +92,8 @@ class Sampler:
         X = [x0, ]
         r = 0.0
         w = [np.exp(r) / self.Target.d, ]
+        
+        u = np.random.normal(size = self.Target.d)
         #u = self.random_unit_vector()
 
         for k in range(total_steps//free_steps): #number of bounces
@@ -151,6 +153,7 @@ class Sampler:
         g = self.Target.grad_nlogp(x0)
         r = 0.0
         w = np.exp(r) / self.Target.d
+        u = np.random.normal(size = self.Target.d)
 
         F = np.square(x) #<f(x)> estimate after one step
         W = w #sum of weights
@@ -236,6 +239,7 @@ class Sampler:
         g = self.Target.grad_nlogp(x)
         r = 0.0
         w = np.exp(r) / self.Target.d
+        u = np.random.normal(size = self.Target.d)
 
 
         L = []
