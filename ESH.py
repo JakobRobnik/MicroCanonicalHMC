@@ -6,6 +6,7 @@ class Sampler:
 
     def __init__(self, Target, eps):
         self.Target, self.eps = Target, eps
+        self.stop_bouncing_threshold = 1e-15
 
 
     def step(self, x, u, gg, r):
@@ -97,7 +98,10 @@ class Sampler:
             # bounce
             #u = self.half_sphere_bounce(u)
             #u = self.perpendicular_bounce(u)
-            u = self.random_unit_vector()
+            
+
+            if w[-1] > self.stop_bouncing_threshold:
+                u = self.random_unit_vector()
 
             #evolve
             for i in range(free_steps):
@@ -156,7 +160,10 @@ class Sampler:
 
         for k in range(max_steps // free_steps):  # number of bounces
             # bounce
-            u = self.random_unit_vector()
+            
+            
+            if w > self.stop_bouncing_threshold:
+                u = self.random_unit_vector()
 
             # evolve
             for i in range(free_steps):
@@ -237,7 +244,10 @@ class Sampler:
 
         for k in range(max_steps // free_steps):  # number of bounces
             # bounce
-            u = self.random_unit_vector()
+            
+            if w > self.stop_bouncing_threshold:
+                u = self.random_unit_vector()
+
 
             # evolve
             for i in range(free_steps):
