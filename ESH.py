@@ -1,12 +1,13 @@
 import numpy as np
 import bias
+from pdb import set_trace as bp
 
 class Sampler:
     """the esh sampler"""
 
     def __init__(self, Target, eps):
         self.Target, self.eps = Target, eps
-        self.stop_bouncing_threshold = 1e-1
+        self.stop_bouncing_threshold = 1e-3 #value of m below which stop bouncing
 
 
     def step(self, x, u, gg, r):
@@ -101,8 +102,9 @@ class Sampler:
             #u = self.half_sphere_bounce(u)
             #u = self.perpendicular_bounce(u)
             
-
-            if w[-1] > self.stop_bouncing_threshold:
+            
+            #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
+            if np.exp(-self.Target.nlogp(x)/self.Target.d) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
             #evolve
@@ -164,8 +166,8 @@ class Sampler:
         for k in range(max_steps // free_steps):  # number of bounces
             # bounce
             
-            
-            if w > self.stop_bouncing_threshold:
+            #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
+            if np.exp(-self.Target.nlogp(x)/self.Target.d) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
             # evolve
@@ -249,7 +251,8 @@ class Sampler:
         for k in range(max_steps // free_steps):  # number of bounces
             # bounce
             
-            if w > self.stop_bouncing_threshold:
+            #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
+            if np.exp(-self.Target.nlogp(x)/self.Target.d) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
 
