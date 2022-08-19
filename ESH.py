@@ -7,7 +7,7 @@ class Sampler:
 
     def __init__(self, Target, eps):
         self.Target, self.eps = Target, eps
-        self.stop_bouncing_threshold = 1e-3 #value of m below which stop bouncing
+        self.stop_bouncing_threshold = 1e-2 #value of target^{2/d} below which stop bouncing
 
 
     def step(self, x, u, gg, r):
@@ -104,7 +104,7 @@ class Sampler:
             
             
             #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
-            if np.exp(-self.Target.nlogp(x)/self.Target.d) > self.stop_bouncing_threshold:
+            if np.exp(-(2.0*self.Target.nlogp(x)/self.Target.d)) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
             #evolve
@@ -167,7 +167,7 @@ class Sampler:
             # bounce
             
             #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
-            if np.exp(-self.Target.nlogp(x)/self.Target.d) > self.stop_bouncing_threshold:
+            if np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
             # evolve
@@ -252,7 +252,7 @@ class Sampler:
             # bounce
             
             #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
-            if np.exp(-self.Target.nlogp(x)/self.Target.d) > self.stop_bouncing_threshold:
+            if np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
 
