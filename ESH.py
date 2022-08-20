@@ -105,7 +105,7 @@ class Sampler:
             
             #This is target^{2/d}
 
-            if np.exp(-(2.0*self.Target.nlogp(x)/self.Target.d)) > self.stop_bouncing_threshold:
+            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
                 u = self.random_unit_vector()
 
             #evolve
@@ -168,7 +168,7 @@ class Sampler:
             # bounce
             
             #This is target^{2/d}
-            if np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d) > self.stop_bouncing_threshold:
+            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
                 u = self.random_unit_vector()
 
             # evolve
@@ -255,11 +255,13 @@ class Sampler:
             #This is target^{2/d}. 
 
             #print(np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d))
-            # if np.exp(-self.Target.nlogp(x))>.8:
-            #     print("check: ", np.exp(-self.Target.nlogp(x)))
+            #if np.exp(-self.Target.nlogp(x))>.8:
+                #print("check: ", np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d))
+            #    print("check: ", -self.Target.nlogp(x))
             #print(np.exp(-self.Target.nlogp(x)))
             
-            if np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d) > self.stop_bouncing_threshold:
+            #if np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d) > self.stop_bouncing_threshold:
+            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
                 u = self.random_unit_vector()
 
 
