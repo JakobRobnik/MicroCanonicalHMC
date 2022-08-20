@@ -54,7 +54,7 @@ class BiModal():
     def nlogp(self, x):
         """- log p of the target distribution"""
 
-        return 0.5 * np.sum(np.square(x)) - np.log(np.cosh(0.5*self.mu*x[0]))
+        return 0.5 * np.sum(np.square(x)) - np.log(np.cosh(0.5*self.mu*x[0]))+.125*(self.mu**2)-np.log(2)
 
 
     def grad_nlogp(self, x):

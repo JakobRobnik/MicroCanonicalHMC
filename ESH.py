@@ -7,7 +7,7 @@ class Sampler:
 
     def __init__(self, Target, eps):
         self.Target, self.eps = Target, eps
-        self.stop_bouncing_threshold = 1e-2 #value of target^{2/d} below which stop bouncing
+        self.stop_bouncing_threshold = .8 #value of target^{2/d} below which stop bouncing
 
 
     def step(self, x, u, gg, r):
@@ -103,7 +103,8 @@ class Sampler:
             #u = self.perpendicular_bounce(u)
             
             
-            #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
+            #This is target^{2/d}
+
             if np.exp(-(2.0*self.Target.nlogp(x)/self.Target.d)) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
@@ -166,7 +167,7 @@ class Sampler:
         for k in range(max_steps // free_steps):  # number of bounces
             # bounce
             
-            #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
+            #This is target^{2/d}
             if np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
@@ -251,7 +252,13 @@ class Sampler:
         for k in range(max_steps // free_steps):  # number of bounces
             # bounce
             
-            #This is target^{1/d}. I am not putting the 2 because the gaussians are normalized with a factor of 2
+            #This is target^{2/d}. 
+
+            #print(np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d))
+            # if np.exp(-self.Target.nlogp(x))>.8:
+            #     print("check: ", np.exp(-self.Target.nlogp(x)))
+            #print(np.exp(-self.Target.nlogp(x)))
+            
             if np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d) > self.stop_bouncing_threshold:
                 u = self.random_unit_vector()
 
