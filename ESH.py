@@ -5,9 +5,9 @@ from pdb import set_trace as bp
 class Sampler:
     """the esh sampler"""
 
-    def __init__(self, Target, eps):
+    def __init__(self, Target, eps, threshold = 1.0):
         self.Target, self.eps = Target, eps
-        self.stop_bouncing_threshold = .8 #value of target^{2/d} below which stop bouncing
+        self.stop_bouncing_threshold = threshold #value of target^{2/d} below which stop bouncing
 
 
     def step(self, x, u, gg, r):
@@ -34,7 +34,6 @@ class Sampler:
             gg_new = self.Target.grad_nlogp(xnew)
             unew = f(self.eps * 0.5, gg_new, uhalf)
             rnew = r - self.eps * 0.5 *(np.dot(u, gg) + np.dot(unew, gg_new)) / self.Target.d
-
         return xnew, unew, gg_new, rnew
 
 
@@ -94,7 +93,9 @@ class Sampler:
         r = 0.0
         w = [np.exp(r) / self.Target.d, ]
         
-        u = np.random.normal(size = self.Target.d)
+        g_norm = np.sqrt(np.sum(np.square(g)))
+        u = - g / g_norm
+        #u = np.random.normal(size = self.Target.d)
         #u = self.random_unit_vector()
 
         for k in range(total_steps//free_steps): #number of bounces
@@ -103,17 +104,19 @@ class Sampler:
             #u = self.perpendicular_bounce(u)
             
             
-            #This is target^{2/d}
-
-            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
-                u = self.random_unit_vector()
-
             #evolve
             for i in range(free_steps):
                 x, u, g, r = self.step(x, u, g, r)
 
                 X.append(x)
                 w.append(np.exp(r) / self.Target.d)
+
+            #bounce
+            #This is target^{2/d}
+
+            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
+                u = self.random_unit_vector()
+
 
 
         return np.array(X), np.array(w)
@@ -156,8 +159,9 @@ class Sampler:
         g = self.Target.grad_nlogp(x0)
         r = 0.0
         w = np.exp(r) / self.Target.d
-        u = np.random.normal(size = self.Target.d)
 
+        g_norm = np.sqrt(np.sum(np.square(g)))
+        u = - g / g_norm
         F = np.square(x) #<f(x)> estimate after one step
         W = w #sum of weights
 
@@ -165,12 +169,7 @@ class Sampler:
             bias_arr = []
 
         for k in range(max_steps // free_steps):  # number of bounces
-            # bounce
             
-            #This is target^{2/d}
-            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
-                u = self.random_unit_vector()
-
             # evolve
             for i in range(free_steps):
                 x, u, g, r = self.step(x, u, g, r)
@@ -187,6 +186,13 @@ class Sampler:
 
                 else:
                     bias_arr.append(bias)
+
+            # bounce
+            
+            #This is target^{2/d}
+            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
+                u = self.random_unit_vector()
+
 
 
         if terminate:
@@ -242,29 +248,15 @@ class Sampler:
         g = self.Target.grad_nlogp(x)
         r = 0.0
         w = np.exp(r) / self.Target.d
-        u = np.random.normal(size = self.Target.d)
 
+        g_norm = np.sqrt(np.sum(np.square(g)))
+        u = - g / g_norm
 
         L = []
         current_sign = 1
         island_size = 1
 
-        for k in range(max_steps // free_steps):  # number of bounces
-            # bounce
-            
-            #This is target^{2/d}. 
-
-            #print(np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d))
-            #if np.exp(-self.Target.nlogp(x))>.8:
-                #print("check: ", np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d))
-            #    print("check: ", -self.Target.nlogp(x))
-            #print(np.exp(-self.Target.nlogp(x)))
-            
-            #if np.exp(-(2.0*self.Target.nlogp(x))/self.Target.d) > self.stop_bouncing_threshold:
-            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
-                u = self.random_unit_vector()
-
-
+        for k in range(max_steps // free_steps):  # number of bounces  
             # evolve
             for i in range(free_steps):
                 x, u, g, r = self.step(x, u, g, r)
@@ -282,7 +274,15 @@ class Sampler:
                 if len(L) == 10:
                     return np.average(L)
 
+            # bounce
+            
+            #This is target^{2/d}. 
+            
 
+            if -self.Target.nlogp(x) > (self.Target.d/2.0)*np.log(self.stop_bouncing_threshold):
+                u = self.random_unit_vector()
+
+            
         print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
         return max_steps
 
