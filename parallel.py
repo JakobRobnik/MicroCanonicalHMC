@@ -7,23 +7,24 @@ import shutil
 import os
 
 
-def run_void(f, num_threads, runs, begin = 0, args = None):
+def run_void(f, runs, begin = 0, args = None):
     """runs = how many calls of f does each thread make.
     f(n) will be evaluated for n in range(begin, begin + num_threads * runs)"""
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
+    num_cores = comm.Get_size()
 
     if rank == 0:
         t1 = time.time()
 
     for i in range(runs):
-        print(begin + rank + num_threads*i)
+        print(begin + rank + num_cores*i)
         sys.stdout.flush()
         if args != None:
-            f(begin + rank + num_threads*i, *args)
+            f(begin + rank + num_cores*i, *args)
         else:
-            f(begin + rank + num_threads * i)
+            f(begin + rank + num_cores * i)
 
     comm.Barrier()
 
@@ -31,12 +32,13 @@ def run_void(f, num_threads, runs, begin = 0, args = None):
         print("Total time: " + str(np.round((time.time() - t1) / 60.0, 2)) + " min")
 
 
-def run_collect(f, num_cores, runs, working_folder, name_results):
+def run_collect(f, runs, working_folder, name_results):
     """function f(num_iteration) to be executed in parallel.
        should return an array of results, which will be stored in 'name_results' line by line"""
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
+    num_cores = comm.Get_size()
 
     if rank == 0:
         if os.path.isdir(working_folder):
@@ -47,7 +49,7 @@ def run_collect(f, num_cores, runs, working_folder, name_results):
     def ff(i):
         np.save(working_folder + str(i) + '.npy', f(i))
 
-    run_void(ff, num_cores, runs)
+    run_void(ff, runs)
 
     if rank == 0:
         X = []

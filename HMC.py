@@ -12,7 +12,7 @@ def sample_nuts(target, target_params, num_samples, names_output = None):
     """ 'default' nuts, tunes the step size with a prerun"""
 
     # setup
-    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=False)  # originally: nuts_kernel
+    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=False, dense_mass= False)  # originally: nuts_kernel
     sampler = MCMC(nuts_setup, num_warmup=1000, num_samples=num_samples, num_chains=1, progress_bar=False)
     random_seed = random.PRNGKey(0)
 
@@ -54,7 +54,7 @@ def funnel():
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
 
-    np.savez('funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
+    np.savez('Tests/data/funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
 
 
 
@@ -80,7 +80,7 @@ def rosenbrock():
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
 
-    np.savez('rosenbrock_HMC2', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
+    np.savez('Tests/data/rosenbrock_HMC', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
 
 
 
@@ -98,7 +98,7 @@ def ill_conditioned_gaussian():
         return ess, n_crossing
 
 
-    kappa_arr = np.logspace(0, 4, 18)
+    kappa_arr = np.logspace(0, 3, 12)
 
     ess_arr= np.zeros(len(kappa_arr))
     num_samples= 1000
@@ -112,7 +112,7 @@ def ill_conditioned_gaussian():
 
         num_samples = n_crossing * 5
 
-    np.save('Tests/kappa_NUTS.npy', np.concatenate((ess_arr, kappa_arr)).T)
+    np.save('Tests/data/kappa_NUTS_rotated.npy', np.concatenate((ess_arr, kappa_arr)).T)
 
 
 
@@ -161,11 +161,11 @@ def bimodal():
 
         num_samples = (int)(avg_num * 10 * 30)
 
-    np.save('Tests/mode_mixing_NUTS.npy', np.array([avg_steps_mode, mu_arr]))
+    np.save('Tests/data/mode_mixing_NUTS.npy', np.array([avg_steps_mode, mu_arr]))
 
 
 
 
 if __name__ == '__main__':
 
-    funnel()
+    ill_conditioned_gaussian()

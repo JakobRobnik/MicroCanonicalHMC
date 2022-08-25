@@ -51,7 +51,7 @@ class Sampler:
         u /= np.sqrt(np.sum(np.square(u)))
         P = [u, ]
 
-        E = [self.Target.nlogp(x0), ]
+        E = [0.0* self.Target.d + self.Target.nlogp(x0), ]
 
         #evolve
         for i in range(total_steps):
@@ -140,7 +140,7 @@ class Sampler:
         r = 0.0
         w = np.exp(r) / self.Target.d
 
-        F = np.square(x) #<f(x)> estimate after one step
+        F = np.square(x) #<f(x)> estimate after one step, in this case f(x) = x^2
         W = w #sum of weights
 
         if not terminate:
@@ -155,7 +155,7 @@ class Sampler:
                 x, u, g, r = self.step(x, u, g, r)
                 w= np.exp(r) / self.Target.d
 
-                F = (F + (w * np.square(x) / W)) / (1 + (w / W))
+                F = (F + (w * np.square(x) / W)) / (1 + (w / W)) #Update <f(x)> with a Kalman filter
                 W += w
 
                 bias = np.sqrt(np.average(np.square((F - self.Target.variance) / self.Target.variance)))

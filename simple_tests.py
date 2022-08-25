@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import sys
 
 import ESH
+import CTV
 import parallel
 from targets import *
 import bias
@@ -12,21 +13,34 @@ import bias
 def compute_free_time(n):
     #free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
     free_steps_arr = [1, 10, 100, 1000]
-    #free_steps_arr = (np.linspace(50, 250, 18)).astype(int)  ##[1, 10, 100, 1000, 10000, 100000]
 
     d = 100
-    kappa = 100
-    eps = 0.5
     free_steps = free_steps_arr[n]
-    esh = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number = kappa), eps=eps)
-    x0 = esh.Target.draw(1)[0] #we draw an initial condition from the target
+    sampler = ESH.Sampler(StandardNormal(d=d), eps= 0.5)
 
-    ess = esh.ess(x0, free_steps)
 
-    return [ess, free_steps, eps, d, kappa]
+    x0 = sampler.Target.draw(1)[0] #we draw an initial condition from the target
 
-    # np.save('Tests/bounce_frequency/X_fine'+str(free_steps)+'.npy', X)
-    # np.save('Tests/bounce_frequency/w_fine'+str(free_steps)+'.npy', w)
+    ess = sampler.ess(x0, free_steps)
+
+    return [ess, free_steps, sampler.eps, d]
+
+
+def compute_free_time_ctv(n):
+
+    # free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
+    length = ([0.5, 1, 5, 10, 30, ])[n]
+
+    d = 100
+    sampler = CTV.Sampler(Target = StandardNormal(d= 100), eps= 3)
+
+    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
+
+    ess = sampler.ess(x0, length)
+
+    return [ess, length, sampler.eps, d]
+
+
 
 
 
@@ -130,7 +144,9 @@ def rosenbrock():
 
 
 if __name__ == '__main__':
-    funnel()
+
+
+    #funnel()
     #parallel run:
-    parallel.run_collect(compute_mode_mixing, num_cores= 4, runs= 2, working_folder= 'working/', name_results= 'Tests/mode_mixing_2d')
+    parallel.run_collect(compute_free_time_ctv, runs= 1, working_folder= 'working/', name_results= 'Tests/free_length_ctv')
 

@@ -236,11 +236,8 @@ def kappa_comparisson():
 
 
     ess_mchmc = np.load('Tests/data/kappa.npy')[:, 0]
-    ess_nuts = np.load('Tests/data/kappa_NUTS.npy')[:18]
+    ess_nuts = np.load('Tests/data/kappa_NUTS_adapt_mass.npy')#[:18]
 
-
-    #ess_hmc = [0.045207956600361664, 0.06207324643078833, 0.020695364238410598, 0.015683814303638646, 0.00991866693116445, 0.0061502506227128755, 0.0023066188427693264, 0.0014471465887137037, 0.0009537116071471148, 0.00030081611411760103, 0.00033305800538221736, 0.000291579192908794, 0.00012951547612803123, 9.597615184578936e-05, 2.8260107156674315e-05]
-        #[0.04527960153950645, 0.05140066820868671, 0.02563116749967961, 0.00956892014736137, 0.0056228738508251564, 0.002301469488268259, 0.0014498216719343521, 0.0006908057212529834, 0.0003906494155884743, 0.0004268642763690071]
 
     plt.plot(kappa_nuts, ess_nuts, 'o:', color = 'gold', label = 'NUTS')
     plt.plot(kappa, ess_mchmc, 'o:', color = 'black', label = 'MCHMC')
@@ -282,7 +279,7 @@ def plot_funnel():
     def gaussianize(z, theta):
         return (z.T * np.exp(-0.5 * theta)).T, 0.3 * theta
 
-    d = 20
+
     data = np.load('Tests/data/funnel.npz')
     z, theta, w = data['z'], data['theta'], data['w']
 
@@ -291,24 +288,27 @@ def plot_funnel():
     zHMC, thetaHMC = data['z'], data['theta']
 
     plt.figure(figsize=(10, 10))
+
+    ## 2d marginal in the original coordinates ##
     plt.subplot(2, 2, 1)
     plt.title('Original coordinates')
+    plt.plot(zHMC[:, 0], thetaHMC, '.', ms= 1, color = 'tab:orange', label = 'NUTS')
+
     plt.plot(z[:, 0], theta, color = 'tab:blue', lw = 0.1, label = 'MCHMC')
     #plt.hist2d(z[:, 0], theta, weights= w, bins = 100, density=True, label = 'MCHMC')
-    plt.plot(zHMC[:, 0], thetaHMC, '.', ms= 1, color = 'tab:orange', label = 'NUTS')
     plt.xlim(-30, 30)
     plt.ylim(-8, 8)
     plt.xlabel(r'$z_0$')
     plt.ylabel(r'$\theta$')
 
 
-
+    ## 2d marginal in the gaussianized coordinates ##
     plt.subplot(2, 2, 2)
     plt.title('Gaussianized coordinates')
     Gz, Gtheta = gaussianize(z, theta)
     plt.hist2d(Gz[:, 0], Gtheta, cmap = 'Blues', weights= w, bins = 50, density=True, range= [[-4, 4], [-4, 4]], label ='MCHMC')
     GzHMC, GthetaHMC = gaussianize(zHMC, thetaHMC)
-    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 1, color = 'tab:orange', label ='NUTS')
+    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 1, color = 'tab:orange', alpha = 0.5, label ='NUTS')
 
     #level sets
     p_level = np.array([0.6827, 0.9545])
@@ -323,17 +323,18 @@ def plot_funnel():
     plt.ylim(-4, 4)
 
 
+    ## 1d theta marginal##
     plt.subplot(2, 2, 3)
     plt.title(r'$\theta$-marginal')
-    plt.hist(thetaHMC, color='tab:orange', cumulative=True, density=True, bins = 1000, histtype='step', label = 'NUTS')
-    plt.hist(theta, weights= w, color='tab:blue', cumulative=True, density=True, bins = 1000, histtype='step', label = 'MCHMC')
+    plt.hist(thetaHMC, color='tab:orange', density=True, bins = 20, alpha = 0.5, label = 'NUTS')
+    plt.hist(theta, weights= w, color='tab:blue', density=True, bins = 20, alpha = 0.5,  label = 'MCHMC')
 
     t= np.linspace(-10, 10, 100)
-    plt.plot(t, norm.cdf(t, scale= 3.0), color= 'black')
+    plt.plot(t, norm.pdf(t, scale= 3.0), ':', color= 'black', alpha = 0.5, label = 'exact')
 
-    xmax = np.min([np.max(thetaHMC), np.max(theta)])
-    plt.xlim(-xmax, xmax)
-    plt.ylim(0, 1)
+    #xmax = np.min([np.max(thetaHMC), np.max(theta)])
+    #plt.xlim(-xmax, xmax)
+    #plt.ylim(0, 1)
 
     plt.legend()
     plt.xlabel(r'$\theta$')
@@ -365,22 +366,40 @@ def plot_rosenbrock():
     #sns.scatterplot(x=[], y=[], ax= plot.ax_joint, color = 'tab:blue')
 
     # # marginals
-    sns.histplot(x=x, weights=w, bins= 20, fill=False, element= 'step', linewidth=2, ax=plot.ax_marg_x, stat='density', color='tab:blue', label= 'MCHMC')
-    sns.histplot(y=y, weights=w, bins= 20, fill=False, element= 'step', linewidth=2, ax=plot.ax_marg_y, stat='density', color='tab:blue', label= 'MCHMC')
+    sns.histplot(x= x, weights= w, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:blue', zorder = 2)
+    sns.histplot(y= y, weights= w, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_y, stat= 'density', color= 'tab:blue', label= 'MCHMC', zorder = 2)
 
 
     # NUTS
-    X= np.load('Tests/data/rosenbrock_HMC2.npz')
+    X= np.load('Tests/data/rosenbrock_HMC.npz')
     x, y = X['x'][:, 0], X['y'][:, 0]
-    sns.scatterplot(x, y, s=10, linewidth=0, ax=plot.ax_joint, color='tab:orange')
+
+    sns.scatterplot(x, y, s= 3, linewidth= 0, ax= plot.ax_joint, alpha = 0.5, color= 'tab:orange')
 
     # marginals
-    sns.histplot(x=x, bins= 20, fill=False, element= 'step', linewidth=2, ax=plot.ax_marg_x, stat='density', color='tab:orange')
-    sns.histplot(y=y, bins= 20, fill=False, element= 'step', linewidth=2, ax=plot.ax_marg_y, stat='density', color='tab:orange', label= 'NUTS')
+    sns.histplot(x=x, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:orange', zorder = 1)
+    sns.histplot(y=y, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_y, stat= 'density', color= 'tab:orange', label= 'NUTS', zorder = 1)
+
+
+    #exact
+    import targets
+    ros = targets.Rosenbrock(d = 2)
+    X = ros.draw(1000)
+    x, y = X[:, 0], X[:, 1]
+
+    sns.scatterplot(x, y, s= 3, linewidth= 0, ax= plot.ax_joint, color= 'black', alpha = 0.5)
+
+    # marginals
+    sns.lineplot(x, np.exp(-0.5 * np.square(x - 1)) / np.sqrt(2 * np.pi), linewidth= 1, ax= plot.ax_marg_x, color= 'black', alpha = 0.5)
+    ros = targets.Rosenbrock(d=2)
+    X = ros.draw(5000000)
+    x, y = X[:, 0], X[:, 1]
+    sns.histplot(y=y, bins= 2000, fill= False, element= 'step', linewidth= 1, ax= plot.ax_marg_y, stat= 'density', color= 'black', alpha = 0.5, label= 'exact samples')
+
 
     plot.ax_marg_y.legend()
 
-    plot.set_axis_labels(r'$x_0$', r'$y_0$', fontsize=ff)
+    plot.set_axis_labels(r'$x_0$', r'$y_0$', fontsize= ff)
     plt.tight_layout()
     plt.savefig('Tests/rosenbrock.png')
     plt.show()
@@ -405,10 +424,11 @@ def funnel_debug():
     plt.show()
 
 
-d = 36
-X = np.load('Tests/data/rosenbrock.npz')
-x, y = X['samples'][:, 0], X['samples'][:, d // 2]
-w = X['w']
-plt.plot(x[:10000], y[:10000])
-plt.show()
-
+kappa_comparisson()
+# d = 36
+# X = np.load('Tests/data/rosenbrock.npz')
+# x, y = X['samples'][:, 0], X['samples'][:, d // 2]
+# w = X['w']
+# plt.plot(x[:10000], y[:10000])
+# plt.show()
+#

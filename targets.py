@@ -127,6 +127,14 @@ class Rosenbrock():
 
         return np.concatenate((X - 1.0 + 2*(np.square(X) - Y) * X / self.Q, (Y - np.square(X)) / self.Q))
 
+    def draw(self, num):
+        n = self.d // 2
+        X= np.empty((num, self.d))
+        X[:, :n] = np.random.normal(loc= 1.0, scale= 1.0, size= (num, n))
+        X[:, n:] = np.random.normal(loc= np.square(X[:, :n]), scale= np.sqrt(self.Q), size= (num, n))
+
+        return X
+
 
 
 def check_gradient(target, x):
