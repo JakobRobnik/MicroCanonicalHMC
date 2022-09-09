@@ -45,26 +45,59 @@ def bias_bounce_frequency():
     plt.show()
 
 
+def inference_gym():
+    data = np.load('Tests/data/inference_gym.npy')
+    names= [r'Gaussian ($\kappa = 1$)', r'Gaussian ($\kappa = 10^4$)', r'Rosenbrock ($Q = 0.5$)']
+    for i in range(3):
+        plt.plot(data[:, 3], data[:, i], 'o', color= tab_colors[i], label= names[i])
+
+    plt.xlabel(r'$\Delta x$')
+    plt.ylabel('ESS')
+    plt.legend()
+    plt.yscale('log')
+    plt.show()
+
 
 def ess_free_time():
 
-    X = np.load('Tests/data/free_time_ill.npy')
-    plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
+    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
 
+    length = []
+    plt.figure(figsize=(15, 5))
+    plt.subplot(1, 2, 1)
+    extra_word = 'Rosenbrock'
+    factor = 1.0 #Leapfrog
+    #factor = 0.25 #Yoshida
+    for i in range(len(dimensions)):
+        d = dimensions[i]
+        X = np.load('Tests/data/dimensions/'+str(d)+extra_word+'.npy')
+        plt.plot(X[:, 1], factor*X[:, 0], color = tab_colors[i], alpha= 0.5)
+        imax= np.argmax(factor*X[:, 0])
+        length.append(X[imax, 1])
+        plt.plot(X[imax, 1], factor*X[imax, 0], '.', color = tab_colors[i])
+        plt.text(X[imax, 1] * 1.05, factor*X[imax, 0]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5)
 
-    # X = np.load('Tests/free_time.npy')
-    # plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
-
-    #
-    # X = np.load('Tests/free_time2.npy')
-    # plt.plot(X[:, 1] * 0.1, X[:, 0], '.', color = 'black')
-
-
+    #plt.legend()
     plt.ylabel('ESS')
+    plt.xscale('log')
+    plt.xlabel("orbit length between bounces")
+
+    plt.subplot(1, 2, 2)
+    for i in range(len(dimensions)):
+        plt.plot(dimensions[i], length[i], 'o', color = tab_colors[i])
+
+    slope= np.dot(np.sqrt(dimensions[1:]), length[1:]) / np.sum(dimensions[1:])
+    print(slope)
+    plt.title(r'$L \approx$' +'{0:.4}'.format(slope) + r' $\sqrt{d}$')
+    plt.plot(dimensions, slope * np.sqrt(dimensions), ':', color = 'black')
+    plt.xlabel('d')
+    plt.ylabel('optimal orbit length between bounces')
+    plt.xscale('log')
     plt.yscale('log')
-    plt.xlabel("rescaled time between bounces")
-    #plt.savefig('Tests/free_time_fine_tuning.png')
+    plt.savefig('Tests/bounce_dimension_dependence'+extra_word+'.png')
     plt.show()
+
+
 
 
 def ess_epsilon():
@@ -279,8 +312,8 @@ def plot_funnel():
     def gaussianize(z, theta):
         return (z.T * np.exp(-0.5 * theta)).T, 0.3 * theta
 
-
-    data = np.load('Tests/data/funnel.npz')
+    eps, free_time = 0.1, 6
+    data = np.load('Tests/data/funnel_free'+str(free_time) + '_eps'+str(eps)+'.npz')
     z, theta, w = data['z'], data['theta'], data['w']
 
 
@@ -289,12 +322,15 @@ def plot_funnel():
 
     plt.figure(figsize=(10, 10))
 
-    ## 2d marginal in the original coordinates ##
+
+
+    ####   2d marginal in the original coordinates ####
     plt.subplot(2, 2, 1)
     plt.title('Original coordinates')
     plt.plot(zHMC[:, 0], thetaHMC, '.', ms= 1, color = 'tab:orange', label = 'NUTS')
 
-    plt.plot(z[:, 0], theta, color = 'tab:blue', lw = 0.1, label = 'MCHMC')
+    #plt.hist2d(z[:, 0], theta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-30, 30], [-8, 8]], label ='MCHMC')
+    plt.plot(z[::5000, 0], theta[::5000], '.', ms= 1, color = 'tab:blue', label = 'MCHMC')
     #plt.hist2d(z[:, 0], theta, weights= w, bins = 100, density=True, label = 'MCHMC')
     plt.xlim(-30, 30)
     plt.ylim(-8, 8)
@@ -302,13 +338,14 @@ def plot_funnel():
     plt.ylabel(r'$\theta$')
 
 
-    ## 2d marginal in the gaussianized coordinates ##
+
+    #### 2d marginal in the gaussianized coordinates ####
     plt.subplot(2, 2, 2)
     plt.title('Gaussianized coordinates')
     Gz, Gtheta = gaussianize(z, theta)
-    plt.hist2d(Gz[:, 0], Gtheta, cmap = 'Blues', weights= w, bins = 50, density=True, range= [[-4, 4], [-4, 4]], label ='MCHMC')
+    plt.hist2d(Gz[:, 0], Gtheta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-3, 3], [-3, 3]], label ='MCHMC')
     GzHMC, GthetaHMC = gaussianize(zHMC, thetaHMC)
-    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 1, color = 'tab:orange', alpha = 0.5, label ='NUTS')
+    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 2, color = 'tab:orange', alpha = 0.5, label ='NUTS')
 
     #level sets
     p_level = np.array([0.6827, 0.9545])
@@ -319,11 +356,12 @@ def plot_funnel():
 
     plt.xlabel(r'$\widetilde{z_0}$')
     plt.ylabel(r'$\widetilde{\theta}$')
-    plt.xlim(-4, 4)
-    plt.ylim(-4, 4)
+    plt.xlim(-3, 3)
+    plt.ylim(-3, 3)
 
 
-    ## 1d theta marginal##
+
+    #### 1d theta marginal####
     plt.subplot(2, 2, 3)
     plt.title(r'$\theta$-marginal')
     plt.hist(thetaHMC, color='tab:orange', density=True, bins = 20, alpha = 0.5, label = 'NUTS')
@@ -424,7 +462,9 @@ def funnel_debug():
     plt.show()
 
 
-kappa_comparisson()
+ess_free_time()
+
+#plot_funnel()
 # d = 36
 # X = np.load('Tests/data/rosenbrock.npz')
 # x, y = X['samples'][:, 0], X['samples'][:, d // 2]

@@ -1,6 +1,8 @@
 import numpy as np
 import bias
 
+
+
 class Sampler:
     """the esh sampler"""
 
@@ -65,65 +67,28 @@ class Sampler:
         return np.arange(total_steps) * self.eps, X, P, E
 
 
-    def sample(self, x0, free_steps, total_steps):
-        """Samples from the target distribution.
-            Args:
-                x0: initial condition for x (initial p will be of unit length with random direction)
-                free_steps: how many steps are performed before a bounce occurs
-                total_steps: how many steps in total
-
-            Returns:
-                X: array of samples of shape (total_steps, d)
-                w: weights of samples, an array of shape (total_steps, )
-        """
-
-        #initial conditions
-        x = x0
-        g = self.Target.grad_nlogp(x0)
-        X = [x0, ]
-        r = 0.0
-        w = [np.exp(r) / self.Target.d, ]
-        #u = self.random_unit_vector()
-
-        for k in range(total_steps//free_steps): #number of bounces
-            # bounce
-            #u = self.half_sphere_bounce(u)
-            #u = self.perpendicular_bounce(u)
-            u = self.random_unit_vector()
-
-            #evolve
-            for i in range(free_steps):
-                x, u, g, r = self.step(x, u, g, r)
-
-                X.append(x)
-                w.append(np.exp(r) / self.Target.d)
+    # def ess_with_averaging(self, x0_arr, free_steps):
+    #     """x0_arr must have shape (num_averaging, d)"""
+    #
+    #     num_averaging = len(x0_arr)
+    #
+    #     required_number_estimate = (int)(200 / self.ess(x0_arr[0], free_steps)) #run ess once to get an estimate of the required number of steps
+    #
+    #     u = self.ess(x0_arr[0], free_steps, max_steps=required_number_estimate, terminate=False)
+    #
+    #     B = np.array([self.ess(x0_arr[i], free_steps, max_steps= required_number_estimate, terminate= False) for i in range(num_averaging)]) #array of biases for different realizations
+    #
+    #     print(np.shape(B))
+    #     b_median = np.median(B, axis=0)
+    #     b_upper_quarter = [np.median((B[:, i])[B[:, i] > b_median[i]]) for i in range(len(b_median))]
+    #     b_lower_quarter = [np.median((B[:, i])[B[:, i] < b_median[i]]) for i in range(len(b_median))]
+    #
+    #     return bias.ess_cutoff_crossing(b_median, np.ones(len(B)))[0],\
+    #            bias.ess_cutoff_crossing(b_upper_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging),\
+    #            bias.ess_cutoff_crossing(b_lower_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging)
 
 
-        return np.array(X), np.array(w)
-
-
-    def ess_with_averaging(self, x0_arr, free_steps):
-        """x0_arr must have shape (num_averaging, d)"""
-
-        num_averaging = len(x0_arr)
-
-        required_number_estimate = (int)(200 / self.ess(x0_arr[0], free_steps)) #run ess once to get an estimate of the required number of steps
-
-        u = self.ess(x0_arr[0], free_steps, max_steps=required_number_estimate, terminate=False)
-
-        B = np.array([self.ess(x0_arr[i], free_steps, max_steps= required_number_estimate, terminate= False) for i in range(num_averaging)]) #array of biases for different realizations
-
-        print(np.shape(B))
-        b_median = np.median(B, axis=0)
-        b_upper_quarter = [np.median((B[:, i])[B[:, i] > b_median[i]]) for i in range(len(b_median))]
-        b_lower_quarter = [np.median((B[:, i])[B[:, i] < b_median[i]]) for i in range(len(b_median))]
-
-        return bias.ess_cutoff_crossing(b_median, np.ones(len(B)))[0],\
-               bias.ess_cutoff_crossing(b_upper_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging),\
-               bias.ess_cutoff_crossing(b_lower_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging)
-
-
-    def ess(self, x0, free_steps, max_steps = 1000000, terminate = True):
+    def sample(self, x0, time_bounce, max_steps = 1000000):
 
         """Determines the effective sample size by monitoring the bias in the estimated variance.
             Args:
@@ -139,41 +104,36 @@ class Sampler:
         g = self.Target.grad_nlogp(x0)
         r = 0.0
         w = np.exp(r) / self.Target.d
+        u = - g / np.sqrt(np.sum(np.square(g))) #initialize momentum in the direction of the gradient of log p
 
-        F = np.square(x) #<f(x)> estimate after one step, in this case f(x) = x^2
-        W = w #sum of weights
+        ### bounce program ###
+        bounce_tracker= Rescaled_time_bounces(self.eps, time_bounce)
+        #bounce_tracker = rescaled_time_bounces(self.eps, time_bounce, self.Target)
 
-        if not terminate:
-            bias_arr = []
+        ### quantities to track (to save memory we do not store full x(t) ###
+        tracker= Ess(x, w, self.Target.variance)
+        #tracker= Full_trajectory(x, w, max_steps?)
+        #tracker= Mode_mixing(x)
+        #tracker= Marginal_1d(bins, num_steps, lambda x: x[0])
 
-        for k in range(max_steps // free_steps):  # number of bounces
-            # bounce
-            u = self.random_unit_vector()
+        num_steps = 0
 
-            # evolve
-            for i in range(free_steps):
-                x, u, g, r = self.step(x, u, g, r)
-                w= np.exp(r) / self.Target.d
+        while num_steps < max_steps:
 
-                F = (F + (w * np.square(x) / W)) / (1 + (w / W)) #Update <f(x)> with a Kalman filter
-                W += w
+            #do a step
+            x, u, g, r = self.step(x, u, g, r)
+            w = np.exp(r) / self.Target.d
+            num_steps += 1
+            
+            if tracker.update(x, w): #update tracker
+                return tracker.results()
 
-                bias = np.sqrt(np.average(np.square((F - self.Target.variance) / self.Target.variance)))
-
-                if terminate:
-                    if bias < 0.1:
-                        return 200.0 / (k*free_steps + i)
-
-                else:
-                    bias_arr.append(bias)
+            if bounce_tracker.update(x): #perhaps do a bounce
+                u = self.random_unit_vector()
 
 
-        if terminate:
-            print('Maximum number of steps exceeded')
-            return 0.0
-
-        else:
-            return bias_arr
+        print('Maximum number of steps exceeded')
+        return tracker.results()
 
 
 
@@ -201,55 +161,174 @@ class Sampler:
 
 
 
-    def mode_mixing(self, free_steps, max_steps = 10000000):
+### bounce trackers ###
 
-        """Determines the mode mixing property by monitoring the number of steps the sampler spends in one mode.
-            Args:
-                x0: initial condition for x (initial p will be of unit length with random direction)
-                free_steps: how many steps are performed before a bounce occurs
+class Rescaled_time_bounces():
 
-            Returns:
-                ess: average number of steps spent in a mode (time of computation is such that the mode is switched 10 times
-        """
+    def __init__(self, eps, tau_max):
+        self.num_steps = 0
+        self.max_steps = (int)(tau_max / eps)
 
+    def update(self, x):
+        self.num_steps += 1
 
+        if self.num_steps < self.max_steps:
+            return False
 
-        # initial conditions
-
-        x = np.random.normal(size= self.Target.d)
-        x[0] = self.Target.mu
-        g = self.Target.grad_nlogp(x)
-        r = 0.0
-        w = np.exp(r) / self.Target.d
+        else:
+            self.num_steps = 0
+            return True
 
 
-        L = []
-        current_sign = 1
-        island_size = 1
+class Hamiltonian_time_bounces():
 
-        for k in range(max_steps // free_steps):  # number of bounces
-            # bounce
-            u = self.random_unit_vector()
+    def __init__(self, x, time_max, Target):
+        self.x = x
+        self.Target = Target
+        self.time = 0.0
+        self.max_steps = time_max
 
-            # evolve
-            for i in range(free_steps):
-                x, u, g, r = self.step(x, u, g, r)
-                w= np.exp(r) / self.Target.d
+    def update(self, x):
+        self.time += np.sqrt(np.sum(np.square(x - self.x))) * np.exp(- 2 * self.Target.nlogp / self.Target.d)
+        self.x = x
 
-                sign = np.sign(x[0])
-                if sign != current_sign:
-                    L.append(island_size)
-                    island_size = 1
-                    current_sign = sign
+        if self.num_steps < self.max_steps:
+            return False
 
-                else:
-                    island_size += 1
-
-                if len(L) == 10:
-                    return np.average(L)
+        else:
+            self.time = 0.0
+            return True
 
 
-        print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
-        return max_steps
+
+### quantities to keep during sampling ###
+
+class Full_trajectory():
+    """Stores x(t). Contains all the information but can be memory intensive."""
+
+    def __init__(self, x, w, max_steps):
+        self.max_steps = max_steps
+        self.X = np.empty((max_steps, len(x)))
+        self.W = np.empty(max_steps)
+        self.X[0], self.W[0] = x, w
+        self.num_steps = 0
 
 
+    def update(self, x, w):
+        self.num_steps += 1
+        self.X[self.num_steps, :] = x
+        self.W[self.num_steps] = w
+
+        return self.num_steps < self.max_steps
+
+
+    def results(self):
+        return self.X, self.W
+
+
+
+class Ess():
+    """effective sample size computed from the bias"""
+
+    def __init__(self, x, w, variance):
+        self.variance = variance
+        self.F = np.square(x)  # <f(x)> estimate after one step, in this case f(x) = x^2
+        self.W = w  # sum of weights
+        self.bias = np.sqrt(np.average(np.square((self.F - self.variance) / self.variance)))
+        self.num_steps = 0
+
+
+    def update(self, x, w):
+        self.F = (self.F + (w * np.square(x) / self.W)) / (1 + (w / self.W))  # Update <f(x)> with a Kalman filter
+        self.W += w
+        self.num_steps += 1
+
+        self.bias = np.sqrt(np.average(np.square((self.F - self.variance) / self.variance)))
+
+        return self.bias < 0.1
+
+
+    def results(self):
+        return 200.0 / self.num_steps #ess
+
+
+
+
+class Expected_value():
+    """expected value of some quantities f(x)"""
+
+    def __init__(self, x, w, f, max_num_steps):
+        self.F = f(x)  # <f(x)> estimate after one step, can be a vector
+        self.W = w  # sum of weights
+        self.max_num_steps = max_num_steps
+        self.num_steps = 0
+
+
+    def update(self, x, w):
+        self.F = (self.F + (w * self.f(x) / self.W)) / (1 + (w / self.W))  # Update <f(x)> with a Kalman filter
+        self.W += w
+        self.num_steps += 1
+
+        return self.num_steps < self.max_num_steps
+
+
+    def results(self):
+        return self.F
+
+
+
+class Mode_mixing():
+    """how long does it take to switch between modes"""
+
+    def __init__(self, x):
+
+        self.L = []
+        self.current_sign = np.sign(x[0])
+        self.island_size = 1
+
+
+    def update(self, x, w):
+
+        sign = np.sign(x[0])
+        if sign != self.current_sign:
+            self.L.append(self.island_size)
+            self.island_size = 1
+            self.current_sign = sign
+
+        else:
+            self.island_size += 1
+
+        return len(self.L) > 9
+
+
+    def results(self):
+        return np.average(self.L)
+
+
+
+
+class Marginal_1d():
+    """pdf of some marginal quantity f(x)"""
+
+    def __init__(self, bins, total_steps, f):
+        self.bins, self.total_steps = bins, total_steps
+        self.count = np.zeros(len(bins) + 1)
+        self.f = f
+        self.step_count = 0
+
+    def which_bin(self, x):
+
+        for i in range(len(self.bins)):
+            if x > self.bins[i][0] and x < self.bins[i][1]:
+                return i
+
+        return len(self.bins)  # if it is not in any of the bins
+
+    def update(self, x, w):
+        self.count[self.which_bin(self.f(x))] += w
+        self.step_count += 1
+        return self.step_count < self.total_steps
+
+
+    def results(self):
+        return self.count

@@ -47,6 +47,7 @@ def run_collect(f, runs, working_folder, name_results):
     comm.Barrier()
 
     def ff(i):
+        #np.save(working_folder + str(i) + '.npy', f(i, *args))
         np.save(working_folder + str(i) + '.npy', f(i))
 
     run_void(ff, runs)

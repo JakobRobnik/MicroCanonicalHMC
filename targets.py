@@ -28,7 +28,7 @@ class IllConditionedGaussian():
 
     def __init__(self, d, condition_number):
         self.d = d
-        self.variance = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
+        self.variance = np.logspace(-np.log10(np.sqrt(condition_number)), np.log10(np.sqrt(condition_number)), d)
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -42,8 +42,46 @@ class IllConditionedGaussian():
         return np.random.normal(size = (num_samples, self.d)) * np.sqrt(self.variance)
 
 
-
 class BiModal():
+
+    def __init__(self, d, mu, sigma, f):
+
+        self.d = d
+
+        #properties of the second gaussian
+        self.mu = np.insert(np.zeros(d-1), 0, mu)
+        self.sigma = sigma
+        self.f = f
+
+
+    def nlogp(self, x):
+        """- log p of the target distribution"""
+
+        N1 = np.exp(-0.5 * np.sum(np.square(x))) * (1 - self.f)
+        N2 = np.exp(-0.5 * np.sum(np.square(x - self.mu)) /self.sigma**2) * self.f / self.sigma**self.d
+
+        return -np.log(N1 + N2)
+
+
+    def grad_nlogp(self, x):
+        N1 = np.exp(-0.5 * np.sum(np.square(x))) * (1 - self.f)
+        N2 = np.exp(-0.5 * np.sum(np.square(x - self.mu)) / self.sigma ** 2) * self.f / self.sigma ** self.d
+
+        return (N1 * x + N2 * (x - self.mu) / self.sigma**2) / (N1 + N2)
+
+
+    def draw(self, num_samples):
+        """direct sampler from a target"""
+        X = np.random.normal(size = (num_samples, self.d))
+        mask = np.random.uniform(0, 1, num_samples) < self.f
+        X[mask] = (X[mask] * self.sigma) + self.mu
+
+        return X
+
+
+
+
+class BiModalEqual():
     """Mixture of two Gaussians, one centered at x = [mu/2, 0, 0, ...], the other at x = [-mu/2, 0, 0, ...]"""
 
     def __init__(self, d, mu):
@@ -66,11 +104,12 @@ class BiModal():
     def draw(self, num_samples):
         """direct sampler from a target"""
         X = np.random.normal(size = (num_samples, self.d))
-        mask = np.random.uniform(num_samples) < 0.5
+        mask = np.random.uniform(0, 1, num_samples) < 0.5
         X[mask, 0] += 0.5*self.mu
         X[~mask, 0] -= 0.5 * self.mu
 
         return X
+
 
 
 
@@ -114,7 +153,10 @@ class Rosenbrock():
     def __init__(self, d):
 
         self.d = d
-        self.Q = 0.1
+        #self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #the second one is computed numerically (see compute_variance below)
+        self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
+        self.variance = np.concatenate((var_x * np.ones(d//2), var_y * np.ones(d//2)))
+
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -136,6 +178,17 @@ class Rosenbrock():
         return X
 
 
+    def compute_variance(self):
+        num = 100000000
+        x = np.random.normal(loc=1.0, scale=1.0, size=num)
+        y = np.random.normal(loc=np.square(x), scale=np.sqrt(self.Q), size=num)
+
+        var_x = np.sum(np.square(x)) / (num - 1)
+        var_y = np.sum(np.square(y)) / (num - 1)
+        print(var_x, var_y)
+
+
+
 
 def check_gradient(target, x):
     """check the analytical gradient of the target at point x"""
@@ -154,20 +207,14 @@ def check_gradient(target, x):
 
 
 if __name__ == '__main__':
+    target= Rosenbrock(d = 2)
+    X = target.draw(10000)
+    import matplotlib.pyplot as plt
+    plt.plot(X[:, 0], X[:, 1], '.')
+    plt.show()
+    #target.compute_variance()
     # d = 36
-    # target = Rosenbrock(d= d)
+    # target = BiModal(d, 3, 0.1, 0.2)
     # check_gradient(target, np.random.normal(size = d))
 
-    target = Funnel(d = 2)
 
-    z0, theta = np.linspace(-20, 20, 100), np.linspace(-8, 15, 100)
-
-    Z0, Theta = np.meshgrid(z0, theta)
-    logp = np.array([[-target.nlogp(np.array([z0[i], theta[j]])) for i in range(len(z0))] for j in range(len(Theta))])
-    cutoff = -20.0
-    logp[logp< cutoff] = cutoff
-    import matplotlib.pyplot as plt
-    plt.contourf(Z0, Theta, logp, levels= 20)#, levels = [0, 1, 10, 100, 1000])
-    plt.colorbar()
-    #plt.savefig('funnel_2d_logp.png')
-    plt.show()
