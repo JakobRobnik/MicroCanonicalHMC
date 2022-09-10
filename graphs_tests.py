@@ -65,7 +65,7 @@ def ess_free_time():
     length = []
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 2, 1)
-    extra_word = 'Rosenbrock'
+    extra_word = 't'
     factor = 1.0 #Leapfrog
     #factor = 0.25 #Yoshida
     for i in range(len(dimensions)):
@@ -96,7 +96,6 @@ def ess_free_time():
     plt.yscale('log')
     plt.savefig('Tests/bounce_dimension_dependence'+extra_word+'.png')
     plt.show()
-
 
 
 

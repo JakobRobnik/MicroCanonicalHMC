@@ -31,14 +31,17 @@ import bias
 def compute_free_time(n, d):
 
     # free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
-    length = (3.6 * np.sqrt(d) * np.logspace(-0.4, 0.4, 12))[n]
+    length = (1.5 * np.sqrt(d) * np.logspace(-0.4, 0.4, 12))[n]
 
     #sampler = CTV.Sampler(Target = IllConditionedGaussian(d= d, condition_number=100), eps= 3)
-    sampler = ESH.Sampler(Target= Rosenbrock(d= d), eps= 0.5)
+    sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
+    #sampler = ESH.Sampler(Target= Rosenbrock(d= d), eps= 0.5)
 
     x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-
-    ess = sampler.sample(x0, length)
+    #energy = -0.5 * d * np.log(d) + sampler.Target.nlogp(x0)
+    w_typical_set= np.exp(-0.5 + sampler.Target.nlogp(x0) / d) / d
+    time = w_typical_set * length
+    ess = sampler.sample(x0, time)
 
     return [ess, length, sampler.eps, d]
 
@@ -223,14 +226,19 @@ def inference_gym(n):
     return [ess1, ess2, ess3, time_bounce, eps, d]
 
 
+def dimension_dependence():
+
+    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
+    name_folder= 'StandardNormal_t'
+    for d in dimensions:
+        parallel.run_collect(lambda n: compute_free_time(n, d), runs= 2, working_folder= 'working/', name_results= 'Tests/data/dimensions/'+name_folder+'/'+str(d))
+
+
+
 if __name__ == '__main__':
 
     #funnel()
     #parallel run:
     #parallel.run_collect(inference_gym, runs=2, working_folder='working/', name_results='Tests/data/inference_gym')
 
-    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
-
-    for d in dimensions:
-        parallel.run_collect(lambda n: compute_free_time(n, d), runs= 2, working_folder= 'working/', name_results= 'Tests/data/dimensions/'+str(d) + 'Rosenbrock')
-
+    dimension_dependence()

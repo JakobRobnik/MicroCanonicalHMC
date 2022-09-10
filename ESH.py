@@ -88,7 +88,7 @@ class Sampler:
     #            bias.ess_cutoff_crossing(b_lower_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging)
 
 
-    def sample(self, x0, time_bounce, max_steps = 1000000):
+    def sample(self, x0, time_bounce, max_steps= 1000000):
 
         """Determines the effective sample size by monitoring the bias in the estimated variance.
             Args:
@@ -107,8 +107,8 @@ class Sampler:
         u = - g / np.sqrt(np.sum(np.square(g))) #initialize momentum in the direction of the gradient of log p
 
         ### bounce program ###
-        bounce_tracker= Rescaled_time_bounces(self.eps, time_bounce)
-        #bounce_tracker = rescaled_time_bounces(self.eps, time_bounce, self.Target)
+        #bounce_tracker= Rescaled_time_bounces(self.eps, time_bounce)
+        bounce_tracker = Hamiltonian_time_bounces(x, time_bounce)
 
         ### quantities to track (to save memory we do not store full x(t) ###
         tracker= Ess(x, w, self.Target.variance)
@@ -128,7 +128,7 @@ class Sampler:
             if tracker.update(x, w): #update tracker
                 return tracker.results()
 
-            if bounce_tracker.update(x): #perhaps do a bounce
+            if bounce_tracker.update(x, w): #perhaps do a bounce
                 u = self.random_unit_vector()
 
 
@@ -169,30 +169,29 @@ class Rescaled_time_bounces():
         self.num_steps = 0
         self.max_steps = (int)(tau_max / eps)
 
-    def update(self, x):
+    def update(self, x, w):
         self.num_steps += 1
 
         if self.num_steps < self.max_steps:
-            return False
+            return False #don't do a bounce
 
         else:
-            self.num_steps = 0
-            return True
+            self.num_steps = 0 #reset the bounce condition
+            return True #do a bounce
 
 
 class Hamiltonian_time_bounces():
 
-    def __init__(self, x, time_max, Target):
+    def __init__(self, x, time_max):
         self.x = x
-        self.Target = Target
         self.time = 0.0
-        self.max_steps = time_max
+        self.time_max = time_max
 
-    def update(self, x):
-        self.time += np.sqrt(np.sum(np.square(x - self.x))) * np.exp(- 2 * self.Target.nlogp / self.Target.d)
+    def update(self, x, w):
+        self.time += np.sqrt(np.sum(np.square(x - self.x))) * w
         self.x = x
 
-        if self.num_steps < self.max_steps:
+        if self.time < self.time_max:
             return False
 
         else:
