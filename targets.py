@@ -153,8 +153,8 @@ class Rosenbrock():
     def __init__(self, d):
 
         self.d = d
-        #self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #the second one is computed numerically (see compute_variance below)
-        self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
+        self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #the second one is computed numerically (see compute_variance below)
+        #self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
         self.variance = np.concatenate((var_x * np.ones(d//2), var_y * np.ones(d//2)))
 
 
@@ -188,6 +188,28 @@ class Rosenbrock():
         print(var_x, var_y)
 
 
+class DiagonalPreconditioned():
+    """A target instance which takes some other target and preconditions it"""
+
+    def __init__(self, Target, a):
+        """ Target: original target
+            a: scaling vector (sqrt(variance of x)), such that x' = x / a"""
+
+        self.Target = Target
+        self.d= Target.d
+        self.a = a
+        self.variance = Target.variance / np.square(a)
+
+    def nlogp(self, x):
+        return self.Target.nlogp(self.a * x)
+
+    def grad_nlogp(self, x):
+        return self.Target.grad_nlogp(self.a * x) * self.a
+
+    def draw(self, num):
+        return self.Target.draw(num) / self.a
+
+
 
 
 def check_gradient(target, x):
@@ -207,11 +229,9 @@ def check_gradient(target, x):
 
 
 if __name__ == '__main__':
-    target= Rosenbrock(d = 2)
-    X = target.draw(10000)
-    import matplotlib.pyplot as plt
-    plt.plot(X[:, 0], X[:, 1], '.')
-    plt.show()
+
+    d = 10
+
     #target.compute_variance()
     # d = 36
     # target = BiModal(d, 3, 0.1, 0.2)

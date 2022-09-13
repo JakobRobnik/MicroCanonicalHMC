@@ -60,33 +60,40 @@ def inference_gym():
 
 def ess_free_time():
 
-    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
+    dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
 
-    length = []
+    E, L = [], []
     plt.figure(figsize=(15, 5))
-    plt.subplot(1, 2, 1)
-    extra_word = 't'
+    plt.subplot(1, 3, 1)
+    folder_name = 'StandardNormal_t'
+    #folder_name = 'Rosenbrock_precondition_t'
     factor = 1.0 #Leapfrog
     #factor = 0.25 #Yoshida
     for i in range(len(dimensions)):
         d = dimensions[i]
-        X = np.load('Tests/data/dimensions/'+str(d)+extra_word+'.npy')
+        X = np.load('Tests/data/dimensions/'+folder_name+'/'+str(d)+'.npy')
+        print(X)
+        #peak
         plt.plot(X[:, 1], factor*X[:, 0], color = tab_colors[i], alpha= 0.5)
-        imax= np.argmax(factor*X[:, 0])
-        length.append(X[imax, 1])
-        plt.plot(X[imax, 1], factor*X[imax, 0], '.', color = tab_colors[i])
-        plt.text(X[imax, 1] * 1.05, factor*X[imax, 0]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5)
 
-    #plt.legend()
+        #highest point
+        imax= np.argmax(factor*X[:, 0])
+        L.append(X[imax, 1])
+        E.append(X[imax, 0])
+        plt.plot(X[imax, 1], factor*X[imax, 0], '.', color = tab_colors[i])
+        plt.text(X[imax, 1] * 1.05, factor*X[imax, 0]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5) #dimension tag
+
+
     plt.ylabel('ESS')
     plt.xscale('log')
     plt.xlabel("orbit length between bounces")
 
-    plt.subplot(1, 2, 2)
+    ###  L ~ sqrt(d)  ###
+    plt.subplot(1, 3, 2)
     for i in range(len(dimensions)):
-        plt.plot(dimensions[i], length[i], 'o', color = tab_colors[i])
+        plt.plot(dimensions[i], L[i], 'o', color = tab_colors[i])
 
-    slope= np.dot(np.sqrt(dimensions[1:]), length[1:]) / np.sum(dimensions[1:])
+    slope= np.dot(np.sqrt(dimensions[1:]), L[1:]) / np.sum(dimensions[1:])
     print(slope)
     plt.title(r'$L \approx$' +'{0:.4}'.format(slope) + r' $\sqrt{d}$')
     plt.plot(dimensions, slope * np.sqrt(dimensions), ':', color = 'black')
@@ -94,7 +101,27 @@ def ess_free_time():
     plt.ylabel('optimal orbit length between bounces')
     plt.xscale('log')
     plt.yscale('log')
-    plt.savefig('Tests/bounce_dimension_dependence'+extra_word+'.png')
+
+
+    #ESS(d)
+    plt.subplot(1, 3, 3)
+
+    for i in range(len(dimensions)):
+        plt.plot(dimensions[i], E[i], 'o', color= tab_colors[i])
+
+    from scipy.stats import linregress
+
+    res = linregress(np.log(dimensions), np.log(E))
+
+
+    plt.title(r'$L \propto d^{-\alpha}, \quad \alpha = $' + '{0}'.format(np.round(-res.slope, 2)))
+    plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), ':', color='black')
+    plt.xlabel('d')
+    plt.ylabel('ESS')
+    plt.xscale('log')
+    plt.yscale('log')
+
+    #plt.savefig('Tests/bounce_dimension_dependence/'+folder_name+'.png')
     plt.show()
 
 
@@ -319,13 +346,16 @@ def plot_funnel():
     data = np.load('Tests/data/funnel_HMC.npz')
     zHMC, thetaHMC = data['z'], data['theta']
 
-    plt.figure(figsize=(10, 10))
 
+    ff, ff_title, ff_ticks = 18, 20, 14
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(24, 8))
 
 
     ####   2d marginal in the original coordinates ####
-    plt.subplot(2, 2, 1)
-    plt.title('Original coordinates')
+    plt.subplot(1, 3, 1)
+    plt.title('Original coordinates', fontsize = ff_title)
     plt.plot(zHMC[:, 0], thetaHMC, '.', ms= 1, color = 'tab:orange', label = 'NUTS')
 
     #plt.hist2d(z[:, 0], theta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-30, 30], [-8, 8]], label ='MCHMC')
@@ -333,18 +363,18 @@ def plot_funnel():
     #plt.hist2d(z[:, 0], theta, weights= w, bins = 100, density=True, label = 'MCHMC')
     plt.xlim(-30, 30)
     plt.ylim(-8, 8)
-    plt.xlabel(r'$z_0$')
-    plt.ylabel(r'$\theta$')
+    plt.xlabel(r'$z_0$', fontsize = ff)
+    plt.ylabel(r'$\theta$', fontsize = ff)
 
 
 
     #### 2d marginal in the gaussianized coordinates ####
-    plt.subplot(2, 2, 2)
-    plt.title('Gaussianized coordinates')
+    plt.subplot(1, 3, 2)
+    plt.title('Gaussianized coordinates', fontsize = ff_title)
     Gz, Gtheta = gaussianize(z, theta)
     plt.hist2d(Gz[:, 0], Gtheta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-3, 3], [-3, 3]], label ='MCHMC')
     GzHMC, GthetaHMC = gaussianize(zHMC, thetaHMC)
-    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 2, color = 'tab:orange', alpha = 0.5, label ='NUTS')
+    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 4, color = 'tab:orange', alpha = 0.5, label ='NUTS')
 
     #level sets
     p_level = np.array([0.6827, 0.9545])
@@ -353,16 +383,16 @@ def plot_funnel():
     for i in range(2):
         plt.plot(x_level[i] * np.cos(phi), x_level[i] * np.sin(phi), color = 'black', alpha= ([1, 0.5])[i])
 
-    plt.xlabel(r'$\widetilde{z_0}$')
-    plt.ylabel(r'$\widetilde{\theta}$')
+    plt.xlabel(r'$\widetilde{z_0}$', fontsize = ff)
+    plt.ylabel(r'$\widetilde{\theta}$', fontsize = ff)
     plt.xlim(-3, 3)
     plt.ylim(-3, 3)
 
 
 
     #### 1d theta marginal####
-    plt.subplot(2, 2, 3)
-    plt.title(r'$\theta$-marginal')
+    plt.subplot(1, 3, 3)
+    plt.title(r'$\theta$-marginal', fontsize = ff_title)
     plt.hist(thetaHMC, color='tab:orange', density=True, bins = 20, alpha = 0.5, label = 'NUTS')
     plt.hist(theta, weights= w, color='tab:blue', density=True, bins = 20, alpha = 0.5,  label = 'MCHMC')
 
@@ -373,13 +403,12 @@ def plot_funnel():
     #plt.xlim(-xmax, xmax)
     #plt.ylim(0, 1)
 
-    plt.legend()
-    plt.xlabel(r'$\theta$')
-    plt.ylabel('CDF')
-    plt.savefig('Tests/funnel.png')
+    plt.legend(fontsize = ff)
+    plt.xlabel(r'$\theta$', fontsize = ff)
+    plt.ylabel(r'$p(\theta)$', fontsize = ff)
+    plt.savefig('submission/funnel.pdf')
 
     plt.show()
-
 
 
 
@@ -390,8 +419,11 @@ def plot_rosenbrock():
 
     xmin, xmax, ymin, ymax = -2.3, 3.9, -2, 16
 
+    #ff_ticks =
+    #plt.rcParams['xtick.labelsize'] = ff_ticks
+    #plt.rcParams['ytick.labelsize'] = ff_ticks
     plot = sns.JointGrid(height=10, xlim=(xmin, xmax), ylim=(ymin, ymax))
-    ff = 16
+    ff = 20
 
     # MCHMC
     d = 36
@@ -411,7 +443,7 @@ def plot_rosenbrock():
     X= np.load('Tests/data/rosenbrock_HMC.npz')
     x, y = X['x'][:, 0], X['y'][:, 0]
 
-    sns.scatterplot(x, y, s= 3, linewidth= 0, ax= plot.ax_joint, alpha = 0.5, color= 'tab:orange')
+    sns.scatterplot(x, y, s= 6, linewidth= 0, ax= plot.ax_joint, alpha = 0.7, color= 'tab:orange')
 
     # marginals
     sns.histplot(x=x, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:orange', zorder = 1)
@@ -424,21 +456,21 @@ def plot_rosenbrock():
     X = ros.draw(1000)
     x, y = X[:, 0], X[:, 1]
 
-    sns.scatterplot(x, y, s= 3, linewidth= 0, ax= plot.ax_joint, color= 'black', alpha = 0.5)
+    sns.scatterplot(x, y, s= 6, linewidth= 0, ax= plot.ax_joint, color= 'black', alpha = 0.5)
 
     # marginals
     sns.lineplot(x, np.exp(-0.5 * np.square(x - 1)) / np.sqrt(2 * np.pi), linewidth= 1, ax= plot.ax_marg_x, color= 'black', alpha = 0.5)
     ros = targets.Rosenbrock(d=2)
     X = ros.draw(5000000)
     x, y = X[:, 0], X[:, 1]
-    sns.histplot(y=y, bins= 2000, fill= False, element= 'step', linewidth= 1, ax= plot.ax_marg_y, stat= 'density', color= 'black', alpha = 0.5, label= 'exact samples')
+    sns.histplot(y=y, bins= 2000, fill= False, element= 'step', linewidth= 1, ax= plot.ax_marg_y, stat= 'density', color= 'black', alpha = 0.5, label= 'exact\nsamples')
 
 
-    plot.ax_marg_y.legend()
+    plot.ax_marg_y.legend(fontsize = ff)
 
     plot.set_axis_labels(r'$x_0$', r'$y_0$', fontsize= ff)
     plt.tight_layout()
-    plt.savefig('Tests/rosenbrock.png')
+    plt.savefig('submission/rosenbrock.pdf')
     plt.show()
 
 
@@ -461,8 +493,8 @@ def funnel_debug():
     plt.show()
 
 
-ess_free_time()
-
+#ess_free_time()
+plot_rosenbrock()
 #plot_funnel()
 # d = 36
 # X = np.load('Tests/data/rosenbrock.npz')

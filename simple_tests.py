@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 from scipy.stats import norm
+import os
 
 import ESH
 import CTV
@@ -10,40 +11,41 @@ from targets import *
 import bias
 
 
-#
-# def compute_free_time(n):
-#     #free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
-#     free_steps_arr = [1, 10, 100, 1000]
-#
-#     d = 100
-#     free_steps = free_steps_arr[n]
-#     eps= 0.5
-#     sampler = ESH.Sampler(StandardNormal(d=d), eps= eps)
-#
-#
-#     x0 = sampler.Target.draw(1)[0] #we draw an initial condition from the target
-#
-#     ess = sampler.ess(x0, free_steps*eps)
-#
-#     return [ess, free_steps, eps, d]
 
-
-def compute_free_time(n, d):
+def bounce_frequency(n, d):
 
     # free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
-    length = (1.5 * np.sqrt(d) * np.logspace(-0.4, 0.4, 12))[n]
-
+    #length = (1 * np.sqrt(d) * np.logspace(-0.4, 0.4, 12))[n]
+    length = 1.5 * np.sqrt(d)
     #sampler = CTV.Sampler(Target = IllConditionedGaussian(d= d, condition_number=100), eps= 3)
     sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
+    #sampler = ESH.Sampler(Target= IllConditionedGaussian(d= d, condition_number= 100), eps=1.0)
     #sampler = ESH.Sampler(Target= Rosenbrock(d= d), eps= 0.5)
+    #a= np.sqrt(np.concatenate((np.ones(d//2) * 2.0, np.ones(d//2) * 10.498957879911487)))
+    #sampler = ESH.Sampler(Target= DiagonalPreconditioned(Rosenbrock(d= d), a), eps= 0.5)
+
 
     x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
     #energy = -0.5 * d * np.log(d) + sampler.Target.nlogp(x0)
     w_typical_set= np.exp(-0.5 + sampler.Target.nlogp(x0) / d) / d
-    time = w_typical_set * length
-    ess = sampler.sample(x0, time)
+    #time = w_typical_set * length
+    print(w_typical_set)
+    ess = sampler.sample(x0, length)
 
     return [ess, length, sampler.eps, d]
+
+
+
+def bounce_frequency_full_bias(n, d):
+
+    length = ([10, 50, 150, 500, 1000, 10000, 100000, 1000000])[n]
+
+    sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
+    np.random.seed(0)
+    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
+    bias = sampler.sample(x0, length)
+
+    return bias
 
 
 
@@ -62,34 +64,6 @@ def compute_eps(n):
 
 
 
-def compute_kappa(n):
-    kappa = np.logspace(0, 3, 18)[n]#([1, 10, 100, 1000])[n]
-    d = 100
-    eps, free_time = 1, 16
-    esh = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
-    np.random.seed(0)
-    x0 = esh.Target.draw(1)[0]
-
-    ess = esh.ess(x0, free_time)
-
-    return [ess, free_steps, eps, d, kappa]
-
-
-def compute_dimension(n):
-    d = ([2, 3, 5, 10])[n]  # ([1, 10, 100, 1000])[n]
-
-    eps, free_steps = 1.0, 16
-    esh = ESH.Sampler(Target= StandardNormal(d=d), eps=eps)
-    np.random.seed(0)
-    num_averaging = 10
-    x0 = esh.Target.draw(num_averaging)
-
-    ess, ess_upper, ess_lower = esh.ess_with_averaging(x0, free_steps)
-
-    return [ess, ess_upper, ess_lower, free_steps, eps, d]
-
-
-
 def compute_energy(n):
     eps_arr = [0.05, 0.1, 0.5, 1, 2]
     eps = eps_arr[n]
@@ -104,7 +78,7 @@ def compute_energy(n):
 
 
 
-def compute_mode_mixing(n):
+def bimodal_mixing(n):
     mu = np.arange(1, 9)[n]
 
     eps, free_steps = 1.0, 16
@@ -117,6 +91,19 @@ def compute_mode_mixing(n):
     sys.stdout.flush()
 
     return [avg_island_size, free_steps, eps, d, mu]
+
+
+def ill_conditioned(n):
+    kappa = np.logspace(0, 3, 18)[n]#([1, 10, 100, 1000])[n]
+    d = 100
+    eps, free_time = 1, 16
+    esh = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
+    np.random.seed(0)
+    x0 = esh.Target.draw(1)[0]
+
+    ess = esh.ess(x0, free_time)
+
+    return [ess, free_steps, eps, d, kappa]
 
 
 
@@ -200,38 +187,18 @@ def bimodal():
     #samples, w = esh.sample(x0, free_steps, 10000000)
 
 
-def inference_gym(n):
-
-    d = 50
-    #time_bounce = 2 * np.pi * 0.26 * np.sqrt(d)
-    time_bounce = (2 * np.pi * 0.26 * np.sqrt(d) * np.logspace(-0.4, 0.4, 12))[n]
-    eps = 0.5
-
-    # standard Gaussian
-    sampler = ESH.Sampler(StandardNormal(d=d), eps=eps)
-    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    ess1 = sampler.sample(x0, time_bounce)
-
-    # ill-conditioned Gaussian
-    sampler = ESH.Sampler(IllConditionedGaussian(d=d, condition_number= 100), eps=eps)
-    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    ess2 = sampler.sample(x0, time_bounce)
-
-    # Rosenbrock
-    sampler = ESH.Sampler(Rosenbrock(d=d), eps=eps)
-    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    ess3 = sampler.sample(x0, time_bounce)
-
-
-    return [ess1, ess2, ess3, time_bounce, eps, d]
-
 
 def dimension_dependence():
 
     dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
-    name_folder= 'StandardNormal_t'
+    #dimensions = [3000, 10000]
+
+    name_folder= 'Tests/data/dimensions/Rosenbrock_precondition_t'
+    if not os.path.exists(name_folder):
+        os.mkdir(name_folder)
+
     for d in dimensions:
-        parallel.run_collect(lambda n: compute_free_time(n, d), runs= 2, working_folder= 'working/', name_results= 'Tests/data/dimensions/'+name_folder+'/'+str(d))
+        parallel.run_collect(lambda n: compute_free_time(n, d), runs= 2, working_folder= 'working/', name_results= name_folder+'/'+str(d))
 
 
 
@@ -240,5 +207,8 @@ if __name__ == '__main__':
     #funnel()
     #parallel run:
     #parallel.run_collect(inference_gym, runs=2, working_folder='working/', name_results='Tests/data/inference_gym')
+    #compute_free_time(0, 100)
 
-    dimension_dependence()
+    parallel.run_collect(lambda n: bounce_frequency(n, 200), runs=2, working_folder='working/', name_results= 'Tests/data/bounces')
+
+    #dimension_dependence()

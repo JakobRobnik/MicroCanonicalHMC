@@ -107,17 +107,19 @@ class Sampler:
         u = - g / np.sqrt(np.sum(np.square(g))) #initialize momentum in the direction of the gradient of log p
 
         ### bounce program ###
-        #bounce_tracker= Rescaled_time_bounces(self.eps, time_bounce)
-        bounce_tracker = Hamiltonian_time_bounces(x, time_bounce)
+        bounce_tracker= Rescaled_time_bounces(self.eps, time_bounce)
+        #bounce_tracker = Hamiltonian_time_bounces(self.eps, time_bounce)
 
         ### quantities to track (to save memory we do not store full x(t) ###
-        tracker= Ess(x, w, self.Target.variance)
+        #tracker= Ess(x, w, self.Target.variance)
+        tracker = Bias(x, w, self.Target.variance, max_steps)
+
         #tracker= Full_trajectory(x, w, max_steps?)
         #tracker= Mode_mixing(x)
         #tracker= Marginal_1d(bins, num_steps, lambda x: x[0])
 
         num_steps = 0
-
+        #time = []
         while num_steps < max_steps:
 
             #do a step
@@ -126,9 +128,13 @@ class Sampler:
             num_steps += 1
             
             if tracker.update(x, w): #update tracker
+                #print(np.median(time) / time_bounce, np.average(time)/ time_bounce, np.std(time)/ time_bounce)
                 return tracker.results()
 
-            if bounce_tracker.update(x, w): #perhaps do a bounce
+            do_bounce = bounce_tracker.update(w)
+
+            if do_bounce:
+                #time.append(T)
                 u = self.random_unit_vector()
 
 
@@ -167,29 +173,34 @@ class Rescaled_time_bounces():
 
     def __init__(self, eps, tau_max):
         self.num_steps = 0
+        self.eps = eps
         self.max_steps = (int)(tau_max / eps)
+        #self.time = 0.0
 
-    def update(self, x, w):
+    def update(self, w):
         self.num_steps += 1
+        #self.time += self.eps * w
 
         if self.num_steps < self.max_steps:
-            return False #don't do a bounce
+            return False#, self.time #don't do a bounce
 
         else:
             self.num_steps = 0 #reset the bounce condition
-            return True #do a bounce
+            #T = self.time
+            #self.time = 0.0
+            return True#, T #do a bounce
 
 
 class Hamiltonian_time_bounces():
 
-    def __init__(self, x, time_max):
-        self.x = x
+    def __init__(self, eps, time_max):
+        self.eps = eps
         self.time = 0.0
         self.time_max = time_max
 
-    def update(self, x, w):
-        self.time += np.sqrt(np.sum(np.square(x - self.x))) * w
-        self.x = x
+
+    def update(self, w):
+        self.time += self.eps * w
 
         if self.time < self.time_max:
             return False
@@ -249,6 +260,33 @@ class Ess():
 
     def results(self):
         return 200.0 / self.num_steps #ess
+
+
+
+class Bias():
+    """Variance bias"""
+
+    def __init__(self, x, w, variance, num_max):
+        self.variance = variance
+        self.F = np.square(x)  # <f(x)> estimate after one step, in this case f(x) = x^2
+        self.W = w  # sum of weights
+        self.bias = np.empty(num_max)
+        self.bias[0] = np.sqrt(np.average(np.square((self.F - self.variance) / self.variance)))
+        self.num_steps = 0
+        self.num_max = num_max
+
+    def update(self, x, w):
+        self.F = (self.F + (w * np.square(x) / self.W)) / (1 + (w / self.W))  # Update <f(x)> with a Kalman filter
+        self.W += w
+        self.num_steps += 1
+
+        self.bias[self.num_steps] = np.sqrt(np.average(np.square((self.F - self.variance) / self.variance)))
+
+        return self.num_steps == self.num_max - 1
+
+
+    def results(self):
+        return self.bias #ess
 
 
 
