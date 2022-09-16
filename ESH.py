@@ -1,5 +1,7 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import bias
+
 
 
 
@@ -88,7 +90,7 @@ class Sampler:
     #            bias.ess_cutoff_crossing(b_lower_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging)
 
 
-    def sample(self, x0, time_bounce, max_steps= 1000000):
+    def sample(self, x0, bounce_length, max_steps= 1000000, prerun_steps= 0):
 
         """Determines the effective sample size by monitoring the bias in the estimated variance.
             Args:
@@ -106,17 +108,55 @@ class Sampler:
         w = np.exp(r) / self.Target.d
         u = - g / np.sqrt(np.sum(np.square(g))) #initialize momentum in the direction of the gradient of log p
 
+
         ### bounce program ###
-        bounce_tracker= Rescaled_time_bounces(self.eps, time_bounce)
-        #bounce_tracker = Hamiltonian_time_bounces(self.eps, time_bounce)
+
+        if prerun_steps != 0:
+            bounce_tracker= Distance_equally_spaced(self.eps, bounce_length)
+            W = 0.0
+            num_steps = 0
+
+            while num_steps < prerun_steps:
+
+                # do a step
+                x, u, g, r = self.step(x, u, g, r)
+                w = np.exp(r) / self.Target.d
+                W += w
+                num_steps += 1
+
+                if bounce_tracker.update(w):
+                    u = self.random_unit_vector()
+
+            w_typical_set = W / prerun_steps
+            bounce_time = bounce_length * w_typical_set
+            bounce_tracker = Time_equally_spaced(self.eps, bounce_time)
+
+            #initialize again
+            x = x0
+            g = self.Target.grad_nlogp(x0)
+            r = 0.0
+            w = np.exp(r) / self.Target.d
+            u = - g / np.sqrt(np.sum(np.square(g)))  # initialize momentum in the direction of the gradient of log p
+
+
+        else:
+            bounce_tracker= Distance_equally_spaced(self.eps, bounce_length)
+
+            #the target must be preconditioned and normalized and even then this is only an approximation
+            # w_typical_set = np.exp(-0.5 + self.Target.nlogp(x0) / self.Target.d) / self.Target.d
+            # bounce_time = bounce_length * w_typical_set
+            # bounce_tracker = Time_equally_spaced(self.eps, bounce_time)
+
+
 
         ### quantities to track (to save memory we do not store full x(t) ###
-        #tracker= Ess(x, w, self.Target.variance)
-        tracker = Bias(x, w, self.Target.variance, max_steps)
+        tracker= Ess(x, w, self.Target.variance, self.Target.gaussianize if self.Target.gaussianization_available else (lambda x: x))
+        #tracker = Bias(x, w, self.Target.variance, max_steps, self.Target.gaussianize if self.Target.gaussianization_available else (lambda x: x))
 
         #tracker= Full_trajectory(x, w, max_steps?)
         #tracker= Mode_mixing(x)
         #tracker= Marginal_1d(bins, num_steps, lambda x: x[0])
+
 
         num_steps = 0
         #time = []
@@ -128,18 +168,56 @@ class Sampler:
             num_steps += 1
             
             if tracker.update(x, w): #update tracker
-                #print(np.median(time) / time_bounce, np.average(time)/ time_bounce, np.std(time)/ time_bounce)
                 return tracker.results()
 
-            do_bounce = bounce_tracker.update(w)
-
-            if do_bounce:
-                #time.append(T)
+            if bounce_tracker.update(w):
                 u = self.random_unit_vector()
 
 
         print('Maximum number of steps exceeded')
         return tracker.results()
+
+
+    def fine_tune(self, show):
+        np.random.seed(0)
+        L = np.array([3, 5, 7 ])
+        epsilon = np.array([0.5, 0.7, 1.0])
+        max_steps = 50000
+
+        x0 = self.Target.draw(1)[0]  # we draw an initial condition from the target
+        ess = np.empty((len(L), len(epsilon)))
+
+
+        for i in range(len(L)):
+            for j in range(len(epsilon)):
+                self.eps = epsilon[j]
+                length = L[i] * np.sqrt(self.Target.d)
+                print(L[i], self.eps)
+                ess[i, j] = 2.0 / (self.sample(x0, length, max_steps=max_steps, prerun_steps=500)[-1]**2 * max_steps)
+
+
+        I = np.argmax(ess)
+        eps_best = epsilon[I % (len(epsilon))]
+        L_best = L[I // len(epsilon)]
+        ess_best = np.max(ess)
+
+        if show:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            cax = ax.matshow(ess)
+            fig.colorbar(cax)
+            plt.title(r'ESS = {0} (with optimal L = {1}, $\epsilon$ = {2})'.format(ess_best, *np.round([L_best, eps_best], 2)))
+
+            ax.set_xticklabels([''] + [str(e) for e in epsilon])
+            ax.set_yticklabels([''] + [str(l) for l in L])
+            ax.xaxis.set_label_position('top')
+            ax.set_xlabel(r"$\epsilon$")
+            ax.set_ylabel("L")
+            ax.invert_yaxis()
+
+            plt.show()
+
+        return ess_best, L_best, eps_best
 
 
 
@@ -169,29 +247,27 @@ class Sampler:
 
 ### bounce trackers ###
 
-class Rescaled_time_bounces():
+class Distance_equally_spaced():
+    """the bounces occur equally spaced in the distance travelled"""
 
     def __init__(self, eps, tau_max):
         self.num_steps = 0
         self.eps = eps
         self.max_steps = (int)(tau_max / eps)
-        #self.time = 0.0
 
     def update(self, w):
         self.num_steps += 1
-        #self.time += self.eps * w
 
         if self.num_steps < self.max_steps:
-            return False#, self.time #don't do a bounce
+            return False #don't do a bounce
 
         else:
             self.num_steps = 0 #reset the bounce condition
-            #T = self.time
-            #self.time = 0.0
-            return True#, T #do a bounce
+            return True #do a bounce
 
 
-class Hamiltonian_time_bounces():
+class Time_equally_spaced():
+    """the bounces occur equally spaced in the time passed"""
 
     def __init__(self, eps, time_max):
         self.eps = eps
@@ -211,7 +287,7 @@ class Hamiltonian_time_bounces():
 
 
 
-### quantities to keep during sampling ###
+### quantities to keep track of during sampling ###
 
 class Full_trajectory():
     """Stores x(t). Contains all the information but can be memory intensive."""
@@ -240,16 +316,17 @@ class Full_trajectory():
 class Ess():
     """effective sample size computed from the bias"""
 
-    def __init__(self, x, w, variance):
+    def __init__(self, x, w, variance, gaussianization):
+        self.gaussianization = gaussianization
         self.variance = variance
-        self.F = np.square(x)  # <f(x)> estimate after one step, in this case f(x) = x^2
+        self.F = np.square(gaussianization(x))  # <f(x)> estimate after one step, in this case f(x) = x^2
         self.W = w  # sum of weights
         self.bias = np.sqrt(np.average(np.square((self.F - self.variance) / self.variance)))
         self.num_steps = 0
 
 
     def update(self, x, w):
-        self.F = (self.F + (w * np.square(x) / self.W)) / (1 + (w / self.W))  # Update <f(x)> with a Kalman filter
+        self.F = (self.F + (w * np.square(self.gaussianization(x)) / self.W)) / (1 + (w / self.W))  # Update <f(x)> with a Kalman filter
         self.W += w
         self.num_steps += 1
 
@@ -266,9 +343,10 @@ class Ess():
 class Bias():
     """Variance bias"""
 
-    def __init__(self, x, w, variance, num_max):
-        self.variance = variance
-        self.F = np.square(x)  # <f(x)> estimate after one step, in this case f(x) = x^2
+    def __init__(self, x, w, variance, num_max, gaussianization):
+        self.variance = variance #defined in the gaussianized coordinates
+        self.gaussianization = gaussianization
+        self.F = np.square(gaussianization(x))  # <f(x)> estimate after one step, in this case f(x) = x^2
         self.W = w  # sum of weights
         self.bias = np.empty(num_max)
         self.bias[0] = np.sqrt(np.average(np.square((self.F - self.variance) / self.variance)))
@@ -276,7 +354,7 @@ class Bias():
         self.num_max = num_max
 
     def update(self, x, w):
-        self.F = (self.F + (w * np.square(x) / self.W)) / (1 + (w / self.W))  # Update <f(x)> with a Kalman filter
+        self.F = (self.F + (w * np.square(self.gaussianization(x)) / self.W)) / (1 + (w / self.W))  # Update <f(x)> with a Kalman filter
         self.W += w
         self.num_steps += 1
 

@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import special_ortho_group
 
 from jax import random
 from numpyro.infer import MCMC, NUTS
@@ -12,8 +13,8 @@ def sample_nuts(target, target_params, num_samples, names_output = None):
     """ 'default' nuts, tunes the step size with a prerun"""
 
     # setup
-    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=False, dense_mass= False)  # originally: nuts_kernel
-    sampler = MCMC(nuts_setup, num_warmup=1000, num_samples=num_samples, num_chains=1, progress_bar=False)
+    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=True, dense_mass= False)  # originally: nuts_kernel
+    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=num_samples, num_chains=1, progress_bar=False)
     random_seed = random.PRNGKey(0)
 
     # run
@@ -33,72 +34,23 @@ def sample_nuts(target, target_params, num_samples, names_output = None):
 
 
 
-def funnel():
-
-    d= 20
-    thinning= 5
-    num_samples= 1000*thinning
-    stepsize= 0.01
-
-    # setup
-    nuts_setup = NUTS(targets.funnel_noiseless, adapt_step_size=False, adapt_mass_matrix=False, step_size= stepsize)
-    sampler = MCMC(nuts_setup, num_warmup=0, num_samples=num_samples, num_chains=1, progress_bar=True, thinning= thinning)
-
-    random_seed = random.PRNGKey(0)
-
-    # run
-    sampler.run(random_seed, d, extra_fields=['num_steps'])
-
-    # get results
-    numpyro_samples = sampler.get_samples()
-
-    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
-
-    np.savez('Tests/data/funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
-
-
-
-
-def rosenbrock():
-
-    d= 36
-    thinning= 5
-    num_samples= 1000*thinning
-    stepsize= 0.01
-
-    # setup
-    nuts_setup = NUTS(targets.rosenbrock, adapt_step_size=True, adapt_mass_matrix=True, step_size= stepsize)
-    sampler = MCMC(nuts_setup, num_warmup=1000, num_samples= num_samples, num_chains= 1, progress_bar= True, thinning= thinning)
-
-    # run
-    sampler.run(random.PRNGKey(0), d, extra_fields=['num_steps'])
-
-    # get results
-    numpyro_samples = sampler.get_samples()
-
-    #X = {name:  for name in ['x', 'y']}
-
-    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
-
-    np.savez('Tests/data/rosenbrock_HMC', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
-
-
-
 def ill_conditioned_gaussian():
+
+    d = 100
+    R = special_ortho_group.rvs(d, random_state=0)
 
 
     def f(condition_number, num_samples):
-        d = 100
+
         X, steps = sample_nuts(targets.ill_conditioned_gaussian, [d, condition_number], num_samples)
 
-        variance_true = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
-
-        ess, n_crossing = bias.ess_cutoff_crossing(bias.bias(X, np.ones(len(X)), variance_true), steps)
+        variance_true = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
+        ess, n_crossing = bias.ess_cutoff_crossing(bias.bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
 
         return ess, n_crossing
 
 
-    kappa_arr = np.logspace(0, 3, 12)
+    kappa_arr = np.logspace(0, 5, 18)
 
     ess_arr= np.zeros(len(kappa_arr))
     num_samples= 1000
@@ -112,8 +64,67 @@ def ill_conditioned_gaussian():
 
         num_samples = n_crossing * 5
 
-    np.save('Tests/data/kappa_NUTS_rotated.npy', np.concatenate((ess_arr, kappa_arr)).T)
+    np.save('Tests/data/kappa_NUTS.npy', [ess_arr, kappa_arr])
 
+
+
+def dimension_dependence():
+
+
+    def gauss(d, num_samples):
+        R = special_ortho_group.rvs(d, random_state=0)
+        kappa = 100.0
+        variance_true = np.logspace(-0.5*np.log10(kappa), 0.5*np.log10(kappa), d)
+
+        X, steps = sample_nuts(targets.ill_conditioned_gaussian, [d, kappa], num_samples)
+        X = (R @ X.T).T
+        B = bias.bias(X, np.ones(len(X)), variance_true)
+        ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+
+        return ess, n_crossing
+
+
+    def rosenbrock(d, num_samples):
+
+        Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
+        variance_true = np.concatenate((var_x * np.ones(d//2), var_y * np.ones(d//2)))
+
+        # setup
+        nuts_setup = NUTS(targets.rosenbrock, adapt_step_size=True, adapt_mass_matrix=True)
+        sampler = MCMC(nuts_setup, num_warmup=500, num_samples=num_samples, num_chains=1, progress_bar=False)
+
+        # run
+        sampler.run(random.PRNGKey(0), d, Q, extra_fields=['num_steps'])
+
+        # get results
+        numpyro_samples = sampler.get_samples()
+
+        steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+
+        X = np.concatenate((np.array(numpyro_samples['x']).T, np.array(numpyro_samples['y']).T)).T
+
+        B = bias.bias(X, np.ones(len(X)), variance_true)
+        ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+
+        return ess, n_crossing
+
+    dimensions = np.logspace(np.log10(50), 4, 18, dtype= int)
+
+    ess_arr= np.zeros(len(dimensions))
+    num_samples= 1000
+
+    for i in range(len(dimensions)):
+        print(i, num_samples)
+
+        ess, n_crossing = gauss(dimensions[i], num_samples)
+        #ess, n_crossing = rosenbrock(dimensions[i], num_samples)
+
+        ess_arr[i] = ess
+
+        num_samples = n_crossing * 5
+
+    np.save('Tests/data/dimensions/Kappa100_NUTS.npy', [ess_arr, dimensions])
+    #np.save('Tests/data/dimensions/Rosenbrock_NUTS.npy', [ess_arr, dimensions])
 
 
 
@@ -165,7 +176,85 @@ def bimodal():
 
 
 
+def funnel():
+
+    d= 20
+    #stepsize= 0.01
+
+    # setup
+    nuts_setup = NUTS(targets.funnel_noiseless, adapt_step_size=True, adapt_mass_matrix=False)
+    sampler = MCMC(nuts_setup, num_warmup=1000, num_samples=10000, num_chains=1, progress_bar=True)
+
+    random_seed = random.PRNGKey(0)
+
+    # run
+    sampler.run(random_seed, d, extra_fields=['num_steps'])
+
+    # get results
+    numpyro_samples = sampler.get_samples()
+
+    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+
+    z = np.array(numpyro_samples['z'])
+    theta = np.array(numpyro_samples['theta'])
+
+    def gaussianize(z, theta):
+        return (z.T * np.exp(-0.5 * theta)).T, theta / 3.0
+
+    Gz, Gtheta = gaussianize(z, theta)
+
+    X = np.empty((len(Gtheta), d))
+    X[:, :d-1] = Gz
+    X[:, -1]= Gtheta
+
+    B = bias.bias(X, np.ones(len(X)), np.ones(d))
+
+    ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+
+    print(ess)
+
+    #np.savez('Tests/data/funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
+
+
+
+
+def rosenbrock():
+
+    #target setup
+    d= 36
+    Q, var_x, var_y = 0.1, 2.0, 10.098433122783046
+    variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
+
+    # setup
+    nuts_setup = NUTS(targets.rosenbrock, adapt_step_size=True, adapt_mass_matrix=False)#, step_size= stepsize)
+    sampler = MCMC(nuts_setup, num_warmup= 1000, num_samples= 10000, num_chains= 1, progress_bar= True)
+
+    # run
+    sampler.run(random.PRNGKey(0), d, Q, extra_fields=['num_steps'])
+
+    # get results
+    numpyro_samples = sampler.get_samples()
+
+    #X = {name:  for name in ['x', 'y']}
+
+    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+
+
+    X = np.concatenate((np.array(numpyro_samples['x']).T, np.array(numpyro_samples['y']).T)).T
+
+    B = bias.bias(X, np.ones(len(X)), variance_true)
+
+    ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+
+    print(ess)
+
+    #np.savez('Tests/data/rosenbrock_HMC', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
+
+
+
 
 if __name__ == '__main__':
 
+    #funnel()
+    #dimension_dependence()
     ill_conditioned_gaussian()

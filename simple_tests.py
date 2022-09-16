@@ -12,38 +12,33 @@ import bias
 
 
 
-def bounce_frequency(n, d):
+def bounce_frequency(n, d, kappa = 100.0):
 
     # free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
-    #length = (1 * np.sqrt(d) * np.logspace(-0.4, 0.4, 12))[n]
-    length = 1.5 * np.sqrt(d)
+    length = (1.5 * np.sqrt(d) * np.logspace(-0.8, 0.8, 24))[n]
+    #length = 1.5 * np.sqrt(d)
     #sampler = CTV.Sampler(Target = IllConditionedGaussian(d= d, condition_number=100), eps= 3)
-    sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
-    #sampler = ESH.Sampler(Target= IllConditionedGaussian(d= d, condition_number= 100), eps=1.0)
+    #sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
+    sampler = ESH.Sampler(Target= IllConditionedGaussian(d= d, condition_number= kappa), eps=1.5)
     #sampler = ESH.Sampler(Target= Rosenbrock(d= d), eps= 0.5)
     #a= np.sqrt(np.concatenate((np.ones(d//2) * 2.0, np.ones(d//2) * 10.498957879911487)))
     #sampler = ESH.Sampler(Target= DiagonalPreconditioned(Rosenbrock(d= d), a), eps= 0.5)
 
-
     x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    #energy = -0.5 * d * np.log(d) + sampler.Target.nlogp(x0)
-    w_typical_set= np.exp(-0.5 + sampler.Target.nlogp(x0) / d) / d
-    #time = w_typical_set * length
-    print(w_typical_set)
-    ess = sampler.sample(x0, length)
+    ess = sampler.sample(x0, length, prerun_steps= 500)
 
     return [ess, length, sampler.eps, d]
 
 
 
 def bounce_frequency_full_bias(n, d):
+    length = [2, 5, 10, 30, 50, 75, 80, 90, 100, 1000, 10000, 10000000]
+    L = length[n]
 
-    length = ([10, 50, 150, 500, 1000, 10000, 100000, 1000000])[n]
-
-    sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
-    np.random.seed(0)
+    sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1)
+    np.random.seed(1)
     x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    bias = sampler.sample(x0, length)
+    bias = sampler.sample(x0, L)
 
     return bias
 
@@ -94,20 +89,20 @@ def bimodal_mixing(n):
 
 
 def ill_conditioned(n):
-    kappa = np.logspace(0, 3, 18)[n]#([1, 10, 100, 1000])[n]
+    kappa = np.logspace(0, 5, 18)[n]
     d = 100
-    eps, free_time = 1, 16
+    eps, L = 2.0, 1.0 * np.sqrt(d)
     esh = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
     np.random.seed(0)
     x0 = esh.Target.draw(1)[0]
 
-    ess = esh.ess(x0, free_time)
+    ess = esh.sample(x0, L, prerun_steps= 500)
 
-    return [ess, free_steps, eps, d, kappa]
+    return [ess, L, eps, d, kappa]
 
 
 
-def funnel():
+def funnel_plot():
 
     eps = 0.1
     free_time = 6
@@ -118,6 +113,16 @@ def funnel():
     x0 = np.zeros(d)
     samples, w = esh.sample(x0, free_steps, 5000000)
     np.savez('Tests/data/funnel_free'+str(free_time) + '_eps'+str(eps), z = samples[:, :-1], theta= samples[:, -1], w = w)
+
+
+def funnel_ess(n):
+    length = (1 * np.sqrt(d) * np.logspace(-0.4, 0.4, 12))[n]
+    sampler = ESH.Sampler(Target=Funnel(d =20), eps= 0.1)
+
+    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
+    ess = sampler.sample(x0, length, prerun_steps=500)
+
+    return [ess, length, sampler.eps, d]
 
 
 
@@ -190,25 +195,35 @@ def bimodal():
 
 def dimension_dependence():
 
+
     dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
     #dimensions = [3000, 10000]
 
-    name_folder= 'Tests/data/dimensions/Rosenbrock_precondition_t'
-    if not os.path.exists(name_folder):
-        os.mkdir(name_folder)
+    #condition_numbers = [1, 10, 100, 1000, 10000]
+    condition_numbers = np.logspace(0, 5, 18)
 
-    for d in dimensions:
-        parallel.run_collect(lambda n: compute_free_time(n, d), runs= 2, working_folder= 'working/', name_results= name_folder+'/'+str(d))
 
+    #name_folder= 'Tests/data/dimensions/Rosenbrock_t'
+    name_folder = 'Tests/data/kappa/'
+
+    # if not os.path.exists(name_folder):
+    #     os.mkdir(name_folder)
+
+    # for d in dimensions:
+    #     parallel.run_collect(lambda n: bounce_frequency(n, d), runs= 2, working_folder= 'working/', name_results= name_folder+'/'+str(d))
+    #
+    # for i in range(len(condition_numbers)):
+    #     parallel.run_collect(lambda n: bounce_frequency(n, 100, condition_numbers[i]), runs= 4, working_folder='working/', name_results=name_folder + '/' + str(i)+ 'eps0.7')
+
+    parallel.run_collect(lambda n: bounce_frequency(n, 100, condition_numbers[11]), runs=4, working_folder='working/', name_results=name_folder + '/' + str(11) + 'eps1.5')
 
 
 if __name__ == '__main__':
 
-    #funnel()
-    #parallel run:
-    #parallel.run_collect(inference_gym, runs=2, working_folder='working/', name_results='Tests/data/inference_gym')
-    #compute_free_time(0, 100)
+    #parallel.run_collect(lambda n: bounce_frequency_full_bias(n, 250), runs=2, working_folder='working/', name_results= 'Tests/data/bounces_eps1')
 
-    parallel.run_collect(lambda n: bounce_frequency(n, 200), runs=2, working_folder='working/', name_results= 'Tests/data/bounces')
 
-    #dimension_dependence()
+    #parallel.run_collect(lambda n: bounce_frequency(n, 32), runs=2, working_folder='working/', name_results= 'Tests/data/rosenbrock')
+    dimension_dependence()
+
+    #parallel.run_collect(ill_conditioned, runs=3, working_folder='working/', name_results= 'Tests/data/kappa/l1_eps2')

@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import norm
+from scipy.stats import linregress
 
 import ESH
 import targets
@@ -10,69 +11,78 @@ from bias import *
 tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
 
 
-def bias_bounce_frequency():
-    nn = [1, 10, 100, 1000, 10000, 100000]
-    d = 50
-    fig, ax = plt.subplots()
-
-    esh = ESH.Sampler(Target= targets.StandardNormal(d=d), eps=0.1)
-
-    for n in range(len(nn)):
-        num_bounces = nn[n]
-
-        X = np.load('Tests/bounce_frequency/X'+str(num_bounces)+'.npy')
-        w = np.load('Tests/bounce_frequency/w'+str(num_bounces)+'.npy')
-
-        variance_bias = bias(X, w, esh.Target.variance)
-        plt.plot(variance_bias, label = '# bounces = ' + str(num_bounces), color = tab_colors[n])
-
-        X = np.load('Tests/bounce_frequency/X_half_sphere_'+str(num_bounces)+'.npy')
-        w = np.load('Tests/bounce_frequency/w_half_sphere_'+str(num_bounces)+'.npy')
-
-        variance_bias = bias(X, w, esh.Target.variance)
-        plt.plot(variance_bias, ls = ':', color = tab_colors[n])
 
 
-    plt.plot([0, len(variance_bias)], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
-    plt.legend()
+
+def bounce_frequency_full_bias():
+    """ Figure 1 """
+
+    def point_reduction(points, reduction_factor):
+        """reduces the number of points for plotting purposes"""
+
+        indexes = np.concatenate((np.arange(1, 1 + points // reduction_factor, dtype=int),
+                                  np.arange(1 + points // reduction_factor, points, reduction_factor, dtype=int)))
+        return indexes
+
+    def ess_axis(ax, ff):
+
+        steps_to_ess = lambda n: 200 / n
+        ess_to_steps = lambda e: 200 / e
+
+        ymin, ymax = plt.ylim()
+        ax2 = ax.secondary_xaxis(np.log10(0.1 / ymin) / np.log10(ymax / ymin), functions=(steps_to_ess, ess_to_steps))
+        plt.text(8.5e2, 0.07, 'ESS', fontsize = ff)
+
+
+    length = [    2,     5,     10,   30,   50,    75,    80,   90,   100,  1000, 10000, 10000000]
+    mask_plot = [True, True, False, True, False, False, True, True, True, False, False, False]
+    #mask_plot = len(length) * [True, ]
+
+    X = np.load('Tests/data/bounces_eps1.npy')
+    indexes = point_reduction(len(X[0]), 100)
+
+
+    ff, ff_title, ff_ticks = 18, 20, 14
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize= (20, 8))
+    ax = plt.gca()
+    colors = plt.cm.copper(np.linspace(0, 0.9, np.sum(mask_plot)))[::-1]
+    plotted = 0
+    dash_size = [1, 5, 15, 25, 40, 80]
+    for n in range(len(length)):
+        if mask_plot[n]:
+            plt.plot(indexes, X[n, indexes], linestyle='--', dashes=(dash_size[plotted], 2),  color = colors[plotted], label = r'$\Delta x = $' + str(length[n]))
+            plt.plot(indexes, X[n, indexes], alpha= 0.1, color=colors[plotted])
+
+            plotted += 1
+    # plt.plot([0, len(variance_bias)], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
+    plt.legend(fontsize = ff)
     plt.yscale('log')
     plt.xscale('log')
-    plt.xlabel('# evaluations')
-    plt.ylabel('bias')
+    plt.xlabel('# gradient evaluations', fontsize = ff)
+    plt.ylabel('bias', fontsize = ff)
     plt.xlim(1, 1e6)
-    ess_axis(ax)
-    plt.savefig('Tests/bounce_frequency.png')
+    ess_axis(ax, ff)
+    plt.savefig('submission/FullBias.pdf')
     plt.show()
 
 
-def inference_gym():
-    data = np.load('Tests/data/inference_gym.npy')
-    names= [r'Gaussian ($\kappa = 1$)', r'Gaussian ($\kappa = 10^4$)', r'Rosenbrock ($Q = 0.5$)']
-    for i in range(3):
-        plt.plot(data[:, 3], data[:, i], 'o', color= tab_colors[i], label= names[i])
 
-    plt.xlabel(r'$\Delta x$')
-    plt.ylabel('ESS')
-    plt.legend()
-    plt.yscale('log')
-    plt.show()
+def dimension_dependence_prelim():
 
-
-def ess_free_time():
-
-    dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
+    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
 
     E, L = [], []
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
-    folder_name = 'StandardNormal_t'
+    folder_name = 'Kappa100_t'
     #folder_name = 'Rosenbrock_precondition_t'
     factor = 1.0 #Leapfrog
     #factor = 0.25 #Yoshida
     for i in range(len(dimensions)):
         d = dimensions[i]
         X = np.load('Tests/data/dimensions/'+folder_name+'/'+str(d)+'.npy')
-        print(X)
         #peak
         plt.plot(X[:, 1], factor*X[:, 0], color = tab_colors[i], alpha= 0.5)
 
@@ -93,7 +103,8 @@ def ess_free_time():
     for i in range(len(dimensions)):
         plt.plot(dimensions[i], L[i], 'o', color = tab_colors[i])
 
-    slope= np.dot(np.sqrt(dimensions[1:]), L[1:]) / np.sum(dimensions[1:])
+    skip = 1
+    slope= np.dot(np.sqrt(dimensions[skip:]), L[skip:]) / np.sum(dimensions[1:])
     print(slope)
     plt.title(r'$L \approx$' +'{0:.4}'.format(slope) + r' $\sqrt{d}$')
     plt.plot(dimensions, slope * np.sqrt(dimensions), ':', color = 'black')
@@ -111,10 +122,10 @@ def ess_free_time():
 
     from scipy.stats import linregress
 
-    res = linregress(np.log(dimensions), np.log(E))
+    res = linregress(np.log(dimensions[skip:]), np.log(E[skip:]))
 
 
-    plt.title(r'$L \propto d^{-\alpha}, \quad \alpha = $' + '{0}'.format(np.round(-res.slope, 2)))
+    plt.title(r'ESS $\propto d^{-\alpha}, \quad \alpha = $' + '{0}'.format(np.round(-res.slope, 2)))
     plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), ':', color='black')
     plt.xlabel('d')
     plt.ylabel('ESS')
@@ -126,193 +137,126 @@ def ess_free_time():
 
 
 
-def ess_epsilon():
+def kappa_dependence_prelim():
 
-    X = np.load('Tests/eps3.npy')
-    plt.plot(X[:, 2], X[:, 0] , '.', color = 'black')
+    kappa = [1, 10, 100, 10000, 10000]
+    factor = 1.0  # Leapfrog
+    # factor = 0.25 #Yoshida
+    E, L = [], []
+
+
+    plt.figure(figsize=(15, 5))
+
+    ###  peaks ESS(L) for different kappa  ###
+    plt.subplot(1, 3, 1)
+
+    for i in range(len(kappa)):
+        K = kappa[i]
+        X = np.load('Tests/data/kappa/'+str(K)+'.npy')
+        #peak
+        plt.plot(X[:, 1], factor*X[:, 0], color = tab_colors[i], alpha= 0.5)
+
+        #highest point
+        imax= np.argmax(factor*X[:, 0])
+        L.append(X[imax, 1])
+        E.append(X[imax, 0])
+        plt.plot(X[imax, 1], factor*X[imax, 0], '.', color = tab_colors[i])
+        plt.text(X[imax, 1] * 1.05, factor*X[imax, 0]*1.03, 'kappa = '+str(K), color = tab_colors[i], alpha = 0.5) #dimension tag
+
 
     plt.ylabel('ESS')
-    plt.xlabel(r"$\epsilon$")
-    #plt.savefig('Tests/eps_fine_tuning.png')
-    plt.show()
+    plt.xlabel("orbit length between bounces")
 
 
-def plot_kappa():
-    kappa = [1, 10, 100, 1000]
-    d = 50
-    #import matplotlib.colors
-    colors= plt.cm.viridis(np.linspace(1, 0, len(kappa)))
-    fig, ax = plt.subplots()
+    ###  optimal L as a function of kappa  ###
+    plt.subplot(1, 3, 2)
+    for i in range(len(kappa)):
+        plt.plot(kappa[i], L[i], 'o', color = tab_colors[i])
 
-    for n in range(len(kappa)):
-        target = targets.IllConditionedGaussian(d=d, condition_number=kappa[n])
-
-        X = np.load('Tests/kappa/X'+str(kappa[n])+'.npy')
-        w = np.load('Tests/kappa/w'+str(kappa[n])+'.npy')
-
-        variance_bias = bias(X, w, target.variance)
-        steps = np.arange(1, 1+len(variance_bias))
-        plt.plot(steps, variance_bias, label = r'$\kappa$ = {0}'.format(kappa[n]), color =colors[n])
-
-        # X = np.load('Tests/kappa/X_perp_'+str(kappa[n])+'.npy')
-        # w = np.load('Tests/kappa/w_perp_'+str(kappa[n])+'.npy')
-        # variance_bias = bias(X, w, target.variance)
-        #
-        # plt.plot(steps, variance_bias, ':', color =tab_colors[n])
-        #
-        # X = np.load('Tests/kappa/X_half_sphere_'+str(kappa[n])+'.npy')
-        # w = np.load('Tests/kappa/w_half_sphere_'+str(kappa[n])+'.npy')
-        # variance_bias = bias(X, w, target.variance)
-        #
-        # plt.plot(steps, variance_bias, '--', color =tab_colors[n])
-        #
-
-
-    #plt.plot([1, len(variance_bias)+1], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
-    plt.legend()
-    plt.yscale('log')
+    # skip = 1
+    # slope= np.dot(np.sqrt(dimensions[skip:]), L[skip:]) / np.sum(dimensions[1:])
+    # print(slope)
+    # plt.title(r'$L \approx$' +'{0:.4}'.format(slope) + r' $\sqrt{d}$')
+    # plt.plot(dimensions, slope * np.sqrt(dimensions), ':', color = 'black')
+    plt.xlabel('condition number')
+    plt.ylabel('optimal orbit length between bounces')
     plt.xscale('log')
-    plt.xlabel('# evaluations')
-    plt.ylabel('bias')
-    plt.xlim(1, 1e6)
-    ess_axis(ax)
-    plt.savefig('Tests/kappa.png')
-    plt.show()
+    #plt.yscale('log')
 
 
-def ess_axis(ax):
+    ###  optimal ESS as a function of kappa  ###
+    plt.subplot(1, 3, 3)
 
-    steps_to_ess = lambda n: 200/n
-    ess_to_steps = lambda e: 200/e
+    for i in range(len(kappa)):
+        plt.plot(kappa[i], E[i], 'o', color= tab_colors[i])
 
-    ymin, ymax = plt.ylim()
-    ax2 = ax.secondary_xaxis(np.log10(0.1 / ymin) / np.log10(ymax / ymin), functions=(steps_to_ess, ess_to_steps))
-    ax2.set_xlabel('ESS')
-
-
-def plot_eps():
-    eps_arr = np.logspace(np.log10(0.05), np.log10(0.5), 6)
-    #[0.05, 0.1, 0.5, 1, 2]
-    d= 50
-
-    target = targets.StandardNormal(d=d)
-    fig, ax = plt.subplots()
-
-    for n in range(len(eps_arr)):
-
-        X = np.load('Tests/eps/X'+str(n)+'.npy')
-        w = np.load('Tests/eps/w'+str(n)+'.npy')
-
-        variance_bias = bias(X, w, target.variance)
-        plt.plot(np.arange(1, 1+len(variance_bias)), variance_bias, label = r'$\epsilon$ = {0}'.format(eps_arr[n]))
+    #from scipy.stats import linregress
+    #res = linregress(np.log(dimensions[skip:]), np.log(E[skip:]))
 
 
-    plt.plot([1, len(variance_bias)+1], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
-    plt.legend()
-    plt.yscale('log')
-    plt.xscale('log')
-    plt.xlabel('# evaluations')
-    plt.ylabel('bias')
-    plt.xlim(1, 1e6)
-    ess_axis(ax)
-    #plt.savefig('Tests/eps.png')
-    plt.show()
-
-
-
-def plot_energy():
-    eps_arr = [0.05, 0.1, 0.5, 1, 2]
-
-    var = []
-    plt.figure(figsize=(15, 5))
-    plt.subplot(1, 2, 1)
-    for n in range(len(eps_arr)):
-
-        E = np.load('Tests/energy/E'+str(n)+'.npy')
-        var.append(np.std(E))
-        plt.plot(np.arange(1, 1+len(E))[::1000], E[::1000], label = r'$\epsilon$ = {0}'.format(eps_arr[n]), zorder = -n, color = tab_colors[n])
-
-
-    plt.legend(loc= 4)
-    plt.xlabel('rescaled time')
-    plt.ylabel('energy')
-    #plt.xscale('log')
-    plt.xlim(1, 1e6)
-
-    plt.subplot(1, 2, 2)
-    for n in range(len(eps_arr)):
-        plt.plot([eps_arr[n], ], [var[n], ], 'o', color = tab_colors[n])
-    plt.yscale('log')
-    plt.xlabel(r'$\epsilon$')
-    plt.ylabel('STD[energy]')
-
-    plt.savefig('Tests/energy.png')
-    plt.show()
-
-
-def point_reduction(points, reduction_factor):
-    """reduces the number of points for plotting purposes"""
-
-    indexes=  np.concatenate((np.arange(1, 1 + points//reduction_factor, dtype = int), np.arange(1 + points//reduction_factor, points, reduction_factor, dtype = int)))
-    return indexes
-
-#
-# def plot_bounce_condition():
-#     d = 50
-#     fig, ax = plt.subplots()
-#
-#     esh = ESH.Sampler(Target= targets.StandardNormal(d=d), eps=0.1)
-#
-#
-#     num_bounces = 1
-#
-#     X = np.load('Tests/bounce_frequency/X'+str(num_bounces)+'.npy')
-#     w = np.load('Tests/bounce_frequency/w'+str(num_bounces)+'.npy')
-#
-#     variance_bias = bias(X, w, esh.Target.variance)
-#     plt.plot(variance_bias, label = '# bounces = ' + str(num_bounces))
-#
-#
-#
-#     #plt.plot([0, len(variance_bias)], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
-#     plt.legend()
-#     plt.yscale('log')
-#     plt.xscale('log')
-#     plt.xlabel('# evaluations')
-#     plt.ylabel('bias')
-#     #plt.xlim(1, 1e3)
-#     #ess_axis(ax)
-#     #plt.savefig('Tests/bounce_frequency.png')
-#     plt.show()
-
-
-
-def kappa_comparisson():
-    #kappa_mchmc = [1, 10, 100, 1000]
-    #ess_mchmc = [0.00796591, 0.00345943, 0.00129648, 0.00030617]
-    kappa = np.logspace(0, 3, 12)
-    kappa_nuts = np.logspace(0, 4, 18)
-
-
-    ess_mchmc = np.load('Tests/data/kappa.npy')[:, 0]
-    ess_nuts = np.load('Tests/data/kappa_NUTS_adapt_mass.npy')#[:18]
-
-
-    plt.plot(kappa_nuts, ess_nuts, 'o:', color = 'gold', label = 'NUTS')
-    plt.plot(kappa, ess_mchmc, 'o:', color = 'black', label = 'MCHMC')
-
-
+    #plt.title(r'ESS $\propto d^{-\alpha}, \quad \alpha = $' + '{0}'.format(np.round(-res.slope, 2)))
+    #plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), ':', color='black')
     plt.xlabel('condition number')
     plt.ylabel('ESS')
     plt.xscale('log')
     plt.yscale('log')
-    plt.legend()
-    plt.savefig('Tests/kappa_comparisson.png')
+
+    #plt.savefig('Tests/bounce_dimension_dependence/'+folder_name+'.png')
     plt.show()
 
 
-def mode_mixing():
 
+
+def ill_conditioned():
+    """Figure 2"""
+
+
+    ff, ff_title, ff_ticks = 18, 20, 14
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize= (20, 8))
+
+
+    kappa = np.logspace(0, 5, 18)
+
+    #ess_mchmc = np.load('Tests/data/kappa/l1_eps2.npy')[:, 0]
+    #plt.plot(kappa, ess_mchmc, 'o:', color = 'tab:blue', label = 'MCHMC')
+
+    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + 'eps2.npy')[:, 0]) for i in range(11)]
+    plt.plot(kappa[:11], ess, 'o:', color = 'tab:blue', label = 'MCHMC (eps = 2)')
+
+    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + 'eps1.5.npy')[:, 0]) for i in range(10, 12)]
+    plt.plot(kappa[10:12], ess, 'o:', color = 'tab:blue', alpha = 0.8, label = 'MCHMC (eps = 1.5)')
+
+    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + 'eps1.npy')[:, 0]) for i in range(15)]
+    plt.plot(kappa[:15], ess, 'o:', color = 'tab:blue', alpha= 0.7, label = 'MCHMC (eps = 1)')
+
+    ess= np.max(np.load('Tests/data/kappa/' + str(15) + 'eps0.7.npy')[:, 0])
+    plt.plot(kappa[15], ess, 'o:', color = 'tab:blue', alpha = 0.5, label = 'MCHMC (eps = 0.5)')
+
+    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + 'eps0.5.npy')[:, 0]) for i in range(14, 18)]
+    plt.plot(kappa[14:], ess, 'o:', color = 'tab:blue', alpha = 0.3, label = 'MCHMC (eps = 0.5)')
+
+    #
+    # ess= [np.max(np.load('Tests/data/kappa/' + str(K) + 'eps0.5.npy')[:, 0]) for K in kappa]
+    # plt.plot(kappa, ess, 'o:', color = 'tab:blue', alpha = 0.5, label = 'MCHMC (eps = 0.5)')
+
+    ess_nuts = np.load('Tests/data/kappa_rotated_NUTS.npy')[0]
+    plt.plot(kappa, ess_nuts, 'o:', color = 'tab:orange', label = 'NUTS')
+
+
+
+    plt.xlabel('condition number', fontsize= ff)
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.legend()
+    #plt.savefig('Tests/kappa_comparisson.png')
+    plt.show()
+
+
+
+def Bimodal():
+    """Figure 3"""
     num_mixing = np.load('Tests/data/mode_mixing.npy')[:, 0]
     mu = np.arange(1, 9)
 
@@ -333,10 +277,11 @@ def mode_mixing():
     plt.show()
 
 
-def plot_funnel():
+def Funnel():
+    """Figure 4"""
 
     def gaussianize(z, theta):
-        return (z.T * np.exp(-0.5 * theta)).T, 0.3 * theta
+        return (z.T * np.exp(-0.5 * theta)).T, theta / 3.0
 
     eps, free_time = 0.1, 6
     data = np.load('Tests/data/funnel_free'+str(free_time) + '_eps'+str(eps)+'.npz')
@@ -360,19 +305,19 @@ def plot_funnel():
 
     #plt.hist2d(z[:, 0], theta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-30, 30], [-8, 8]], label ='MCHMC')
     plt.plot(z[::5000, 0], theta[::5000], '.', ms= 1, color = 'tab:blue', label = 'MCHMC')
+
     #plt.hist2d(z[:, 0], theta, weights= w, bins = 100, density=True, label = 'MCHMC')
     plt.xlim(-30, 30)
     plt.ylim(-8, 8)
-    plt.xlabel(r'$z_0$', fontsize = ff)
+    plt.xlabel(r'$z_1$', fontsize = ff)
     plt.ylabel(r'$\theta$', fontsize = ff)
-
-
 
     #### 2d marginal in the gaussianized coordinates ####
     plt.subplot(1, 3, 2)
     plt.title('Gaussianized coordinates', fontsize = ff_title)
     Gz, Gtheta = gaussianize(z, theta)
-    plt.hist2d(Gz[:, 0], Gtheta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-3, 3], [-3, 3]], label ='MCHMC')
+    plt.hexbin(Gz[:, 0], Gtheta, C= w, cmap='Blues', gridsize=50, label='MCHMC', reduce_C_function=np.sum)
+
     GzHMC, GthetaHMC = gaussianize(zHMC, thetaHMC)
     plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 4, color = 'tab:orange', alpha = 0.5, label ='NUTS')
 
@@ -383,7 +328,7 @@ def plot_funnel():
     for i in range(2):
         plt.plot(x_level[i] * np.cos(phi), x_level[i] * np.sin(phi), color = 'black', alpha= ([1, 0.5])[i])
 
-    plt.xlabel(r'$\widetilde{z_0}$', fontsize = ff)
+    plt.xlabel(r'$\widetilde{z_1}$', fontsize = ff)
     plt.ylabel(r'$\widetilde{\theta}$', fontsize = ff)
     plt.xlim(-3, 3)
     plt.ylim(-3, 3)
@@ -414,8 +359,8 @@ def plot_funnel():
 
 
 
-def plot_rosenbrock():
-
+def Rosenbrock():
+    """Figure 5"""
 
     xmin, xmax, ymin, ymax = -2.3, 3.9, -2, 16
 
@@ -430,7 +375,7 @@ def plot_rosenbrock():
     X = np.load('Tests/data/rosenbrock.npz')
     x, y = X['samples'][:, 0], X['samples'][:, d // 2]
     w = X['w']
-    sns.histplot(x=x, y=y, weights=w, bins=200, ax=plot.ax_joint)
+    sns.histplot(x=x, y=y, weights=w, bins=200, ax=plot.ax_joint, kind= 'hex')
 
     #sns.scatterplot(x=[], y=[], ax= plot.ax_joint, color = 'tab:blue')
 
@@ -468,10 +413,56 @@ def plot_rosenbrock():
 
     plot.ax_marg_y.legend(fontsize = ff)
 
-    plot.set_axis_labels(r'$x_0$', r'$y_0$', fontsize= ff)
+    plot.set_axis_labels(r'$x_1$', r'$y_1$', fontsize= ff)
     plt.tight_layout()
     plt.savefig('submission/rosenbrock.pdf')
     plt.show()
+
+
+
+### old functions ###
+
+def ess_epsilon():
+
+    X = np.load('Tests/eps3.npy')
+    plt.plot(X[:, 2], X[:, 0] , '.', color = 'black')
+
+    plt.ylabel('ESS')
+    plt.xlabel(r"$\epsilon$")
+    #plt.savefig('Tests/eps_fine_tuning.png')
+    plt.show()
+
+
+
+def energy():
+    eps_arr = [0.05, 0.1, 0.5, 1, 2]
+
+    var = []
+    plt.figure(figsize=(15, 5))
+    plt.subplot(1, 2, 1)
+    for n in range(len(eps_arr)):
+
+        E = np.load('Tests/energy/E'+str(n)+'.npy')
+        var.append(np.std(E))
+        plt.plot(np.arange(1, 1+len(E))[::1000], E[::1000], label = r'$\epsilon$ = {0}'.format(eps_arr[n]), zorder = -n, color = tab_colors[n])
+
+
+    plt.legend(loc= 4)
+    plt.xlabel('rescaled time')
+    plt.ylabel('energy')
+    #plt.xscale('log')
+    plt.xlim(1, 1e6)
+
+    plt.subplot(1, 2, 2)
+    for n in range(len(eps_arr)):
+        plt.plot([eps_arr[n], ], [var[n], ], 'o', color = tab_colors[n])
+    plt.yscale('log')
+    plt.xlabel(r'$\epsilon$')
+    plt.ylabel('STD[energy]')
+
+    plt.savefig('Tests/energy.png')
+    plt.show()
+
 
 
 def funnel_debug():
@@ -493,13 +484,38 @@ def funnel_debug():
     plt.show()
 
 
-#ess_free_time()
-plot_rosenbrock()
-#plot_funnel()
-# d = 36
-# X = np.load('Tests/data/rosenbrock.npz')
-# x, y = X['samples'][:, 0], X['samples'][:, d // 2]
-# w = X['w']
-# plt.plot(x[:10000], y[:10000])
-# plt.show()
-#
+def dimension_dependence():
+    ###  dimension dependence ###
+    plt.subplot(1, 2, 1)
+    dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
+    markers = ['o:', 's:', 'v:']
+
+    # tuned MCHMC
+    target_names = ['StandardNormal_t', 'Kappa100_t', 'Rosenbrock_t']
+    for i in range(len(target_names)):
+        if i == 2:
+            dim = [50, 100, 200, 500, 1000, 3000]
+        else:
+            dim = dimensions
+        ess = [np.max(np.load('Tests/data/dimensions/' + target_names[i] + '/' + str(d) + '.npy')[:, 0]) for d in dim]
+        plt.plot(dim, ess, markers[i], color='tab:blue')
+
+    # NUTS
+    target_names = ['StandardNormal', 'Kappa100', 'Rosenbrock']
+    for i in range(len(target_names)):
+        ess = np.load('Tests/data/dimensions/' + target_names[i] + '_NUTS.npy')[0]
+        plt.plot(dimensions, ess, markers[i], color='tab:orange')
+
+    plt.xlabel('d', fontsize=ff)
+    plt.ylabel('ESS', fontsize=ff)
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xticks([100, 1000, 10000], [r'$10^2$', r'$10^3$', r'$10^4$'])
+
+
+#bounce_frequency_full_bias()
+ill_conditioned()
+#kappa_dependence_prelim()
+
+#Funnel()
+#Rosenbrock()

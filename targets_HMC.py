@@ -8,17 +8,18 @@ import numpyro.distributions as dist
 ###  targets in the numpyro form  ###
 
 
+
 def ill_conditioned_gaussian(d, condition_number):
-    variance_true = np.logspace(-np.log10(condition_number), np.log10(condition_number), d)
+    variance_true = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
 
     # diagonal
     #numpyro.sample('x', dist.Normal(np.zeros(d), np.sqrt(variance_true)))
 
     #randomly rotated
-    Sigma = np.diag(variance_true)
+    Cov = np.diag(variance_true)
     R = special_ortho_group.rvs(d, random_state= 0)
-    Sigma = R @ Sigma @ R.T
-    numpyro.sample('x', dist.MultivariateNormal(jnp.zeros(d), Sigma))
+    rotated_Cov = R.T @ Cov @ R
+    numpyro.sample('x', dist.MultivariateNormal(jnp.zeros(d), rotated_Cov))
 
 
 def bimodal(d, mu):
@@ -47,10 +48,8 @@ def funnel_noiseless(d):
 
 
 
-def rosenbrock(d):
+def rosenbrock(d, Q):
     """see https://en.wikipedia.org/wiki/Rosenbrock_function (here we set a = 1, b = 1/Q)"""
-
-    Q = 0.1
 
     x = numpyro.sample("x", dist.Normal(jnp.ones(d // 2), jnp.ones(d // 2)))
     numpyro.sample("y", dist.Normal(jnp.square(x), np.sqrt(Q) * jnp.ones(d // 2)))

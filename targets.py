@@ -9,6 +9,7 @@ class StandardNormal():
     def __init__(self, d):
         self.d = d
         self.variance = np.ones(d)
+        self.gaussianization_available = False
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -28,7 +29,9 @@ class IllConditionedGaussian():
 
     def __init__(self, d, condition_number):
         self.d = d
-        self.variance = np.logspace(-np.log10(np.sqrt(condition_number)), np.log10(np.sqrt(condition_number)), d)
+        self.variance = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
+        self.gaussianization_available = False
+
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -52,6 +55,7 @@ class BiModal():
         self.mu = np.insert(np.zeros(d-1), 0, mu)
         self.sigma = sigma
         self.f = f
+        self.gaussianization_available = False
 
 
     def nlogp(self, x):
@@ -88,6 +92,7 @@ class BiModalEqual():
 
         self.d = d
         self.mu = mu
+        self.gaussianization_available = False
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -120,6 +125,8 @@ class Funnel():
 
         self.d = d
         self.sigma_theta= 3.0
+        self.variance = np.ones(d)
+        self.gaussianization_available = True
 
 
     def nlogp(self, x):
@@ -142,8 +149,15 @@ class Funnel():
     def inverse_gaussianize(self, xtilde):
         x= np.empty(np.shape(xtilde))
         x[:, -1] = 3 * xtilde[:, -1]
-        x[:, -1] = xtilde[:, -1] * np.exp(0.5*x[:, -1])
+        x[:, :-1] = xtilde[:, -1] * np.exp(1.5*xtilde[:, -1])
+        return x
 
+
+    def gaussianize(self, x):
+        xtilde = np.empty(np.shape(x))
+        xtilde[-1] =  x.T[-1] / 3.0
+        xtilde[:-1] = x.T[:-1] * np.exp(-0.5*x.T[-1])
+        return xtilde.T
 
 
 
@@ -153,9 +167,10 @@ class Rosenbrock():
     def __init__(self, d):
 
         self.d = d
-        self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #the second one is computed numerically (see compute_variance below)
+        self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #var_y is computed numerically (see compute_variance below)
         #self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
         self.variance = np.concatenate((var_x * np.ones(d//2), var_y * np.ones(d//2)))
+        self.gaussianization_available = False
 
 
     def nlogp(self, x):
@@ -199,6 +214,8 @@ class DiagonalPreconditioned():
         self.d= Target.d
         self.a = a
         self.variance = Target.variance / np.square(a)
+        self.gaussianization_available = False
+
 
     def nlogp(self, x):
         return self.Target.nlogp(self.a * x)
