@@ -211,46 +211,34 @@ def ill_conditioned():
     """Figure 2"""
 
 
-    ff, ff_title, ff_ticks = 18, 20, 14
+    ff, ff_title, ff_ticks = 18, 20, 16
+
+
     plt.rcParams['xtick.labelsize'] = ff_ticks
     plt.rcParams['ytick.labelsize'] = ff_ticks
     plt.figure(figsize= (20, 8))
-
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
 
     kappa = np.logspace(0, 5, 18)
 
-    #ess_mchmc = np.load('Tests/data/kappa/l1_eps2.npy')[:, 0]
-    #plt.plot(kappa, ess_mchmc, 'o:', color = 'tab:blue', label = 'MCHMC')
 
-    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + 'eps2.npy')[:, 0]) for i in range(11)]
-    plt.plot(kappa[:11], ess, 'o:', color = 'tab:blue', label = 'MCHMC (eps = 2)')
+    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + '.npy')[:, 0]) for i in range(18)]
+    plt.plot(kappa, ess, 'o:', color = 'tab:blue',  label = 'MCHMC (fine tuned)')
 
-    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + 'eps1.5.npy')[:, 0]) for i in range(10, 12)]
-    plt.plot(kappa[10:12], ess, 'o:', color = 'tab:blue', alpha = 0.8, label = 'MCHMC (eps = 1.5)')
-
-    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + 'eps1.npy')[:, 0]) for i in range(15)]
-    plt.plot(kappa[:15], ess, 'o:', color = 'tab:blue', alpha= 0.7, label = 'MCHMC (eps = 1)')
-
-    ess= np.max(np.load('Tests/data/kappa/' + str(15) + 'eps0.7.npy')[:, 0])
-    plt.plot(kappa[15], ess, 'o:', color = 'tab:blue', alpha = 0.5, label = 'MCHMC (eps = 0.5)')
-
-    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + 'eps0.5.npy')[:, 0]) for i in range(14, 18)]
-    plt.plot(kappa[14:], ess, 'o:', color = 'tab:blue', alpha = 0.3, label = 'MCHMC (eps = 0.5)')
-
-    #
-    # ess= [np.max(np.load('Tests/data/kappa/' + str(K) + 'eps0.5.npy')[:, 0]) for K in kappa]
-    # plt.plot(kappa, ess, 'o:', color = 'tab:blue', alpha = 0.5, label = 'MCHMC (eps = 0.5)')
+    ess_mchmc = np.load('Tests/data/kappa/L1.5.npy')[:, 0]
+    plt.plot(kappa, ess_mchmc, 'o:', color = 'tab:blue', alpha = 0.5, label = 'MCHMC (tuning free)')
 
     ess_nuts = np.load('Tests/data/kappa_rotated_NUTS.npy')[0]
     plt.plot(kappa, ess_nuts, 'o:', color = 'tab:orange', label = 'NUTS')
 
-
-
+    plt.ylabel('ESS', fontsize= ff)
     plt.xlabel('condition number', fontsize= ff)
     plt.xscale('log')
     plt.yscale('log')
-    plt.legend()
-    #plt.savefig('Tests/kappa_comparisson.png')
+    plt.legend(fontsize= ff)
+    plt.savefig('submission/kappa.pdf')
     plt.show()
 
 

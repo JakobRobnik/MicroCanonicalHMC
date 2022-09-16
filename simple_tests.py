@@ -25,7 +25,7 @@ def bounce_frequency(n, d, kappa = 100.0):
     #sampler = ESH.Sampler(Target= DiagonalPreconditioned(Rosenbrock(d= d), a), eps= 0.5)
 
     x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    ess = sampler.sample(x0, length, prerun_steps= 500)
+    ess = sampler.sample(x0, length, prerun_steps= 500, track= 'ESS')
 
     return [ess, length, sampler.eps, d]
 
@@ -38,24 +38,9 @@ def bounce_frequency_full_bias(n, d):
     sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1)
     np.random.seed(1)
     x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    bias = sampler.sample(x0, L)
+    bias = sampler.sample(x0, L, track= 'FullBias')
 
     return bias
-
-
-
-def compute_eps(n):
-    eps_arr = np.logspace(np.log10(0.1), np.log10(16), 6)
-    eps = eps_arr[n]
-    d = 100
-    free_time = 16.0
-    esh = ESH.Sampler(Target=StandardNormal(d=d), eps=eps)
-    np.random.seed(0)
-    x0 = esh.Target.draw(1)[0]
-
-    ess = esh.ess(x0, free_time)
-
-    return [ess, free_steps, eps, d]
 
 
 
@@ -74,29 +59,31 @@ def compute_energy(n):
 
 
 def bimodal_mixing(n):
-    mu = np.arange(1, 9)[n]
+    mu = np.arange(3.0, 5.0, 7.0, 10.0, 15.0)[n]
 
-    eps, free_steps = 1.0, 16
-    d = 2
+    d = 50
+    eps, L = 1.0, 1.5 * np.sqrt(d)
     esh = ESH.Sampler(Target= BiModal(d=d, mu= mu), eps=eps)
     np.random.seed(0)
+    x0 = np.random.normal(size= d)
 
-    avg_island_size = esh.mode_mixing(free_steps)
+    avg_island_size = esh.sample(x0, L, prerun_steps=500, track= 'ModeMixing')
     print(avg_island_size)
     sys.stdout.flush()
 
-    return [avg_island_size, free_steps, eps, d, mu]
+    return [avg_island_size, mu, L, eps, d]
 
 
 def ill_conditioned(n):
     kappa = np.logspace(0, 5, 18)[n]
+    eps = np.array(10 * [2.0, ] + 2 * [1.5, ] + 3*[1.0, ] + [0.7,  ] + 2 * [0.5])[n]
     d = 100
-    eps, L = 2.0, 1.0 * np.sqrt(d)
+    L = 1.5 * np.sqrt(d)
     esh = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
     np.random.seed(0)
     x0 = esh.Target.draw(1)[0]
 
-    ess = esh.sample(x0, L, prerun_steps= 500)
+    ess = esh.sample(x0, L, prerun_steps= 500, track= 'ESS')
 
     return [ess, L, eps, d, kappa]
 
@@ -111,7 +98,7 @@ def funnel_plot():
     esh = ESH.Sampler(Target= Funnel(d=d), eps=eps)
     np.random.seed(0)
     x0 = np.zeros(d)
-    samples, w = esh.sample(x0, free_steps, 5000000)
+    samples, w = esh.sample(x0, free_steps, 5000000, track= 'FullTrajectory')
     np.savez('Tests/data/funnel_free'+str(free_time) + '_eps'+str(eps), z = samples[:, :-1], theta= samples[:, -1], w = w)
 
 
@@ -120,7 +107,7 @@ def funnel_ess(n):
     sampler = ESH.Sampler(Target=Funnel(d =20), eps= 0.1)
 
     x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    ess = sampler.sample(x0, length, prerun_steps=500)
+    ess = sampler.sample(x0, length, prerun_steps=500, track= 'ESS')
 
     return [ess, length, sampler.eps, d]
 
@@ -134,7 +121,7 @@ def rosenbrock():
     esh = ESH.Sampler(Target= Rosenbrock(d=d), eps=eps)
     np.random.seed(0)
     x0 = np.zeros(d)
-    samples, w = esh.sample(x0, free_steps, 10000000)
+    samples, w = esh.sample(x0, free_steps, max_steps= 10000000, prerun_steps= 500, track= 'FullTrajectory')
     np.savez('Tests/data/rosenbrock3', samples = samples[::10, :], w = w[::10])
 
 
@@ -222,8 +209,10 @@ if __name__ == '__main__':
 
     #parallel.run_collect(lambda n: bounce_frequency_full_bias(n, 250), runs=2, working_folder='working/', name_results= 'Tests/data/bounces_eps1')
 
+    parallel.run_collect(bimodal_mixing, runs=1, working_folder='working/', name_results= 'Tests/data/mode_mixing')
+
 
     #parallel.run_collect(lambda n: bounce_frequency(n, 32), runs=2, working_folder='working/', name_results= 'Tests/data/rosenbrock')
-    dimension_dependence()
+    #dimension_dependence()
 
-    #parallel.run_collect(ill_conditioned, runs=3, working_folder='working/', name_results= 'Tests/data/kappa/l1_eps2')
+    #parallel.run_collect(ill_conditioned, runs=3, working_folder='working/', name_results= 'Tests/data/kappa/L1.5')

@@ -90,7 +90,7 @@ class Sampler:
     #            bias.ess_cutoff_crossing(b_lower_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging)
 
 
-    def sample(self, x0, bounce_length, max_steps= 1000000, prerun_steps= 0):
+    def sample(self, x0, bounce_length, max_steps= 1000000, prerun_steps= 0, track= 'ESS'):
 
         """Determines the effective sample size by monitoring the bias in the estimated variance.
             Args:
@@ -149,14 +149,21 @@ class Sampler:
 
 
 
-        ### quantities to track (to save memory we do not store full x(t) ###
-        tracker= Ess(x, w, self.Target.variance, self.Target.gaussianize if self.Target.gaussianization_available else (lambda x: x))
-        #tracker = Bias(x, w, self.Target.variance, max_steps, self.Target.gaussianize if self.Target.gaussianization_available else (lambda x: x))
-
-        #tracker= Full_trajectory(x, w, max_steps?)
-        #tracker= Mode_mixing(x)
-        #tracker= Marginal_1d(bins, num_steps, lambda x: x[0])
-
+        ### quantities to track (to save memory we do not store full x(t) ) ###
+        if track == 'ESS':
+            tracker= Ess(x, w, self.Target.variance, self.Target.gaussianize if self.Target.gaussianization_available else (lambda x: x))
+        elif track == 'FullBias':
+            tracker = FullBias(x, w, self.Target.variance, max_steps, self.Target.gaussianize if self.Target.gaussianization_available else (lambda x: x))
+        elif track == 'FullTrajectory':
+            print('FullTrajectory is not tested yet')
+            tracker= Full_trajectory(x, w, max_steps)
+        elif track == 'ModeMixing':
+            tracker= ModeMixing(x)
+        elif track == 'Marginal1d':
+            tracker= Marginal1d(bins, num_steps, lambda x: x[0])
+        else:
+            print(str(track) + ' is not a valid track option.')
+            exit()
 
         num_steps = 0
         #time = []
@@ -193,7 +200,7 @@ class Sampler:
                 self.eps = epsilon[j]
                 length = L[i] * np.sqrt(self.Target.d)
                 print(L[i], self.eps)
-                ess[i, j] = 2.0 / (self.sample(x0, length, max_steps=max_steps, prerun_steps=500)[-1]**2 * max_steps)
+                ess[i, j] = 2.0 / (self.sample(x0, length, max_steps=max_steps, prerun_steps=500, track= 'FullBias')[-1]**2 * max_steps)
 
 
         I = np.argmax(ess)
@@ -246,6 +253,8 @@ class Sampler:
 
 
 ### bounce trackers ###
+# The bounce program is implemented as a class which must at a minimum have defined the function update(w).
+# This function returns True if the bounce should occur and False otherwise.
 
 class Distance_equally_spaced():
     """the bounces occur equally spaced in the distance travelled"""
@@ -288,6 +297,10 @@ class Time_equally_spaced():
 
 
 ### quantities to keep track of during sampling ###
+# The tracked qunatity is implemented as a class which must at a minimum have defined functions:
+# - update(self, x w): updates the quantity being tracked after each step. It returns True if the sampling can be finished and False otherwise (e.g. bias is below 0.1)
+# - results(self): returns the tracked quantity. This function is called after update returns True.
+
 
 class Full_trajectory():
     """Stores x(t). Contains all the information but can be memory intensive."""
@@ -340,7 +353,7 @@ class Ess():
 
 
 
-class Bias():
+class FullBias():
     """Variance bias"""
 
     def __init__(self, x, w, variance, num_max, gaussianization):
@@ -369,7 +382,7 @@ class Bias():
 
 
 
-class Expected_value():
+class ExpectedValue():
     """expected value of some quantities f(x)"""
 
     def __init__(self, x, w, f, max_num_steps):
@@ -392,8 +405,8 @@ class Expected_value():
 
 
 
-class Mode_mixing():
-    """how long does it take to switch between modes"""
+class ModeMixing():
+    """how long does it take to switch between modes (average number of steps per switch after 10 switches)"""
 
     def __init__(self, x):
 
@@ -413,7 +426,7 @@ class Mode_mixing():
         else:
             self.island_size += 1
 
-        return len(self.L) > 9
+        return len(self.L) > 9 #it finishes when 10 switches between the modes have been made.
 
 
     def results(self):
@@ -422,7 +435,7 @@ class Mode_mixing():
 
 
 
-class Marginal_1d():
+class Marginal1d():
     """pdf of some marginal quantity f(x)"""
 
     def __init__(self, bins, total_steps, f):
