@@ -106,7 +106,7 @@ class Sampler:
         g = self.Target.grad_nlogp(x0)
         r = 0.0
         w = np.exp(r) / self.Target.d
-        u = - g / np.sqrt(np.sum(np.square(g))) #initialize momentum in the direction of the gradient of log p
+        u = self.random_unit_vector()#- g / np.sqrt(np.sum(np.square(g))) #initialize momentum in the direction of the gradient of log p
 
 
         ### bounce program ###
@@ -136,7 +136,7 @@ class Sampler:
             g = self.Target.grad_nlogp(x0)
             r = 0.0
             w = np.exp(r) / self.Target.d
-            u = - g / np.sqrt(np.sum(np.square(g)))  # initialize momentum in the direction of the gradient of log p
+            u = self.random_unit_vector()#- g / np.sqrt(np.sum(np.square(g)))  # initialize momentum in the direction of the gradient of log p
 
 
         else:
@@ -155,8 +155,7 @@ class Sampler:
         elif track == 'FullBias':
             tracker = FullBias(x, w, self.Target.variance, max_steps, self.Target.gaussianize if self.Target.gaussianization_available else (lambda x: x))
         elif track == 'FullTrajectory':
-            print('FullTrajectory is not tested yet')
-            tracker= Full_trajectory(x, w, max_steps)
+            tracker= Full_trajectory(x, w, 100000)
         elif track == 'ModeMixing':
             tracker= ModeMixing(x)
         elif track == 'Marginal1d':
@@ -183,6 +182,8 @@ class Sampler:
 
         print('Maximum number of steps exceeded')
         return tracker.results()
+
+
 
 
     def fine_tune(self, show):
@@ -315,10 +316,10 @@ class Full_trajectory():
 
     def update(self, x, w):
         self.num_steps += 1
-        self.X[self.num_steps, :] = x
+        self.X[self.num_steps] = x
         self.W[self.num_steps] = w
 
-        return self.num_steps < self.max_steps
+        return self.num_steps > self.max_steps-2
 
 
     def results(self):

@@ -59,17 +59,16 @@ def compute_energy(n):
 
 
 def bimodal_mixing(n):
-    mu = np.arange(3.0, 5.0, 7.0, 10.0, 15.0)[n]
+    mu = np.arange(1, 9)[n]
 
     d = 50
-    eps, L = 1.0, 1.5 * np.sqrt(d)
-    esh = ESH.Sampler(Target= BiModal(d=d, mu= mu), eps=eps)
-    np.random.seed(0)
+    eps, L = 1.0, 20 * np.sqrt(d)
+    esh = ESH.Sampler(Target= BiModalEqual(d, mu), eps=eps)
+    np.random.seed(1)
     x0 = np.random.normal(size= d)
+    x0[0] += mu * 0.5
 
-    avg_island_size = esh.sample(x0, L, prerun_steps=500, track= 'ModeMixing')
-    print(avg_island_size)
-    sys.stdout.flush()
+    avg_island_size = esh.sample(x0, L, prerun_steps= 500, track= 'ModeMixing')
 
     return [avg_island_size, mu, L, eps, d]
 
@@ -205,12 +204,38 @@ def dimension_dependence():
     parallel.run_collect(lambda n: bounce_frequency(n, 100, condition_numbers[11]), runs=4, working_folder='working/', name_results=name_folder + '/' + str(11) + 'eps1.5')
 
 
+def bimodal_explore():
+    mu = 7.0
+
+    d = 2
+    eps, L = 1.0, 20 * np.sqrt(d)
+    esh = ESH.Sampler(Target=BiModalEqual(d=d, mu=mu), eps=eps)
+    np.random.seed(1)
+    x0 = np.random.normal(size=d)
+    x0[0] += mu * 0.5
+
+    X, W = esh.sample(x0, L, prerun_steps=500, track='FullTrajectory')
+
+    plt.subplot(2, 1, 1)
+    plt.plot(X[:, 0])
+    plt.ylabel('x1')
+    plt.xlim(41000, 44000)
+
+    plt.subplot(2, 1, 2)
+    plt.plot(-2 * esh.Target.nlogp(X.T))
+    plt.ylabel('2 log p')
+    plt.xlabel('steps')
+    plt.xlim(41000, 44000)
+    plt.savefig('no_jump_in_logp')
+    plt.show()
+
+
+
 if __name__ == '__main__':
 
     #parallel.run_collect(lambda n: bounce_frequency_full_bias(n, 250), runs=2, working_folder='working/', name_results= 'Tests/data/bounces_eps1')
 
-    parallel.run_collect(bimodal_mixing, runs=1, working_folder='working/', name_results= 'Tests/data/mode_mixing')
-
+    parallel.run_collect(bimodal_mixing, runs=2, working_folder='working/', name_results= 'Tests/data/mode_mixing_d50_L20')
 
     #parallel.run_collect(lambda n: bounce_frequency(n, 32), runs=2, working_folder='working/', name_results= 'Tests/data/rosenbrock')
     #dimension_dependence()

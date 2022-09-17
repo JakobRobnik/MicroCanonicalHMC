@@ -245,22 +245,23 @@ def ill_conditioned():
 
 def Bimodal():
     """Figure 3"""
-    num_mixing = np.load('Tests/data/mode_mixing.npy')[:, 0]
     mu = np.arange(1, 9)
 
-    plt.plot(mu, num_mixing, 'o:', label = 'MCHMC')
+    L_arr = [1.5, 20, 100, 1000]
+    for L in L_arr:
+        plt.plot(mu, np.load('Tests/data/mode_mixing_d50_L'+str(L)+'.npy')[:, 0], 'o:', label=r'MCHMC ($\alpha = $)' +str(L))
 
-    num_mixing = np.load('Tests/data/mode_mixing_NUTS.npy')[0]
-    mu = np.load('Tests/mode_mixing_NUTS.npy')[1]
 
-    plt.plot(mu, num_mixing, 'o:', label= 'NUTS')
+    nuts_results = np.load('Tests/data/mode_mixing_NUTS.npy')
+
+    plt.plot(nuts_results[1], nuts_results[0], 'o:', label= 'NUTS')
 
 
     plt.yscale('log')
     plt.xlabel(r'$\mu$')
     plt.ylabel('average steps spent in a mode')
     plt.legend()
-    plt.savefig('Tests/mode_mixing.png')
+    #plt.savefig('Tests/mode_mixing.png')
 
     plt.show()
 
@@ -502,7 +503,7 @@ def dimension_dependence():
 
 
 #bounce_frequency_full_bias()
-ill_conditioned()
+Bimodal()
 #kappa_dependence_prelim()
 
 #Funnel()

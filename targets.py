@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import norm
 
 ### targets that we want to sample from ###
 
@@ -46,14 +47,15 @@ class IllConditionedGaussian():
 
 
 class BiModal():
+    """A Gaussian mixture p(x) = f N(x | mu1, sigma1) + (1-f) N(x | mu2, sigma2)."""
 
-    def __init__(self, d, mu, sigma, f):
+    def __init__(self, d, mu1, mu2, sigma1, sigma2, f):
 
         self.d = d
 
-        #properties of the second gaussian
-        self.mu = np.insert(np.zeros(d-1), 0, mu)
-        self.sigma = sigma
+        self.mu1 = np.insert(np.zeros(d-1), 0, mu1)
+        self.mu2 = np.insert(np.zeros(d - 1), 0, mu2)
+        self.sigma1, self.sigma2 = sigma1, sigma2
         self.f = f
         self.gaussianization_available = False
 
@@ -61,17 +63,18 @@ class BiModal():
     def nlogp(self, x):
         """- log p of the target distribution"""
 
-        N1 = np.exp(-0.5 * np.sum(np.square(x))) * (1 - self.f)
-        N2 = np.exp(-0.5 * np.sum(np.square(x - self.mu)) /self.sigma**2) * self.f / self.sigma**self.d
+        N1 = (1.0 - self.f) * np.exp(-0.5 * np.sum(np.square(x - self.mu1)) / self.sigma1 ** 2) / np.power(2 * np.pi * self.sigma1 ** 2, self.d * 0.5)
+        N2 = self.f * np.exp(-0.5 * np.sum(np.square(x - self.mu2)) / self.sigma2 ** 2) / np.power(2 * np.pi * self.sigma2 ** 2, self.d * 0.5)
 
         return -np.log(N1 + N2)
 
 
     def grad_nlogp(self, x):
-        N1 = np.exp(-0.5 * np.sum(np.square(x))) * (1 - self.f)
-        N2 = np.exp(-0.5 * np.sum(np.square(x - self.mu)) / self.sigma ** 2) * self.f / self.sigma ** self.d
 
-        return (N1 * x + N2 * (x - self.mu) / self.sigma**2) / (N1 + N2)
+        N1 = (1.0 - self.f) * np.exp(-0.5 * np.sum(np.square(x - self.mu1)) / self.sigma1 ** 2) / np.power(2 * np.pi * self.sigma1 ** 2, self.d * 0.5)
+        N2 = self.f * np.exp(-0.5 * np.sum(np.square(x - self.mu2)) / self.sigma2 ** 2) / np.power(2 * np.pi * self.sigma2 ** 2, self.d * 0.5)
+
+        return (N1 * (x - self.mu1) / self.sigma1**2 + N2 * (x - self.mu2) / self.sigma2**2) / (N1 + N2)
 
 
     def draw(self, num_samples):
@@ -86,7 +89,8 @@ class BiModal():
 
 
 class BiModalEqual():
-    """Mixture of two Gaussians, one centered at x = [mu/2, 0, 0, ...], the other at x = [-mu/2, 0, 0, ...]"""
+    """Mixture of two Gaussians, one centered at x = [mu/2, 0, 0, ...], the other at x = [-mu/2, 0, 0, ...].
+        Both have equal probability mass."""
 
     def __init__(self, d, mu):
 
@@ -251,7 +255,4 @@ if __name__ == '__main__':
 
     #target.compute_variance()
     # d = 36
-    # target = BiModal(d, 3, 0.1, 0.2)
-    # check_gradient(target, np.random.normal(size = d))
-
 
