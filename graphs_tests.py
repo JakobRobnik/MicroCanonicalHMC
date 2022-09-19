@@ -47,7 +47,11 @@ def bounce_frequency_full_bias():
     plt.rcParams['ytick.labelsize'] = ff_ticks
     plt.figure(figsize= (20, 8))
     ax = plt.gca()
-    colors = plt.cm.copper(np.linspace(0, 0.9, np.sum(mask_plot)))[::-1]
+    ff, ff_title, ff_ticks = 18, 20, 16
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    colors = plt.cm.cividis(np.linspace(0, 0.9, np.sum(mask_plot)))[::-1]
     plotted = 0
     dash_size = [1, 5, 15, 25, 40, 80]
     for n in range(len(length)):
@@ -213,7 +217,6 @@ def ill_conditioned():
 
     ff, ff_title, ff_ticks = 18, 20, 16
 
-
     plt.rcParams['xtick.labelsize'] = ff_ticks
     plt.rcParams['ytick.labelsize'] = ff_ticks
     plt.figure(figsize= (20, 8))
@@ -245,11 +248,18 @@ def ill_conditioned():
 
 def Bimodal():
     """Figure 3"""
+
+    ff, ff_title, ff_ticks = 18, 20, 14
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(20, 8))
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
     mu = np.arange(1, 9)
 
-    L_arr = [1.5, 20, 100, 1000]
-    for L in L_arr:
-        plt.plot(mu, np.load('Tests/data/mode_mixing_d50_L'+str(L)+'.npy')[:, 0], 'o:', label=r'MCHMC ($\alpha = $)' +str(L))
+    plt.plot(mu, np.load('Tests/data/mode_mixing_d50_L1.5.npy')[:, 0], 'o:', label='MCHMC')
 
 
     nuts_results = np.load('Tests/data/mode_mixing_NUTS.npy')
@@ -258,10 +268,10 @@ def Bimodal():
 
 
     plt.yscale('log')
-    plt.xlabel(r'$\mu$')
-    plt.ylabel('average steps spent in a mode')
-    plt.legend()
-    #plt.savefig('Tests/mode_mixing.png')
+    plt.xlabel(r'$\mu$', fontsize = ff)
+    plt.ylabel('average steps spent in a mode', fontsize = ff)
+    plt.legend(fontsize = ff)
+    plt.savefig('submission/mode_mixing.pdf')
 
     plt.show()
 
@@ -285,11 +295,17 @@ def Funnel():
     plt.rcParams['xtick.labelsize'] = ff_ticks
     plt.rcParams['ytick.labelsize'] = ff_ticks
     plt.figure(figsize=(24, 8))
+    ff, ff_title, ff_ticks = 18, 20, 16
+
 
 
     ####   2d marginal in the original coordinates ####
     plt.subplot(1, 3, 1)
     plt.title('Original coordinates', fontsize = ff_title)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
     plt.plot(zHMC[:, 0], thetaHMC, '.', ms= 1, color = 'tab:orange', label = 'NUTS')
 
     #plt.hist2d(z[:, 0], theta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-30, 30], [-8, 8]], label ='MCHMC')
@@ -304,6 +320,10 @@ def Funnel():
     #### 2d marginal in the gaussianized coordinates ####
     plt.subplot(1, 3, 2)
     plt.title('Gaussianized coordinates', fontsize = ff_title)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
     Gz, Gtheta = gaussianize(z, theta)
     plt.hexbin(Gz[:, 0], Gtheta, C= w, cmap='Blues', gridsize=50, label='MCHMC', reduce_C_function=np.sum)
 
@@ -323,10 +343,13 @@ def Funnel():
     plt.ylim(-3, 3)
 
 
-
     #### 1d theta marginal####
     plt.subplot(1, 3, 3)
     plt.title(r'$\theta$-marginal', fontsize = ff_title)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
     plt.hist(thetaHMC, color='tab:orange', density=True, bins = 20, alpha = 0.5, label = 'NUTS')
     plt.hist(theta, weights= w, color='tab:blue', density=True, bins = 20, alpha = 0.5,  label = 'MCHMC')
 
@@ -336,6 +359,7 @@ def Funnel():
     #xmax = np.min([np.max(thetaHMC), np.max(theta)])
     #plt.xlim(-xmax, xmax)
     #plt.ylim(0, 1)
+
 
     plt.legend(fontsize = ff)
     plt.xlabel(r'$\theta$', fontsize = ff)
@@ -504,7 +528,6 @@ def dimension_dependence():
 
 #bounce_frequency_full_bias()
 Bimodal()
-#kappa_dependence_prelim()
 
 #Funnel()
 #Rosenbrock()
