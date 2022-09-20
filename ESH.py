@@ -90,7 +90,7 @@ class Sampler:
     #            bias.ess_cutoff_crossing(b_lower_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging)
 
 
-    def sample(self, x0, bounce_length, max_steps= 1000000, prerun_steps= 0, track= 'ESS'):
+    def sample(self, x0, bounce_length, max_steps= 1000000, prerun_steps= 0, track= 'ESS', langevin_eta= 0):
 
         """Determines the effective sample size by monitoring the bias in the estimated variance.
             Args:
@@ -176,8 +176,12 @@ class Sampler:
             if tracker.update(x, w): #update tracker
                 return tracker.results()
 
-            if bounce_tracker.update(w):
-                u = self.random_unit_vector()
+            if langevin_eta != 0:
+                u = self.langevin_update(u, langevin_eta)
+
+            else:
+                if bounce_tracker.update(w):
+                    u = self.random_unit_vector()
 
 
         print('Maximum number of steps exceeded')
@@ -233,6 +237,11 @@ class Sampler:
         u = np.random.normal(size=self.Target.d)
         u /= np.sqrt(np.sum(np.square(u)))
         return u
+
+    def langevin_update(self, u, eta):
+        unew = u + np.random.normal(size=len(u)) * eta
+        return unew / np.sqrt(np.sum(np.square(unew)))
+
 
     def half_sphere_bounce(self, u):
         v= self.random_unit_vector()

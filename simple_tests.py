@@ -16,17 +16,21 @@ def bounce_frequency(n, d, kappa = 100.0):
 
     # free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
     length = (1.5 * np.sqrt(d) * np.logspace(-0.8, 0.8, 24))[n]
+    eta = (2.93 * np.power(d, -0.78) * np.logspace(-0.8, 0.8, 24))[n]
+
     #length = 1.5 * np.sqrt(d)
     #sampler = CTV.Sampler(Target = IllConditionedGaussian(d= d, condition_number=100), eps= 3)
     #sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
-    sampler = ESH.Sampler(Target= IllConditionedGaussian(d= d, condition_number= kappa), eps=1.5)
+    sampler = ESH.Sampler(Target= IllConditionedGaussian(d= d, condition_number= kappa), eps=1.0)
     #sampler = ESH.Sampler(Target= Rosenbrock(d= d), eps= 0.5)
     #a= np.sqrt(np.concatenate((np.ones(d//2) * 2.0, np.ones(d//2) * 10.498957879911487)))
     #sampler = ESH.Sampler(Target= DiagonalPreconditioned(Rosenbrock(d= d), a), eps= 0.5)
 
     x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    ess = sampler.sample(x0, length, prerun_steps= 500, track= 'ESS')
+    # ess = sampler.sample(x0, length, track= 'ESS', langevin_eta= eta)
+    # return [ess, eta, sampler.eps, d]
 
+    ess = sampler.sample(x0, length, track= 'ESS')
     return [ess, length, sampler.eps, d]
 
 
@@ -237,9 +241,10 @@ if __name__ == '__main__':
 
     #parallel.run_collect(lambda n: bounce_frequency_full_bias(n, 250), runs=2, working_folder='working/', name_results= 'Tests/data/bounces_eps1')
 
-    parallel.run_collect(bimodal_mixing, runs=2, working_folder='working/', name_results= 'Tests/data/mode_mixing_d50_L1.5')
+
+    #parallel.run_collect(bimodal_mixing, runs=2, working_folder='working/', name_results= 'Tests/data/mode_mixing_d50_L1.5')
 
     #parallel.run_collect(lambda n: bounce_frequency(n, 32), runs=2, working_folder='working/', name_results= 'Tests/data/rosenbrock')
-    #dimension_dependence()
+    parallel.run_collect(lambda n: bounce_frequency(n, 100, 10000.0), runs=4, working_folder='working/', name_results= 'Tests/data/no_langevin_kappa10000')
 
     #parallel.run_collect(ill_conditioned, runs=3, working_folder='working/', name_results= 'Tests/data/kappa/L1.5')

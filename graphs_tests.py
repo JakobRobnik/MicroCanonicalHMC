@@ -215,7 +215,7 @@ def ill_conditioned():
     """Figure 2"""
 
 
-    ff, ff_title, ff_ticks = 18, 20, 16
+    ff, ff_title, ff_ticks = 18, 20, 17
 
     plt.rcParams['xtick.labelsize'] = ff_ticks
     plt.rcParams['ytick.labelsize'] = ff_ticks
@@ -249,7 +249,7 @@ def ill_conditioned():
 def Bimodal():
     """Figure 3"""
 
-    ff, ff_title, ff_ticks = 18, 20, 14
+    ff, ff_title, ff_ticks = 19, 20, 17
     plt.rcParams['xtick.labelsize'] = ff_ticks
     plt.rcParams['ytick.labelsize'] = ff_ticks
     plt.figure(figsize=(20, 8))
@@ -354,7 +354,7 @@ def Funnel():
     plt.hist(theta, weights= w, color='tab:blue', density=True, bins = 20, alpha = 0.5,  label = 'MCHMC')
 
     t= np.linspace(-10, 10, 100)
-    plt.plot(t, norm.pdf(t, scale= 3.0), ':', color= 'black', alpha = 0.5, label = 'exact')
+    plt.plot(t, norm.pdf(t, scale= 3.0), color= 'black', label = 'exact')
 
     #xmax = np.min([np.max(thetaHMC), np.max(theta)])
     #plt.xlim(-xmax, xmax)
@@ -388,7 +388,7 @@ def Rosenbrock():
     X = np.load('Tests/data/rosenbrock.npz')
     x, y = X['samples'][:, 0], X['samples'][:, d // 2]
     w = X['w']
-    sns.histplot(x=x, y=y, weights=w, bins=200, ax=plot.ax_joint, kind= 'hex')
+    sns.histplot(x=x, y=y, weights=w, bins=200, ax=plot.ax_joint)
 
     #sns.scatterplot(x=[], y=[], ax= plot.ax_joint, color = 'tab:blue')
 
@@ -421,7 +421,7 @@ def Rosenbrock():
     ros = targets.Rosenbrock(d=2)
     X = ros.draw(5000000)
     x, y = X[:, 0], X[:, 1]
-    sns.histplot(y=y, bins= 2000, fill= False, element= 'step', linewidth= 1, ax= plot.ax_marg_y, stat= 'density', color= 'black', alpha = 0.5, label= 'exact\nsamples')
+    sns.histplot(y=y, bins= 2000, fill= False, element= 'step', linewidth= 1, ax= plot.ax_marg_y, stat= 'density', color= 'black', alpha = 0.5, label= 'exact')
 
 
     plot.ax_marg_y.legend(fontsize = ff)
@@ -526,8 +526,38 @@ def dimension_dependence():
     plt.xticks([100, 1000, 10000], [r'$10^2$', r'$10^3$', r'$10^4$'])
 
 
+
+def langevin():
+
+    ymax = 0.015
+    plt.figure(figsize=(15, 5))
+
+    plt.subplot(1, 2, 1)
+    plt.title('Langevin')
+    X = np.load('Tests/data/langevin_kappa10000.npy')
+    plt.plot(X[:, 1], X[:, 0], 'o:')
+    plt.ylim(0, ymax)
+    plt.ylabel('ESS')
+    plt.xlabel(r'$\eta$')
+    plt.xscale('log')
+
+    plt.subplot(1, 2, 2)
+    X = np.load('Tests/data/no_langevin_kappa10000.npy')
+    plt.title('Bounces')
+    plt.plot(X[:, 1] / np.sqrt(100), X[:, 0], 'o:')
+    plt.ylim(0, ymax)
+    plt.xscale('log')
+    plt.xlabel(r'$\alpha$')
+
+    plt.savefig('Langevin_kappa10000.png')
+
+    plt.show()
+
 #bounce_frequency_full_bias()
-Bimodal()
+#ill_conditioned()
+#Bimodal()
 
 #Funnel()
 #Rosenbrock()
+
+langevin()
