@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import norm
 from scipy.stats import linregress
+import arviz as az
+
 
 import ESH
 import targets
@@ -553,6 +555,58 @@ def langevin():
 
     plt.show()
 
+
+def german_credit():
+    folder = 'Tests/richard_results/'
+    hmc_data = az.from_netcdf(folder + 'inference_data_german_credit_mcmc.nc')
+    tuning_steps = np.loadtxt(folder + 'german_credit_warmup_n_steps.txt')
+
+    hmc_steps = np.array(hmc_data['sample_stats']['n_steps'])
+    print(np.shape(hmc_steps))
+
+    #
+    # ff, ff_title, ff_ticks = 19, 20, 17
+    # plt.rcParams['xtick.labelsize'] = ff_ticks
+    # plt.rcParams['ytick.labelsize'] = ff_ticks
+    # plt.figure(figsize=(20, 8))
+    #
+    # hmc_bins = 100
+    #
+    # plt.subplot(1, 3, 1)
+    # ax = plt.gca()
+    # ax.spines['right'].set_visible(False)
+    # ax.spines['top'].set_visible(False)
+    #
+    # tau = np.concatenate(np.array(hmc_data['posterior']['tau']))
+    # plt.hist(np.log(tau), bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
+    # plt.xlabel(r'$\log \tau$', fontsize= ff)
+    # plt.ylabel('Density', fontsize= ff)
+    #
+    #
+    # plt.subplot(1, 3, 2)
+    # ax = plt.gca()
+    # ax.spines['right'].set_visible(False)
+    # ax.spines['top'].set_visible(False)
+    #
+    # lambda1 = np.concatenate(np.array(hmc_data['posterior']['lam'])[:, :, 0])
+    #
+    # plt.hist(np.log(lambda1), bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
+    # plt.xlabel(r'$\log \lambda_1$', fontsize= ff)
+    #
+    #
+    # plt.subplot(1, 3, 3)
+    # ax = plt.gca()
+    # ax.spines['right'].set_visible(False)
+    # ax.spines['top'].set_visible(False)
+    #
+    # beta1 = np.concatenate(np.array(hmc_data['posterior']['beta'])[:, :, 0])
+    # plt.hist(beta1, bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
+    # plt.xlabel(r'$\beta_1$', fontsize= ff)
+    #
+    #
+    # plt.show()
+    #
+
 #bounce_frequency_full_bias()
 #ill_conditioned()
 #Bimodal()
@@ -560,4 +614,4 @@ def langevin():
 #Funnel()
 #Rosenbrock()
 
-langevin()
+german_credit()

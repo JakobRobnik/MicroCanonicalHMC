@@ -81,7 +81,8 @@ class BiModal():
         """direct sampler from a target"""
         X = np.random.normal(size = (num_samples, self.d))
         mask = np.random.uniform(0, 1, num_samples) < self.f
-        X[mask] = (X[mask] * self.sigma) + self.mu
+        X[mask, :] = (X[mask, :] * self.sigma2) + self.mu2
+        X[~mask] = (X[~mask] * self.sigma1) + self.mu1
 
         return X
 

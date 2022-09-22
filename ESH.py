@@ -89,7 +89,7 @@ class Sampler:
     #            bias.ess_cutoff_crossing(b_lower_quarter, np.ones(len(B)))[0] / np.sqrt(num_averaging)
 
 
-    def sample(self, x0, bounce_length, max_steps= 1000000, prerun_steps= 0, track= 'ESS', langevin_eta= 0):
+    def sample(self, x0, bounce_length, max_steps= 1000000, prerun_steps= 0, track= 'ESS', langevin_eta= 0, bins = []):
 
         """Determines the effective sample size by monitoring the bias in the estimated variance.
             Args:
@@ -158,7 +158,7 @@ class Sampler:
         elif track == 'ModeMixing':
             tracker= ModeMixing(x)
         elif track == 'Marginal1d':
-            tracker= Marginal1d(bins, num_steps, lambda x: x[0])
+            tracker= Marginal1d(bins, max_steps, lambda x: x[0])
         else:
             print(str(track) + ' is not a valid track option.')
             exit()
@@ -464,7 +464,7 @@ class Marginal1d():
     def update(self, x, w):
         self.count[self.which_bin(self.f(x))] += w
         self.step_count += 1
-        return self.step_count < self.total_steps
+        return self.step_count == self.total_steps
 
 
     def results(self):

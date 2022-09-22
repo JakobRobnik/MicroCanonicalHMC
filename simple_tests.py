@@ -131,7 +131,7 @@ def rosenbrock():
 
 def my_hist(bins, count):
     probability = count / np.sum(count)
-    print(probability[-1])
+    print('probability outside of bins', probability[-1])
 
     for i in range(len(bins)):
         density = probability[i] / (bins[i][1] - bins[i][0])
@@ -141,51 +141,56 @@ def my_hist(bins, count):
 
 def bimodal():
 
+    xmax = 3.5 #how many sigma away from the mean of the gaussians do we want to have bins
+
     def get_bins(mu, sigma, num_bins_per_mode):
-        xmax =3.0
         bins_mode = np.array([[- xmax + i * 2 * xmax / num_bins_per_mode, - xmax + (i+1) * 2 * xmax / num_bins_per_mode] for i in range(num_bins_per_mode)])
 
-        bins = np.concatenate((bins_mode, (bins_mode * sigma) + mu))
+        bins = np.concatenate(( (bins_mode * sigma[0]) + mu[0], (bins_mode * sigma[1]) + mu[1]  ))
 
         return bins
 
-    eps = 1.0
-    #free_steps = (int)(1 / eps)
-    d, mu, sigma, f = 50, 9, 0.5, 0.1
-    esh = ESH.Sampler(Target= BiModal(d=d, mu = mu, sigma= sigma, f= f), eps=eps)
-    bins_per_mode = 10
-    X = esh.Target.draw(1000)[:, 0]
+    d = 50
+    mu1, sigma1= 0.0, 1.0 # the first Gaussian
+    mu2, sigma2, f = 7.0, 0.5, 0.2 #the second Gaussian
 
-    bins = get_bins(mu, sigma, bins_per_mode)
+    name = 'sep'+str(mu2)+'_f'+str(f)+'_sigma'+str(sigma2)
+    load = False
 
-    def which_bin(x):
-        for i in range(len(bins)):
-            if x > bins[i][0] and x < bins[i][1]:
-                return i
+    eps, L = 1.0, 1.5 * np.sqrt(d)
+    bins_per_mode = 20
+    bins = get_bins([mu1, mu2], [sigma1, sigma2], bins_per_mode)
 
-        return len(bins)  # if it is not in any of the bins
+    sampler = ESH.Sampler(Target= BiModal(d=d, mu1= mu1, mu2 = mu2, sigma1= sigma1, sigma2 = sigma2, f= f), eps=eps)
 
-    P = np.zeros(len(bins) + 1)
-    for i in range(len(X)):
-        P[which_bin(X[i])] += 0.1
+    #X = esh.Target.draw(1000)[:, 0]
+    np.random.seed(0)
+    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
+    if load:
+        P = np.load('Tests/data/bimodal_marginal'+name+'.npy')
+    else:
+        P = sampler.sample(x0, L, prerun_steps=5000, max_steps= 50000000, track='Marginal1d', bins= bins)
 
     my_hist(bins, P)
     f1, f2 = np.sum(P[:bins_per_mode]), np.sum(P[bins_per_mode : 2 * bins_per_mode])
-    print(f2 / (f1 + f2))
+    print('f = ' + str(f2 / (f1 + f2)) + '  (true f = ' + str(f) + ')')
 
-    t = np.linspace(-5, 12, 1000)
+    t = np.linspace(-xmax*sigma1+mu1-0.5, xmax*sigma2 + mu2 + 0.5, 1000)
 
-    plt.plot(t, (1- f)*norm.pdf(t) + f * norm.pdf(t, loc = mu, scale = sigma), ':', color = 'gold')
+    plt.plot(t, (1- f)*norm.pdf(t, loc = mu1, scale = sigma1) + f * norm.pdf(t, loc = mu2, scale = sigma2), color = 'black')
+    plt.xlim(t[0], t[-1])
+    plt.ylim(0, 0.4)
+    plt.xlabel(r'$x_1$')
+    plt.ylabel(r'$p(x_1)$')
+
+    plt.savefig('Tests/'+name+'.png')
+    np.save('Tests/data/bimodal_marginal'+name+'.npy', P)
+
     plt.show()
-
-    #np.random.seed(0)
-    #x0 = np.zeros(d)
-    #samples, w = esh.sample(x0, free_steps, 10000000)
 
 
 
 def dimension_dependence():
-
 
     dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
     #dimensions = [3000, 10000]
@@ -241,10 +246,10 @@ if __name__ == '__main__':
 
     #parallel.run_collect(lambda n: bounce_frequency_full_bias(n, 250), runs=2, working_folder='working/', name_results= 'Tests/data/bounces_eps1')
 
-
+    bimodal()
     #parallel.run_collect(bimodal_mixing, runs=2, working_folder='working/', name_results= 'Tests/data/mode_mixing_d50_L1.5')
 
     #parallel.run_collect(lambda n: bounce_frequency(n, 32), runs=2, working_folder='working/', name_results= 'Tests/data/rosenbrock')
-    parallel.run_collect(lambda n: bounce_frequency(n, 100, 10000.0), runs=4, working_folder='working/', name_results= 'Tests/data/no_langevin_kappa10000')
+    #parallel.run_collect(lambda n: bounce_frequency(n, 100, 10000.0), runs=4, working_folder='working/', name_results= 'Tests/data/no_langevin_kappa10000')
 
     #parallel.run_collect(ill_conditioned, runs=3, working_folder='working/', name_results= 'Tests/data/kappa/L1.5')
