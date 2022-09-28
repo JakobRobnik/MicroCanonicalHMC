@@ -3,92 +3,30 @@
 #In some part we directly use their tutorial: https://github.com/tensorflow/probability/blob/main/spinoffs/inference_gym/notebooks/inference_gym_tutorial.ipynb
 
 
+import inference_gym.using_jax as gym
+import jax
+import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
-import sys
-import os
 
 import ESH
-import parallel
 
-import inference_gym.using_jax as gym
-import functools
+#to get ground truth, run the following from the source directory of inference-gym:
+#python -m inference_gym.tools.get_ground_truth --target= GermanCreditNumericSparseLogisticRegression
 
-import jax
-from jax import lax
-import jax.numpy as jnp
-import arviz as az
+target = gym.targets.GermanCreditNumericSparseLogisticRegression()
+target = gym.targets.VectorModel(target, flatten_sample_transformations=True)
 
+identity_fn = target.sample_transformations['identity']
 
-import ESH
-import parallel
+def target_log_prob_fn(z):
+    x = target.default_event_space_bijector(z)
+    return (target.unnormalized_log_prob(x) + target.default_event_space_bijector.forward_log_det_jacobian(z, event_ndims=1))
 
-
-
+target_log_prob_grad_fn = jax.grad(target_log_prob_fn)
 
 
-class Target():
-    """the target class used for the MCHMC"""
-
-    def __init__(self):
-        self.d = 51
-        identity_fn = target.sample_transformations['identity']
-        self.variance = identity_fn.ground_truth_standard_deviation
-        self.gaussianization_available = True
-
-    def nlogp(self, x):
-        return map_objective_fn(x)
-
-    def grad_nlogp(self, x):
-        return map_objective_grad_fn(x)
-
-    def gaussianize(self, x):
-        """This is not a gaussianization in this case, but a transformation to the coordinates in which the ground truth variance is known"""
-        return target.default_event_space_bijector(x)
-
-
-
-def check(samples):
-    num_steps = len(samples)
-    x_chain = target.default_event_space_bijector(samples)
-
-    identity_fn = target.sample_transformations['identity']
-    x_chain_transformed = identity_fn(x_chain)
-    x_mean = x_chain_transformed[num_steps // 2:].mean((0, 1))
-    x_stddev = x_chain_transformed[num_steps // 2:].std((0, 1))
-    plt.figure()
-    plt.title('Mean')
-    plt.bar(jnp.arange(51), x_mean, 0.5, label='MCHMC estimate')
-    plt.bar(0.5 + jnp.arange(51), identity_fn.ground_truth_mean, 0.5, label='Ground Truth')
-    plt.ylabel('Value')
-    plt.xlabel('Coordinate')
-    plt.legend()
-
-    plt.figure()
-    plt.title('Standard Deviation')
-    plt.bar(jnp.arange(51), x_stddev, 0.5, label='MCHMC estimate')
-    plt.bar(0.5 + jnp.arange(51), identity_fn.ground_truth_standard_deviation, 0.5,
-            label='Ground Truth')
-    plt.ylabel('Value')
-    plt.xlabel('Coordinate')
-    plt.legend()
-    plt.show()
-
-
-def setup():
-    jax.config.update('jax_enable_x64', True)
-
-    # setup
-    target = gym.targets.GermanCreditNumericSparseLogisticRegression()
-
-    nested_zeros = lambda shape, dtype: jax.tree_multimap(lambda d, s: jnp.zeros(s, d), dtype, shape)
-
-    z = jax.tree_multimap(lambda d, b, s: nested_zeros(b.inverse_event_shape(s), d), target.dtype,
-                          target.default_event_space_bijector, target.event_shape)
-    x = jax.tree_multimap(lambda z, b: b(z), z, target.default_event_space_bijector)
-
-    target = gym.targets.VectorModel(target, flatten_sample_transformations=True)
+def map_solution():
 
     def map_objective_fn(z):
       x = target.default_event_space_bijector(z)
@@ -96,22 +34,102 @@ def setup():
 
     map_objective_grad_fn = jax.grad(map_objective_fn)
 
-    return map_objective_fn, map_objective_grad_fn
+
+    # MAP solution
+
+    def optimize(z_init, objective_fn, objective_grad_fn, learning_rate, num_steps):
+        def opt_step(z):
+            objective = objective_fn(z)
+            z = z - learning_rate * objective_grad_fn(z)
+            return z, objective
+
+        return jax.lax.scan(lambda z, _: opt_step(z), init=z_init, xs=None, length=num_steps)
+
+
+    z_map, objective_trace = optimize(
+        z_init=jnp.zeros(target.default_event_space_bijector.inverse_event_shape(target.event_shape)),
+        objective_fn=map_objective_fn, objective_grad_fn=map_objective_grad_fn, learning_rate=0.001, num_steps=200, )
+
+
+    return z_map
+
+
+
+class Target():
+
+    def __init__(self):
+        self.d = 51
+        identity_fn = target.sample_transformations['identity']
+        self.variance = jnp.square(identity_fn.ground_truth_standard_deviation) + jnp.square(identity_fn.ground_truth_mean) #in the transformed coordinates
+        self.gaussianization_available = True
+
+
+    def nlogp(self, x):
+        return -target_log_prob_fn(x)
+
+
+    def grad_nlogp(self, x):
+        return -target_log_prob_grad_fn(x)
+
+
+    def transform(self, x):
+        return target.default_event_space_bijector(x)
+
+
+def ess():
+    eps = 0.1
+    esh = ESH.Sampler(Target=Target(), eps=eps)
+    L = 1.5 * np.sqrt(esh.Target.d)
+
+    key = jax.random.PRNGKey(0)
+    x0 = map_solution()
+    ess, success, bias = esh.sample(x0, 300000, L, key, prerun=1000, ess=True)
+
+    print(ess, success)
+
+
+def posterior():
+    eps = 0.1
+    esh = ESH.Sampler(Target=Target(), eps=eps)
+    L = 1.5 * np.sqrt(esh.Target.d)
+
+    key = jax.random.PRNGKey(0)
+    x0 = map_solution()
+    X, W = esh.sample(x0, 1000000, L, key, prerun=0)
+
+    np.savez('Tests/data/german_credit/mchmc.npz', x= X[:, [0, 1, 26]], w= W)
+
+def richard_results():
+    import arviz as az
+    folder = 'Tests/data/german_credit/'
+
+    hmc_data = az.from_netcdf(folder + 'inference_data_german_credit_mcmc.nc')
+    tau = np.array(hmc_data['posterior']['tau'])
+    lam = np.array(hmc_data['posterior']['lam'])
+    beta = np.array(hmc_data['posterior']['beta'])
+    hmc_steps = np.array(hmc_data['sample_stats']['n_steps'])
+    tunning = np.loadtxt(folder + 'german_credit_warmup_n_steps.txt')
+    tunning_steps = np.sum(tunning, axis = 1)
+
+
+    X = np.concatenate([[tau, ], np.swapaxes(lam.T, 1, 2), np.swapaxes(beta.T, 1, 2)])
+
+    var = np.average(np.average(np.square(X), axis = 2), axis = 1)
+
+    bias = np.sqrt(np.average(np.square(((np.cumsum(np.square(X), axis = 2) / np.arange(1, 10001)).T - var) / var), axis=2).T)
+
+    ess = np.empty(10)
+    ess_with_tunning = np.empty(10)
+    for i in range(len(bias)):
+        j = 0
+        while bias[i, j] > 0.1:
+            j += 1
+        ess[i]= 200 / np.sum(hmc_steps[i, :j+1])
+        ess_with_tunning[i] = 200 / (np.sum(hmc_steps[i, :j + 1]) + tunning_steps[i])
+
+    print('ESS = {0}, ESS (with tunning) = {1}'.format(np.average(ess), np.average(ess_with_tunning)))
+
 
 if __name__ == '__main__':
 
-    eps = 0.1
-    d = 51
-    L = 1.5 * np.sqrt(d)
-    esh = ESH.Sampler(Target= Target(), eps=eps)
-    np.random.seed(0)
-    x0 = np.zeros(51)
-    bias = esh.sample(x0, L, max_steps= 10000, prerun_steps = 1000, track= 'FullBias')
-
-    plt.plot(bias, '.')
-
-    plt.xlabel('log')
-    plt.ylabel('log')
-    plt.ylabel('bias')
-    plt.xlabel('gradient evaluations')
-    plt.show()
+    richard_results()

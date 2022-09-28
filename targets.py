@@ -1,5 +1,7 @@
 import numpy as np
 from scipy.stats import norm
+import jax
+import jax.numpy as jnp
 
 ### targets that we want to sample from ###
 
@@ -9,41 +11,47 @@ class StandardNormal():
 
     def __init__(self, d):
         self.d = d
-        self.variance = np.ones(d)
+        self.variance = jnp.ones(d)
         self.gaussianization_available = False
 
     def nlogp(self, x):
         """- log p of the target distribution"""
-        return 0.5 * np.sum(np.square(x))
+        return 0.5 * jnp.sum(jnp.square(x), axis= -1)
 
     def grad_nlogp(self, x):
         return x
 
-    def draw(self, num_samples):
+    def transform(self, x):
+        return x
+
+    def prior_draw(self, key):
         """direct sampler from a target"""
-        return np.random.normal(size = (num_samples, self.d))
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
 
 class IllConditionedGaussian():
-    """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber to condition_number."""
+    """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber^1/2 to condition_number^1/2."""
 
     def __init__(self, d, condition_number):
         self.d = d
-        self.variance = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
+        self.variance = jnp.logspace(-0.5*jnp.log10(condition_number), 0.5*jnp.log10(condition_number), d)
         self.gaussianization_available = False
 
 
     def nlogp(self, x):
         """- log p of the target distribution"""
-        return 0.5 * np.sum(np.square(x) / self.variance)
+        return 0.5 * jnp.sum(jnp.square(x) / self.variance, axis= -1)
 
     def grad_nlogp(self, x):
         return x / self.variance
 
-    def draw(self, num_samples):
+    def transform(self, x):
+        return x
+
+    def prior_draw(self, key):
         """direct sampler from a target"""
-        return np.random.normal(size = (num_samples, self.d)) * np.sqrt(self.variance)
+        return jnp.sqrt(self.variance[-1]) * jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
 class BiModal():
@@ -53,8 +61,8 @@ class BiModal():
 
         self.d = d
 
-        self.mu1 = np.insert(np.zeros(d-1), 0, mu1)
-        self.mu2 = np.insert(np.zeros(d - 1), 0, mu2)
+        self.mu1 = jnp.insert(jnp.zeros(d-1), 0, mu1)
+        self.mu2 = jnp.insert(jnp.zeros(d - 1), 0, mu2)
         self.sigma1, self.sigma2 = sigma1, sigma2
         self.f = f
         self.gaussianization_available = False
@@ -63,16 +71,16 @@ class BiModal():
     def nlogp(self, x):
         """- log p of the target distribution"""
 
-        N1 = (1.0 - self.f) * np.exp(-0.5 * np.sum(np.square(x - self.mu1)) / self.sigma1 ** 2) / np.power(2 * np.pi * self.sigma1 ** 2, self.d * 0.5)
-        N2 = self.f * np.exp(-0.5 * np.sum(np.square(x - self.mu2)) / self.sigma2 ** 2) / np.power(2 * np.pi * self.sigma2 ** 2, self.d * 0.5)
+        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu1)) / self.sigma1 ** 2, axis= -1) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
+        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu2)) / self.sigma2 ** 2, axis= -1) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
 
-        return -np.log(N1 + N2)
+        return -jnp.log(N1 + N2)
 
 
     def grad_nlogp(self, x):
 
-        N1 = (1.0 - self.f) * np.exp(-0.5 * np.sum(np.square(x - self.mu1)) / self.sigma1 ** 2) / np.power(2 * np.pi * self.sigma1 ** 2, self.d * 0.5)
-        N2 = self.f * np.exp(-0.5 * np.sum(np.square(x - self.mu2)) / self.sigma2 ** 2) / np.power(2 * np.pi * self.sigma2 ** 2, self.d * 0.5)
+        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu1), axis= -1) / self.sigma1 ** 2) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
+        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu2), axis= -1) / self.sigma2 ** 2) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
 
         return (N1 * (x - self.mu1) / self.sigma1**2 + N2 * (x - self.mu2) / self.sigma2**2) / (N1 + N2)
 
@@ -102,12 +110,12 @@ class BiModalEqual():
     def nlogp(self, x):
         """- log p of the target distribution"""
 
-        return 0.5 * np.sum(np.square(x)) - np.log(np.cosh(0.5*self.mu*x[0])) + 0.5* self.d * np.log(2 * np.pi) + self.mu**2 / 8.0
+        return 0.5 * jnp.sum(jnp.square(x), axis= -1) - jnp.log(jnp.cosh(0.5*self.mu*x[0])) + 0.5* self.d * jnp.log(2 * jnp.pi) + self.mu**2 / 8.0
 
 
     def grad_nlogp(self, x):
-        grad = np.copy(x)
-        grad[0] -= 0.5*self.mu * np.tanh(0.5 * self.mu * x[0])
+        grad = jnp.copy(x)
+        grad[0] -= 0.5*self.mu * jnp.tanh(0.5 * self.mu * x[0])
 
         return grad
 
@@ -130,7 +138,7 @@ class Funnel():
 
         self.d = d
         self.sigma_theta= 3.0
-        self.variance = np.ones(d)
+        self.variance = jnp.ones(d)
         self.gaussianization_available = True
 
 
@@ -138,12 +146,15 @@ class Funnel():
         """ - log p of the target distribution
                 x = [z_0, z_1, ... z_{d-1}, theta] """
         theta = x[-1]
-        return 0.5* np.square(theta / self.sigma_theta) + 0.5 * (self.d - 1) * x[-1] + 0.5 * np.exp(-theta) * np.sum(np.square(x[:-1]))
+        X = x[..., :- 1]
+
+        return 0.5* jnp.square(theta / self.sigma_theta) + 0.5 * (self.d - 1) * theta + 0.5 * jnp.exp(-theta) * jnp.sum(jnp.square(X), axis = -1)
 
 
     def grad_nlogp(self, x):
-        theta = x[-1]
-        return np.append(np.exp(-theta) * x[:self.d - 1], (theta / self.sigma_theta**2) + 0.5 * (self.d - 1) - 0.5 * np.sum(np.square(x[:-1])) * np.exp(-theta))
+        theta = x[..., -1]
+        X = x[..., :- 1]
+        return jnp.append(jnp.exp(-theta) * X, (theta / self.sigma_theta**2) + 0.5 * (self.d - 1) - 0.5 * jnp.sum(jnp.square(X), axis =-1) * jnp.exp(-theta))
 
 
     def draw(self, num_samples):
@@ -152,14 +163,14 @@ class Funnel():
 
 
     def inverse_gaussianize(self, xtilde):
-        x= np.empty(np.shape(xtilde))
+        x= jnp.empty(jnp.shape(xtilde))
         x[:, -1] = 3 * xtilde[:, -1]
-        x[:, :-1] = xtilde[:, -1] * np.exp(1.5*xtilde[:, -1])
+        x[:, :-1] = xtilde[:, -1] * jnp.exp(1.5*xtilde[:, -1])
         return x
 
 
     def gaussianize(self, x):
-        xtilde = np.empty(np.shape(x))
+        xtilde = jnp.empty(x.shape)
         xtilde[-1] =  x.T[-1] / 3.0
         xtilde[:-1] = x.T[:-1] * np.exp(-0.5*x.T[-1])
         return xtilde.T
@@ -174,26 +185,26 @@ class Rosenbrock():
         self.d = d
         self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #var_y is computed numerically (see compute_variance below)
         #self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
-        self.variance = np.concatenate((var_x * np.ones(d//2), var_y * np.ones(d//2)))
+        self.variance = jnp.concatenate((var_x * jnp.ones(d//2), var_y * jnp.ones(d//2)))
         self.gaussianization_available = False
 
 
     def nlogp(self, x):
         """- log p of the target distribution"""
-        X, Y = x[:self.d//2], x[self.d//2:]
-        return 0.5 * np.sum(np.square(X - 1.0) + np.square(np.square(X) - Y) / self.Q)
+        X, Y = x[..., :self.d//2], x[..., self.d//2:]
+        return 0.5 * jnp.sum(jnp.square(X - 1.0) + jnp.square(jnp.square(X) - Y) / self.Q, axis= -1)
 
 
     def grad_nlogp(self, x):
-        X, Y = x[:self.d//2], x[self.d//2:]
+        X, Y = x[..., :self.d//2], x[..., self.d//2:]
 
-        return np.concatenate((X - 1.0 + 2*(np.square(X) - Y) * X / self.Q, (Y - np.square(X)) / self.Q))
+        return jnp.concatenate((X - 1.0 + 2*(jnp.square(X) - Y) * X / self.Q, (Y - jnp.square(X)) / self.Q))
 
     def draw(self, num):
         n = self.d // 2
-        X= np.empty((num, self.d))
+        X= jnp.empty((num, self.d))
         X[:, :n] = np.random.normal(loc= 1.0, scale= 1.0, size= (num, n))
-        X[:, n:] = np.random.normal(loc= np.square(X[:, :n]), scale= np.sqrt(self.Q), size= (num, n))
+        X[:, n:] = np.random.normal(loc= jnp.square(X[:, :n]), scale= jnp.sqrt(self.Q), size= (num, n))
 
         return X
 
@@ -201,10 +212,10 @@ class Rosenbrock():
     def compute_variance(self):
         num = 100000000
         x = np.random.normal(loc=1.0, scale=1.0, size=num)
-        y = np.random.normal(loc=np.square(x), scale=np.sqrt(self.Q), size=num)
+        y = np.random.normal(loc=np.square(x), scale=jnp.sqrt(self.Q), size=num)
 
-        var_x = np.sum(np.square(x)) / (num - 1)
-        var_y = np.sum(np.square(y)) / (num - 1)
+        var_x = jnp.sum(jnp.square(x)) / (num - 1)
+        var_y = jnp.sum(jnp.square(y)) / (num - 1)
         print(var_x, var_y)
 
 
@@ -218,7 +229,7 @@ class DiagonalPreconditioned():
         self.Target = Target
         self.d= Target.d
         self.a = a
-        self.variance = Target.variance / np.square(a)
+        self.variance = Target.variance / jnp.square(a)
         self.gaussianization_available = False
 
 

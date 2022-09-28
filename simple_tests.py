@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import sys
 from scipy.stats import norm
@@ -10,28 +11,41 @@ import parallel
 from targets import *
 import bias
 
+import jax
+import jax.numpy as jnp
 
 
-def bounce_frequency(n, d, kappa = 100.0):
 
-    # free_steps_arr = (np.linspace(50, 250, 18)).astype(int)
-    length = (1.5 * np.sqrt(d) * np.logspace(-0.8, 0.8, 24))[n]
-    eta = (2.93 * np.power(d, -0.78) * np.logspace(-0.8, 0.8, 24))[n]
+
+num_cores = 6
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+
+def parallel_run(function, values):
+    parallel_function= jax.pmap(jax.vmap(function))
+    results = jnp.array(parallel_function(values.reshape(num_cores, len(values) // num_cores)))
+    return results.reshape([len(values), ] + [results.shape[i] for i in range(2, len(results.shape))])
+
+
+
+def bounce_frequency(d, alpha):
+
+    key = jax.random.PRNGKey(0)
+
+    length = alpha * jnp.sqrt(d)
+    sampler = ESH.Sampler(Target= IllConditionedGaussian(d=d, condition_number=100.0), eps=1.0)
+
+    ess = parallel_run(lambda L: sampler.sample_multiple_chains(5, 300000, L, key, ess= True, prerun=0), length)
+
+    return jnp.average(ess, 1), jnp.std(ess, 1)
+
+    #eta = (2.93 * np.power(d, -0.78) * np.logspace(-0.8, 0.8, 24))[n]
 
     #length = 1.5 * np.sqrt(d)
     #sampler = CTV.Sampler(Target = IllConditionedGaussian(d= d, condition_number=100), eps= 3)
-    #sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
-    sampler = ESH.Sampler(Target= IllConditionedGaussian(d= d, condition_number= kappa), eps=1.0)
     #sampler = ESH.Sampler(Target= Rosenbrock(d= d), eps= 0.5)
     #a= np.sqrt(np.concatenate((np.ones(d//2) * 2.0, np.ones(d//2) * 10.498957879911487)))
     #sampler = ESH.Sampler(Target= DiagonalPreconditioned(Rosenbrock(d= d), a), eps= 0.5)
-
-    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    # ess = sampler.sample(x0, length, track= 'ESS', langevin_eta= eta)
-    # return [ess, eta, sampler.eps, d]
-
-    ess = sampler.sample(x0, length, track= 'ESS')
-    return [ess, length, sampler.eps, d]
+    #return [ess, length, sampler.eps, d]
 
 
 
@@ -78,18 +92,28 @@ def bimodal_mixing(n):
 
 
 
-def ill_conditioned(n):
-    kappa = np.logspace(0, 5, 18)[n]
-    eps = np.array(10 * [2.0, ] + 2 * [1.5, ] + 3*[1.0, ] + [0.7,  ] + 2 * [0.5])[n]
+def ill_conditioned():
     d = 100
     L = 1.5 * np.sqrt(d)
-    esh = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
-    np.random.seed(0)
-    x0 = esh.Target.draw(1)[0]
 
-    ess = esh.sample(x0, L, prerun_steps= 500, track= 'ESS')
+    def f(n):
+        kappa = jnp.logspace(0, 5, 18)[n]
+        eps = jnp.array(10 * [2.0, ] + 2 * [1.5, ] + 3 * [1.0, ] + [0.7, ] + 2 * [0.5])[n]
 
-    return [ess, L, eps, d, kappa]
+        key = jax.random.PRNGKey(0)
+
+        sampler = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
+
+        ess = sampler.sample_multiple_chains(5, 300000, L, key, ess=True, prerun=0)
+
+        return jnp.array([jnp.average(ess, 1), jnp.std(ess, 1)])
+
+    results = parallel_run(f, np.arange(18, dtype = int))
+
+    print(np.shape(results))
+
+    np.save('Tests/data/ill_conditioned_no_tuning.npy', results)
+
 
 
 
@@ -193,26 +217,60 @@ def bimodal():
 def dimension_dependence():
 
     dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
-    #dimensions = [3000, 10000]
+    alpha = (1.5 * jnp.logspace(-0.8, 0.8, 24))
+    #condition_numbers = np.logspace(0, 5, 18)
+    dict = {'alpha': alpha}
+    for d in dimensions:
+        print(d)
+        avg, std = bounce_frequency(d, alpha)
+        dict.update({'ess (d='+str(d)+')': avg, 'err ess (d='+str(d)+')': std})
+    df = pd.DataFrame.from_dict(dict)
+    df.to_csv('Tests/data/dimensions/Kappa100.csv', sep='\t', index=False)
 
-    #condition_numbers = [1, 10, 100, 1000, 10000]
-    condition_numbers = np.logspace(0, 5, 18)
+
+def billiard_bimodal():
+
+    d = 2
+    mu1, sigma1= 0.0, 1.0 # the first Gaussian
+    mu2, sigma2, f = 5.0, 1.0, 0.5 #the second Gaussian
+    xmax = 10.0
+    typical_set = np.sqrt(d)
+    border_lim = typical_set + 1.0
 
 
-    #name_folder= 'Tests/data/dimensions/Rosenbrock_t'
-    name_folder = 'Tests/data/kappa/'
+    sampler = ESH.Sampler(Target= BiModal(d=d, mu1= mu1, mu2 = mu2, sigma1= sigma1, sigma2 = sigma2, f= f), eps= 0.001)
+    #sampler = ESH.Sampler(Target=StandardNormal(d = d), eps=0.1)
 
-    # if not os.path.exists(name_folder):
-    #     os.mkdir(name_folder)
+    key = jax.random.PRNGKey(1)
 
-    # for d in dimensions:
-    #     parallel.run_collect(lambda n: bounce_frequency(n, d), runs= 2, working_folder= 'working/', name_results= name_folder+'/'+str(d))
-    #
-    # for i in range(len(condition_numbers)):
-    #     parallel.run_collect(lambda n: bounce_frequency(n, 100, condition_numbers[i]), runs= 4, working_folder='working/', name_results=name_folder + '/' + str(i)+ 'eps0.7')
+    results = sampler.billiard_trajectory(400000, key, 30.0, border_lim, xmax, mu2 - mu1)
+    x, y, w, region = results
+    # i = 0
+    # radia = jnp.sqrt(jnp.square(x) +jnp.square(y))
+    # while not np.isnan(x[i]):
+    #     i+=1
+    # print(radia[i-5:i+1])
+    #mask =  > xmax
 
-    parallel.run_collect(lambda n: bounce_frequency(n, 100, condition_numbers[11]), runs=4, working_folder='working/', name_results=name_folder + '/' + str(11) + 'eps1.5')
 
+    plt.figure(figsize=(10, 10))
+    plt.plot(x, y, color=  'tab:red', label = 'trajectory')
+
+    phi = np.linspace(0, 2 * np.pi, 200)
+    plt.plot(xmax * np.cos(phi), xmax * np.sin(phi), color=  'black', label = 'prior range')
+    plt.plot(1 * np.cos(phi), 1 * np.sin(phi), color='tab:blue')
+    plt.plot(2 * np.cos(phi), 2 * np.sin(phi), color='tab:blue', alpha = 0.5)
+
+    plt.plot(1 * np.cos(phi) + mu2, 1 * np.sin(phi), color='tab:blue')
+    plt.plot(2 * np.cos(phi) + mu2, 2 * np.sin(phi), color='tab:blue', alpha = 0.5)
+
+    plt.xlabel('x0')
+    plt.ylabel('x1')
+    plt.legend()
+    plt.xlim(-xmax, xmax)
+    plt.ylim(-xmax, xmax)
+    #plt.savefig('no bounces')
+    plt.show()
 
 def bimodal_explore():
     mu = 7.0
@@ -240,16 +298,56 @@ def bimodal_explore():
     plt.show()
 
 
+def energy_fluctuations():
+
+    eps = (1.0 * np.logspace(np.log10(0.05), np.log10(4.0), 18))
+
+    key = jax.random.PRNGKey(0)
+
+    def f(e):
+        esh = ESH.Sampler(Target=IllConditionedGaussian(d=100, condition_number=10000.0), eps=e)
+        ess_chains = esh.sample_multiple_chains(3, 300000, 1.5 * jnp.sqrt(esh.Target.d), key, prerun=0, ess=True)
+        ess, err_ess = jnp.average(ess_chains), jnp.std(ess_chains)
+        energy_chains = esh.sample_multiple_chains(3, 300000, 1.5 * jnp.sqrt(esh.Target.d), key, prerun=0, energy_track = True)
+        #print(np.shape(energy_chains))
+        relative_energy_fluctuations = energy_chains[1]/energy_chains[0]
+        Eavg, Estd = jnp.average(relative_energy_fluctuations), jnp.std(relative_energy_fluctuations)
+        return jnp.array([ess, err_ess, Eavg, Estd])
+
+
+    results = parallel_run(f, eps)
+    #f(1.0)
+    #print(results)
+    plt.subplot(2, 1, 1)
+    plt.errorbar(eps, results[:, 0], yerr = results[:, 1], capsize= 1.5, fmt = 'o:')
+    plt.ylabel('ESS')
+    plt.subplot(2, 1, 2)
+    print(results[:, 2])
+    plt.errorbar(eps, results[:, 2], yerr = results[:, 3], capsize= 1.5, fmt = 'o:')
+
+    plt.ylabel('energy fluctuations')
+    plt.xlabel('eps')
+
+    plt.show()
+
+def autocorr():
+
+    key = jax.random.PRNGKey(0)
+
+    sampler = ESH.Sampler(Target=IllConditionedGaussian(d=100, condition_number=1.0), eps=0.01)
+
+    key, subkey = jax.random.split(key)
+    x0 = jax.random.normal(key, shape = (sampler.Target.d, ), dtype = 'float64')
+
+    X, W = sampler.sample(x0, 1000000, 1.5 * jnp.sqrt(sampler.Target.d), key)
+    print(np.shape(X))
+    autocorr = np.fft.irfft(np.abs(np.square(np.fft.rfft(X[:, 0]))), len(X)) / len(X)
+    plt.plot(np.arange(len(X)//2) * sampler.eps, autocorr[:len(X)//2] )
+    plt.xscale('log')
+    plt.show()
+
+
 
 if __name__ == '__main__':
 
-
-    #parallel.run_collect(lambda n: bounce_frequency_full_bias(n, 250), runs=2, working_folder='working/', name_results= 'Tests/data/bounces_eps1')
-
-    bimodal()
-    #parallel.run_collect(bimodal_mixing, runs=2, working_folder='working/', name_results= 'Tests/data/mode_mixing_d50_L1.5')
-
-    #parallel.run_collect(lambda n: bounce_frequency(n, 32), runs=2, working_folder='working/', name_results= 'Tests/data/rosenbrock')
-    #parallel.run_collect(lambda n: bounce_frequency(n, 100, 10000.0), runs=4, working_folder='working/', name_results= 'Tests/data/no_langevin_kappa10000')
-
-    #parallel.run_collect(ill_conditioned, runs=3, working_folder='working/', name_results= 'Tests/data/kappa/L1.5')
+    ill_conditioned()

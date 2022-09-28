@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import norm
@@ -77,39 +78,41 @@ def bounce_frequency_full_bias():
 
 def dimension_dependence_prelim():
 
-    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
-
+    dimensions = [100, 200, 500, 1000]#, 3000, 10000]
+    df = pd.read_csv('Tests/data/dimensions/Kappa100.csv', sep='\t')
+    alpha = np.array(df['alpha'])[:-7]
     E, L = [], []
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
-    folder_name = 'Kappa100_t'
     #folder_name = 'Rosenbrock_precondition_t'
     factor = 1.0 #Leapfrog
     #factor = 0.25 #Yoshida
     for i in range(len(dimensions)):
         d = dimensions[i]
-        X = np.load('Tests/data/dimensions/'+folder_name+'/'+str(d)+'.npy')
         #peak
-        plt.plot(X[:, 1], factor*X[:, 0], color = tab_colors[i], alpha= 0.5)
+        ess = factor * np.array(df['ess (d='+str(d)+')'])[:-7]
+        ess_err = factor * np.array(df['err ess (d=' + str(d) + ')'])[:-7]
+        plt.plot(alpha * np.sqrt(d), ess, '.:', color = tab_colors[i], alpha = 0.5)
+        plt.fill_between(alpha * np.sqrt(d), ess - ess_err, ess + ess_err, color = tab_colors[i], alpha = 0.1)
 
         #highest point
-        imax= np.argmax(factor*X[:, 0])
-        L.append(X[imax, 1])
-        E.append(X[imax, 0])
-        plt.plot(X[imax, 1], factor*X[imax, 0], '.', color = tab_colors[i])
-        plt.text(X[imax, 1] * 1.05, factor*X[imax, 0]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5) #dimension tag
+        imax= np.argmax(ess)
+        L.append(alpha[imax] * np.sqrt(d))
+        E.append(ess[imax])
+        plt.plot(L[-1], E[-1], 'o', color = tab_colors[i])
+        plt.text(L[-1] * 1.05, E[-1]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5) #dimension tag
 
 
     plt.ylabel('ESS')
     plt.xscale('log')
-    plt.xlabel("orbit length between bounces")
+    plt.xlabel('orbit length between bounces')
 
     ###  L ~ sqrt(d)  ###
     plt.subplot(1, 3, 2)
     for i in range(len(dimensions)):
         plt.plot(dimensions[i], L[i], 'o', color = tab_colors[i])
 
-    skip = 1
+    skip = 0
     slope= np.dot(np.sqrt(dimensions[skip:]), L[skip:]) / np.sum(dimensions[1:])
     print(slope)
     plt.title(r'$L \approx$' +'{0:.4}'.format(slope) + r' $\sqrt{d}$')
@@ -141,6 +144,54 @@ def dimension_dependence_prelim():
     #plt.savefig('Tests/bounce_dimension_dependence/'+folder_name+'.png')
     plt.show()
 
+
+def dimension_dependence():
+
+    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
+    name= 'StandardNormal'
+    df = pd.read_csv('Tests/data/dimensions/'+name+'.csv', sep='\t')
+    df_t = pd.read_csv('Tests/data/dimensions/'+name+'_t.csv', sep='\t')
+
+    alpha = np.array(df['alpha'])[:-7]
+    E, L = [], []
+    Et, Lt = [], []
+    plt.figure(figsize=(10, 5))
+    factor = 1.0 #Leapfrog
+    #factor = 0.25 #Yoshida
+    for i in range(len(dimensions)):
+        d = dimensions[i]
+        ess = factor * np.array(df['ess (d='+str(d)+')'])[:-7]
+
+        #highest point
+        imax= np.argmax(ess)
+        L.append(alpha[imax] * np.sqrt(d))
+        E.append(ess[imax])
+
+        ess = factor * np.array(df_t['ess (d=' + str(d) + ')'])[:-7]
+
+        # highest point
+        imax = np.argmax(ess)
+        Lt.append(alpha[imax] * np.sqrt(d))
+        Et.append(ess[imax])
+
+    skip=1
+
+    from scipy.stats import linregress
+    plt.plot(dimensions, E, '.', color='tab:blue', label='equally spaced in distance')
+    plt.plot(dimensions, Et, '.', color='tab:orange', label='equally spaced in time')
+
+    res = linregress(np.log(dimensions[skip:]), np.log(E[skip:]))
+    plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), color = 'tab:blue', alpha = 0.5)
+    res = linregress(np.log(dimensions[skip:]), np.log(Et[skip:]))
+    plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), color = 'tab:orange', alpha = 0.5)
+    plt.legend()
+    plt.xlabel('d')
+    plt.ylabel('ESS')
+    plt.xscale('log')
+    plt.yscale('log')
+
+    #plt.savefig('Tests/kappa100corrected.png')
+    plt.show()
 
 
 def kappa_dependence_prelim():
@@ -261,8 +312,7 @@ def Bimodal():
 
     mu = np.arange(1, 9)
 
-    plt.plot(mu, np.load('Tests/data/mode_mixing_d50_L1.5.npy')[:, 0], 'o:', label='MCHMC')
-
+    plt.plot(mu, np.load('Tests/data/bimodal_marginal/mode_mixing_d50_L1.5.npy')[:, 0], 'o:', label='MCHMC')
 
     nuts_results = np.load('Tests/data/mode_mixing_NUTS.npy')
 
@@ -273,7 +323,7 @@ def Bimodal():
     plt.xlabel(r'$\mu$', fontsize = ff)
     plt.ylabel('average steps spent in a mode', fontsize = ff)
     plt.legend(fontsize = ff)
-    plt.savefig('submission/mode_mixing.pdf')
+    #plt.savefig('submission/mode_mixing.pdf')
 
     plt.show()
 
@@ -498,36 +548,36 @@ def funnel_debug():
     plt.ylabel(r'$\theta$')
     plt.show()
 
-
-def dimension_dependence():
-    ###  dimension dependence ###
-    plt.subplot(1, 2, 1)
-    dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
-    markers = ['o:', 's:', 'v:']
-
-    # tuned MCHMC
-    target_names = ['StandardNormal_t', 'Kappa100_t', 'Rosenbrock_t']
-    for i in range(len(target_names)):
-        if i == 2:
-            dim = [50, 100, 200, 500, 1000, 3000]
-        else:
-            dim = dimensions
-        ess = [np.max(np.load('Tests/data/dimensions/' + target_names[i] + '/' + str(d) + '.npy')[:, 0]) for d in dim]
-        plt.plot(dim, ess, markers[i], color='tab:blue')
-
-    # NUTS
-    target_names = ['StandardNormal', 'Kappa100', 'Rosenbrock']
-    for i in range(len(target_names)):
-        ess = np.load('Tests/data/dimensions/' + target_names[i] + '_NUTS.npy')[0]
-        plt.plot(dimensions, ess, markers[i], color='tab:orange')
-
-    plt.xlabel('d', fontsize=ff)
-    plt.ylabel('ESS', fontsize=ff)
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.xticks([100, 1000, 10000], [r'$10^2$', r'$10^3$', r'$10^4$'])
-
-
+#
+# def dimension_dependence():
+#     ###  dimension dependence ###
+#     plt.subplot(1, 2, 1)
+#     dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
+#     markers = ['o:', 's:', 'v:']
+#
+#     # tuned MCHMC
+#     target_names = ['StandardNormal_t', 'Kappa100_t', 'Rosenbrock_t']
+#     for i in range(len(target_names)):
+#         if i == 2:
+#             dim = [50, 100, 200, 500, 1000, 3000]
+#         else:
+#             dim = dimensions
+#         ess = [np.max(np.load('Tests/data/dimensions/' + target_names[i] + '/' + str(d) + '.npy')[:, 0]) for d in dim]
+#         plt.plot(dim, ess, markers[i], color='tab:blue')
+#
+#     # NUTS
+#     target_names = ['StandardNormal', 'Kappa100', 'Rosenbrock']
+#     for i in range(len(target_names)):
+#         ess = np.load('Tests/data/dimensions/' + target_names[i] + '_NUTS.npy')[0]
+#         plt.plot(dimensions, ess, markers[i], color='tab:orange')
+#
+#     plt.xlabel('d', fontsize=ff)
+#     plt.ylabel('ESS', fontsize=ff)
+#     plt.xscale('log')
+#     plt.yscale('log')
+#     plt.xticks([100, 1000, 10000], [r'$10^2$', r'$10^3$', r'$10^4$'])
+#
+#
 
 def langevin():
 
@@ -557,61 +607,79 @@ def langevin():
 
 
 def german_credit():
-    folder = 'Tests/richard_results/'
+    folder = 'Tests/data/german_credit/'
+
+    mchmc_data = np.load(folder + 'mchmc.npz')
+    X, W = mchmc_data['x'], mchmc_data['w']
+
     hmc_data = az.from_netcdf(folder + 'inference_data_german_credit_mcmc.nc')
     tuning_steps = np.loadtxt(folder + 'german_credit_warmup_n_steps.txt')
 
-    hmc_steps = np.array(hmc_data['sample_stats']['n_steps'])
-    print(np.shape(hmc_steps))
+    # hmc_steps = np.array(hmc_data['sample_stats']['n_steps'])
+    # print(np.shape(hmc_steps))
 
-    #
-    # ff, ff_title, ff_ticks = 19, 20, 17
-    # plt.rcParams['xtick.labelsize'] = ff_ticks
-    # plt.rcParams['ytick.labelsize'] = ff_ticks
-    # plt.figure(figsize=(20, 8))
-    #
-    # hmc_bins = 100
-    #
-    # plt.subplot(1, 3, 1)
-    # ax = plt.gca()
-    # ax.spines['right'].set_visible(False)
-    # ax.spines['top'].set_visible(False)
-    #
-    # tau = np.concatenate(np.array(hmc_data['posterior']['tau']))
-    # plt.hist(np.log(tau), bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
-    # plt.xlabel(r'$\log \tau$', fontsize= ff)
-    # plt.ylabel('Density', fontsize= ff)
-    #
-    #
-    # plt.subplot(1, 3, 2)
-    # ax = plt.gca()
-    # ax.spines['right'].set_visible(False)
-    # ax.spines['top'].set_visible(False)
-    #
-    # lambda1 = np.concatenate(np.array(hmc_data['posterior']['lam'])[:, :, 0])
-    #
-    # plt.hist(np.log(lambda1), bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
-    # plt.xlabel(r'$\log \lambda_1$', fontsize= ff)
-    #
-    #
-    # plt.subplot(1, 3, 3)
-    # ax = plt.gca()
-    # ax.spines['right'].set_visible(False)
-    # ax.spines['top'].set_visible(False)
-    #
-    # beta1 = np.concatenate(np.array(hmc_data['posterior']['beta'])[:, :, 0])
-    # plt.hist(beta1, bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
-    # plt.xlabel(r'$\beta_1$', fontsize= ff)
-    #
-    #
-    # plt.show()
-    #
 
+    ff, ff_title, ff_ticks = 19, 20, 17
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(20, 8))
+
+    hmc_bins = 100
+    mchmc_bins = 100
+
+    plt.subplot(1, 3, 1)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    tau = np.concatenate(np.array(hmc_data['posterior']['tau']))
+    print(np.average(tau))
+    plt.hist(np.log(tau), bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
+
+    tau = X[:, 0]
+    plt.hist(np.log(tau), bins=mchmc_bins, weights= W, density=True, alpha=0.5, color='tab:blue', label='MCHMC')
+
+    plt.xlabel(r'$\log \tau$', fontsize= ff)
+    plt.ylabel('Density', fontsize= ff)
+
+
+    plt.subplot(1, 3, 2)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    lambda1 = np.concatenate(np.array(hmc_data['posterior']['lam'])[:, :, 0])
+    plt.hist(np.log(lambda1), bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
+
+    lambda1 = X[:, 1]
+    plt.hist(np.log(lambda1), bins=mchmc_bins, weights= W, density=True, alpha=0.5, color='tab:blue', label='MCHMC')
+
+    plt.xlabel(r'$\log \lambda_1$', fontsize= ff)
+
+
+    plt.subplot(1, 3, 3)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    beta1 = np.concatenate(np.array(hmc_data['posterior']['beta'])[:, :, 0])
+    plt.hist(beta1, bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
+
+    beta1 = X[:, 2]
+    plt.hist(beta1, bins=mchmc_bins, weights= W, density=True, alpha=0.5, color='tab:blue', label='MCHMC')
+
+    plt.xlabel(r'$\beta_1$', fontsize= ff)
+
+    plt.savefig('submission/german_credit_posterior.pdf')
+    plt.show()
+
+
+dimension_dependence()
 #bounce_frequency_full_bias()
 #ill_conditioned()
 #Bimodal()
 
 #Funnel()
 #Rosenbrock()
-
-german_credit()
+#dimension_dependence()
+#german_credit()

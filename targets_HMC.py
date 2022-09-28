@@ -28,7 +28,7 @@ def bimodal(d, mu):
 
     mix = dist.Categorical(np.ones(2) / 2.0)
 
-    component_dist = dist.Normal(loc=np.array([avg, -avg]).T)  # , scale=np.ones(shape = (d, 2)))
+    component_dist = dist.Normal(loc=np.array([np.zeros(d), avg]).T)  # , scale=np.ones(shape = (d, 2)))
 
     mixture = dist.MixtureSameFamily(mix, component_dist)
 
