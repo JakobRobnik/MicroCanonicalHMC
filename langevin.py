@@ -4,16 +4,28 @@ import numpy as np
 from scipy.stats import special_ortho_group
 from scipy import interpolate
 from scipy.stats import linregress
-
+import jax
+import jax.numpy as jnp
 
 tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
 
 
-def update_momentum(u, eta):
-    unew = u + np.random.normal(size= len(u)) * eta
-    return unew / np.sqrt(np.sum(np.square(unew)))
+def update_momentum(carry, eta):
+    u, key = carry
+    key, subkey = jax.random.split(key)
+    unew = u + jax.random.normal(subkey, u.shape, u.dtype) * eta
+    return (unew / jnp.sqrt(jnp.sum(jnp.square(unew))), key), u[0]
 
 
+def evolve(d, eta, nsteps, batch):
+    key = jax.random.PRNGKey(0)
+    keys = jax.random.split(key, batch)
+    u0 = jnp.zeros(d)
+    u0 = u0.at[0].set(1.0)
+
+    results = jax.vmap(lambda seed: jax.lax.scan(lambda carry, _: update_momentum(carry, eta), init = (u0, seed), xs= None, length= nsteps)[1])(keys)
+
+    return jnp.average(results, axis = 0), jnp.std(results, axis = 0) / jnp.sqrt(batch - 1)
 
 
 def decoherence_time(d, eta):
@@ -28,6 +40,7 @@ def decoherence_time(d, eta):
         times[i] = time
 
     return [np.average(times), np.std(times) / np.sqrt(repeat - 1)]
+
 
 
 def find_eta(tau, e, t):
@@ -124,4 +137,61 @@ def angle_distribution():
     plt.show()
 
 
-decoherence_time_plot()
+def tau_decoherence(d, nu):
+    print(d, nu)
+    steps = (int)((1.0 / nu)**2) #heuristic
+    s, err = evolve(d, nu, steps, 10000)
+    mask = s > 1e-2
+    time = np.arange(steps)
+    x, y = time[mask], -np.log(s[mask])
+    optimal_slope = np.dot(y, x) / np.dot(x, x)
+    return optimal_slope
+
+
+
+def tau_decoherence_plot(d, nu):
+    print(d, nu)
+    steps = 40#(int)((1.0 / nu)**2) #heuristic
+    s, err = evolve(d, nu, steps, 1000000)
+    #mask = s > 1e-2
+    time = np.arange(steps)
+    #x, y = time[mask], -np.log(s[mask])
+    x, y = time, -np.log(s)
+
+    optimal_slope = np.dot(y, x) / np.dot(x, x)
+    plt.plot(time, s, '.', color='black')
+    plt.plot(x, np.exp(-optimal_slope *x), color = 'tab:orange')
+    plt.xlabel('n')
+    plt.ylabel(r'$u_n \cdot u_0$')
+    plt.yscale('log')
+    plt.savefig('exp decay.png')
+    plt.show()
+
+
+def grid_scan():
+    d= [50, 100, 500, 1000]
+    nu = np.array([0.01, 0.03, 0.06, 0.1, 0.15])
+    X = [[tau_decoherence(dd, nn) for nn in nu] for dd in d]
+    np.save('grid_scan', X)
+
+
+def analyze_grid_scan():
+    d= [50, 100, 500, 1000]
+    nu = np.array([0.01, 0.03, 0.06, 0.1, 0.15])
+
+    X = np.load('grid_scan.npy')
+
+    for i in range(len(X)):
+        plt.plot(nu, X[i, :], 'o:', label = 'd = ' +str(d[i]))
+        plt.plot(nu, 0.5 * np.log(1 + d[i] * np.square(nu)), color = 'black')
+
+    plt.plot([], [], color= 'black', label = r'$\frac{1}{2} \, \log ( 1 + d \nu^2 )$')
+    plt.legend()
+    plt.xlabel(r'$\nu$')
+    plt.ylabel(r'$\lambda$')
+    plt.savefig('umeritev')
+    plt.show()
+
+
+
+#analyze_grid_scan()

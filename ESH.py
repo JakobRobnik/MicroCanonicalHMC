@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+import matplotlib.pyplot as plt
 
 jax.config.update('jax_enable_x64', True)
 
@@ -15,9 +16,17 @@ class Sampler:
     def random_unit_vector(self, key):
         """Generates a random (isotropic) unit vector."""
         key, subkey = jax.random.split(key)
-        u = jax.random.normal(key, shape = (self.Target.d, ), dtype = 'float64')
+        u = jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
         u /= jnp.sqrt(jnp.sum(jnp.square(u)))
         return u, key
+
+
+    def langevin_step(self, u, key, nu):
+        """Adds a small noise to u and normalizes."""
+        key, subkey = jax.random.split(key)
+        z = nu * jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
+
+        return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
 
 
     def f(self, eps, g, u):
@@ -30,8 +39,9 @@ class Sampler:
         return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh)
 
 
-    def dynamics_bounces_step(self, x, u, g, r, key, time, time_max, add_time_distance):
+    def dynamics_bounces_step(self, state, add_time_distance, time_max):
         """One step of the dynamics (with bounces)"""
+        x, u, g, r, key, time = state
 
         # Hamiltonian step
         uhalf = self.f(self.eps * 0.5, g, u)
@@ -52,9 +62,29 @@ class Sampler:
         return xnew, u_return, gg_new, rnew, key, time, w
 
 
-    def dynamics_bounces_billiard_step(self, x, u, g, r, key, time, time_max, xmax):
-        """One step of the dynamics (with bounces)"""
+    def generalized_dynamics_step(self, state, nu):
+        """One step of the generalized dynamics"""
 
+        x, u, g, r, key, time = state
+        # Hamiltonian step
+        uhalf = self.f(self.eps * 0.5, g, u)
+        xnew = x + self.eps * uhalf
+        gg_new = self.Target.grad_nlogp(xnew)
+        unew = self.f(self.eps * 0.5, gg_new, uhalf)
+        rnew = r - self.eps * 0.5 * (jnp.dot(u, g) + jnp.dot(unew, gg_new)) / self.Target.d
+
+        w = jnp.exp(rnew) / self.Target.d
+
+        # bounce
+        unew, key = self.langevin_step(unew, key, nu)
+
+        return xnew, unew, gg_new, rnew, key, 0.0, w
+
+
+    def dynamics_bounces_billiard_step(self, state, time_max, xmax):
+        """One step of the dynamics with bounces and bounces from the prior walls"""
+
+        x, u, g, r, key, time = state
         # Hamiltonian step
         uhalf = self.f(self.eps * 0.5, g, u)
         xnew = x + self.eps * uhalf
@@ -107,33 +137,29 @@ class Sampler:
 
 
 
-    def sample(self, x0, num_steps, bounce_length, key, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
+    def sample(self, x0, num_steps, bounce_length, key, langevin = False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
 
 
-        add_distance = lambda eps, w: eps  # a function for updating the rescaled time (i.e. distance)
-        add_time = lambda eps, w: eps * w  # a function for updating the Hamiltonian time
-
-
-        def step(state_track, add_time_distance, time_max):
+        def step(state, useless):
             """Tracks full x as a function of number of iterations"""
 
-            x, u, g, r, key, time, w = self.dynamics_bounces_step(*state_track, time_max, add_time_distance)
+            x, u, g, r, key, time, w = dynamics(state)
 
             return (x, u, g, r, key, time), (self.Target.transform(x), w)
 
 
-        def track_step(state_track, add_time_distance, time_max, update_track):
+        def track_step(state_track, useless):
             """Does not track the full d-dimensional x, but some function (can be a vector function) of x. This can be expected values of some quantities of interest, 1d marginal histogram, etc."""
 
-            x, u, g, r, key, time, w = self.dynamics_bounces_step(*state_track[0], time_max, add_time_distance)
+            x, u, g, r, key, time, w = dynamics(state_track[0])
 
             return ((x, u, g, r, key, time), update_track(state_track[1], self.Target.transform(x), w)), True
 
 
-        def bias_step(state_track, add_time_distance, time_max):
+        def bias_step(state_track, useless):
             """Only tracks bias as a function of number of iterations."""
 
-            x, u, g, r, key, time, w = self.dynamics_bounces_step(*state_track[0], time_max, add_time_distance)
+            x, u, g, r, key, time, w = dynamics(state_track[0])
             W, F2 = state_track[1]
 
             F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
@@ -143,10 +169,10 @@ class Sampler:
             return ((x, u, g, r, key, time), (W+w, F2)), bias
 
 
-        def energy_step(state_track, add_time_distance, time_max):
+        def energy_step(state_track, useless):
             """Only outputs the average energy and it's fluctuations"""
 
-            x, u, g, r, key, time, w = self.dynamics_step(*state_track[0], time_max, add_time_distance)
+            x, u, g, r, key, time, w = dynamics(state_track[0])
             W, E1, E2 = state_track[1]
 
             E = self.energy(x, w)
@@ -161,35 +187,30 @@ class Sampler:
         r = 0.0
         w = jnp.exp(r) / self.Target.d
         # u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
-        #u, key = self.random_unit_vector(key)
-        u = jnp.array([1.0, 0.0])
+        u, key = self.random_unit_vector(key)
+
+
+        dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps, bounce_length) #bounces equally spaced in distance
+
+        if prerun != 0: # do a short prerun to determine the typical speed of the particle and then have bounces equally spaced in time
+            bounce_time = bounce_length * jnp.average(jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=prerun)[1][1])
+
+            dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps * w, bounce_time)
+
+        if langevin: #do a continous momentum decoherence (generalized MCHMC)
+            nu = jnp.sqrt((jnp.exp(2 * self.eps / bounce_length) - 1.0) / self.Target.d)
+            dynamics = lambda state: self.generalized_dynamics_step(state, nu)
+
+
         if ess:  # only track the bias
 
-            if prerun != 0:
-
-                final_state_prerun, bias_trace_prerun = jax.lax.scan(
-                    lambda x, _: bias_step(x, add_distance, bounce_length),
-                    init=((x, u, g, r, key, 0.0), (w, jnp.square(x))), xs=None, length=prerun)
-
-                w_typical_set = final_state_prerun[1][0] / prerun
-                bounce_time = bounce_length * w_typical_set
-
-                final_state, bias_trace = jax.lax.scan(lambda x, _: bias_step(x, add_time, bounce_time),
-                                                       init=final_state_prerun, xs=None, length=num_steps)
-
-                bias = jnp.concatenate((bias_trace_prerun, bias_trace))
-
-            else:
-                _, bias = jax.lax.scan(lambda x, _: bias_step(x, add_distance, bounce_length),
-                                             init=((x, u, g, r, key, 0.0), (w, jnp.square(x))), xs=None,
-                                             length=num_steps)
+            _, bias = jax.lax.scan(bias_step, init=((x, u, g, r, key, 0.0), (w, jnp.square(x))), xs=None, length=num_steps)
 
             return ess_cutoff_crossing(bias)
 
         elif energy_track:  # only track the expected energy and its variance
 
-            energy_tracer = jax.lax.scan(lambda x, _: energy_step(x, add_distance, bounce_length),
-                                   init=((x, u, g, r, key, 0.0), (0.0, 0.0, 0.0)), xs=None, length=num_steps)[0][1]
+            energy_tracer = jax.lax.scan(energy_step, init=((x, u, g, r, key, 0.0), (0.0, 0.0, 0.0)), xs=None, length=num_steps)[0][1]
 
             return [energy_tracer[1], jnp.sqrt(energy_tracer[2] - jnp.square(energy_tracer[1]))]
 
@@ -198,46 +219,27 @@ class Sampler:
 
             track = update_track(initial_track, x, w)
 
-            # init = track_step(init, add_distance, bounce_length, update_track)
-
-            final_state, _ = jax.lax.scan(
-                lambda state_track, _: track_step(state_track, add_distance, bounce_length, update_track),
-                init=((x, u, g, r, key, 0.0), track), xs=None, length=num_steps)
+            final_state, _ = jax.lax.scan(track_step, init=((x, u, g, r, key, 0.0), track), xs=None, length=num_steps)
 
             return final_state[1]  # return the final values of the quantities that we wanted to track
 
         else:  # track the full x
 
-            if prerun != 0:
+            final_state, track = jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)
 
-                final_state_prerun, track1 = jax.lax.scan(lambda state, _: step(state, add_distance, bounce_length),
-                                                      init=(x, u, g, r, key, 0.0), xs=None, length=prerun)
-
-                w_typical_set = final_state_prerun[1][0] / prerun
-                bounce_time = bounce_length * w_typical_set
-
-                final_state, track2 = jax.lax.scan(lambda x, _: step(x, add_time, bounce_time), init=final_state_prerun,
-                                               xs=None, length=num_steps)
-
-                X = np.concatenate((track1[0], track2[0]))
-                W = np.concatenate((track1[1], track2[1]))
-
-
-            else:
-                final_state, track = jax.lax.scan(lambda state, _: step(state, add_distance, bounce_length),
-                                              init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)
-
-                X, W = track[0], track[1]
+            X, W = track[0], track[1]
 
             return X, W
 
 
-    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
+
+
+    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, langevin= False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
 
         def f(key, useless):
             key, key_prior, key_bounces = jax.random.split(key[0], 3)
             x0 = self.Target.prior_draw(key_prior)
-            return (key,), self.sample(x0, num_steps, bounce_length, key_bounces, ess, update_track, initial_track, prerun, energy_track)
+            return (key,), self.sample(x0, num_steps, bounce_length, key_bounces, langevin, ess, update_track, initial_track, prerun, energy_track)
 
         return jax.lax.scan(f, init= (key, ), xs = None, length = num_chains)[1]
 

@@ -35,6 +35,19 @@ def bimodal(d, mu):
     numpyro.sample('x', mixture)
 
 
+def bimodal_hard():
+    d = 50
+    avg = np.zeros(d)
+    avg[0] = 8.0
+
+    mix = dist.Categorical(jnp.array([0.8, 0.2]))
+
+    component_dist = dist.Normal(loc=np.array([np.zeros(d), avg]).T)  # , scale=np.ones(shape = (d, 2)))
+
+    mixture = dist.MixtureSameFamily(mix, component_dist)
+
+    numpyro.sample('x', mixture)
+
 
 def funnel(d, sigma):
     theta = numpyro.sample("theta", dist.Normal(0, 3))

@@ -1,137 +1,122 @@
 import numpy as np
 import bias
+import jax.numpy as jnp
+import jax
 
 
 class Sampler:
-    """the Canonical T+V Hamiltonian sampler"""
+    """the esh sampler"""
 
     def __init__(self, Target, eps):
         self.Target, self.eps = Target, eps
-        self.step = self.Yoshida_step
+
+        cbrt_two = jnp.cbrt(2.0)
+        w0, w1 = -cbrt_two / (2.0 - cbrt_two), 1.0 / (2.0 - cbrt_two)
+        self.cd = jnp.array([[0.5 * w1, w1], [0.5 * (w0 + w1), w0], [0.5 * (w0 + w1), w1]])
+
+
+    def random_unit_vector(self, key):
+        """Generates a random (isotropic) unit vector."""
+        key, subkey = jax.random.split(key)
+        u = jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
+        u /= jnp.sqrt(jnp.sum(jnp.square(u)))
+        return u, key
 
 
     def V(self, x):
         """potential"""
-        return -np.exp(-2 * self.Target.nlogp(x) / (self.Target.d - 2))
+        return -jnp.exp(-2 * self.Target.nlogp(x) / (self.Target.d - 2))
 
 
     def grad_V(self, x):
         """returns g and it's gradient"""
-        v = -np.exp(-2 * self.Target.nlogp(x) / (self.Target.d - 2))
+        v = -jnp.exp(-2 * self.Target.nlogp(x) / (self.Target.d - 2))
 
-        return v, (-2 * v / (self.Target.d - 2)) * self.Target.grad_nlogp(x)
+        return (-2 * v / (self.Target.d - 2)) * self.Target.grad_nlogp(x)
 
-
-    def initialize(self):
-        """randomly draws the initial x from the unit gaussian and the initial momentum with random direction and the magnitude such that total energy is zero"""
-
-        x0, p0 = np.random.normal(size=self.Target.d), np.random.normal(size=self.Target.d)
-        p0 *= np.sqrt(-2 * self.V(x0)) / np.sqrt(np.sum(np.square(p0)))
-        return x0, p0
-
-    def initialize_momentum(self, x0):
-        """randomly draws the initial momentum with random direction and the magnitude such that total energy is zero"""
-
-        p0 = np.random.normal(size=self.Target.d)
-        p0 *= np.sqrt(-2 * self.V(x0)) / np.sqrt(np.sum(np.square(p0)))
-        return p0
-
-
-    def hamiltonian(self, x, p):
-        """"H = T + V"""
-        return 0.5 * np.sum(np.square(p)) + self.V(x)
-
-
-    def symplectic_Euler_step(self, x, p):
-        v, Dv = self.grad_V(x)
-        pnew = p - self.eps * Dv
-        xnew = x + self.eps * pnew
-
-        return xnew, pnew
 
 
     def Yoshida_step(self, x0, p0):
-        x = np.copy(x0)
-        p = np.copy(p0)
-        cbrt_two = np.cbrt(2.0)
-        w0, w1 = -cbrt_two / (2.0 - cbrt_two), 1.0 / (2.0 - cbrt_two)
-        c = [0.5 * w1, 0.5 * (w0 + w1), 0.5 * (w0 + w1)]
-        d = [w1, w0, w1]
-        for i in range(3):
-            x += c[i] * p * self.eps
-            p -= d[i] * self.grad_V(x)[1] * self.eps
 
-        x += c[0] * p * self.eps
 
+        def substep(carry, cd):
+            c, d = cd
+            x, p = carry
+            x += c * p * self.eps
+            p -= d * self.grad_V(x) * self.eps
+            return (x, p), None
+
+        x, p = jax.lax.scan(substep, init = (x0, p0), xs= self.cd)[0]
+        x += self.cd[0, 1] * p * self.eps
         return x, p
 
 
+    def dynamics(self, state):
+        """One step of the dynamics (with bounces)"""
+        x, p, key, time = state
 
-    def trajectory(self, time):
-        steps = (int)(time / self.eps)
-        x0, p0 = self.initialize()
-        X = np.zeros((steps + 1, len(x0)))
-        P = np.zeros((steps + 1, len(p0)))
-        X[0], P[0] = x0, p0
+        # Hamiltonian step
+        xnew, pnew = self.Yoshida_step(x, p)
 
-        for i in range(steps):
-            X[i + 1], P[i + 1] = self.step(X[i], P[i])
+        # bounce
+        u_bounce, key = self.random_unit_vector(key)
+        time += self.eps
+        do_bounce = time > self.time_max
+        time = time * (1 - do_bounce)  # reset time if the bounce is done
+        pneww = pnew * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
-        return X, P
-
-  
-    
-    # def sample(self, free_time, num_bounces):
-    #     x, p = self.initialize()
-    #     free_steps = (int)(free_time / self.eps)
-    #     X = np.empty((num_bounces * free_steps, self.Target.d))
-    #
-    #     for k in range(num_bounces):  # number of bounces
-    #         # bounce
-    #         p = self.isotropic_bounce(p)
-    #
-    #         # evolve
-    #         for i in range(free_steps):
-    #             x, p = self.step(x, p)
-    #
-    #             X[k*free_steps+i, :] = x
-    #
-    #     return X
+        return xnew, pneww, key, time
 
 
-    def ess(self, x0, free_length, max_steps= 1000000):
-        x = np.copy(x0)
-        p = self.initialize_momentum(x)
 
-        F = np.square(x)
-        N = 1
+    def sample(self, x0, num_steps, bounce_length, key):
 
-        while N < max_steps:  # number of bounces
-            # bounce
-            p = self.isotropic_bounce(p)
-            length_transversed = 0.0
-            # evolve
-            while length_transversed < free_length:
-                xnew, p = self.step(x, p)
-                length_transversed += np.sqrt(np.sum(np.square(xnew - x)))
-                x= xnew
+        self.time_max = bounce_length
 
-                F = (N * F + np.square(x)) / (N + 1)
-                N += 1
+        def bias_step(state_track, useless):
+            """Only tracks bias as a function of number of iterations."""
 
-                bias = np.sqrt(np.average(np.square((F - self.Target.variance) / self.Target.variance)))
-                #B.append(bias)
+            x, p, key, time = self.dynamics(state_track[0])
+            N, F2 = state_track[1]
 
-                if bias < 0.1:
-                    return 200.0 / N
+            F2 = (F2 * N + (jnp.square(self.Target.transform(x)))) / (N+1)  # Update <f(x)> with a Kalman filter
 
-        print('Desired effective sample size not achieved.')
-        return 200.0 / max_steps
+            bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
+
+            return ((x, p, key, time), (N+1, F2)), bias
 
 
-    def isotropic_bounce(self, p):
-        p_size = np.sqrt(np.sum(np.square(p)))
-        p_new = np.random.normal(size=self.Target.d)
-        p_new *= p_size / np.sqrt(np.sum(np.square(p_new)))
-    
-        return p_new
+        # initial conditions
+        p0, key = self.random_unit_vector(key)
+        p0 *= jnp.sqrt(-2 * self.V(x0)) #set total energy = 0
+
+
+        _, bias = jax.lax.scan(bias_step, init=((x0, p0,  key, 0.0), (1, jnp.square(x0))), xs=None, length=num_steps)
+
+        return ess_cutoff_crossing(bias)
+
+
+
+    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key):
+
+        def f(key, useless):
+            key, key_prior, key_bounces = jax.random.split(key[0], 3)
+            x0 = self.Target.prior_draw(key_prior)
+            return (key,), self.sample(x0, num_steps, bounce_length, key_bounces)
+
+        return jax.lax.scan(f, init= (key, ), xs = None, length = num_chains)[1]
+
+
+
+def ess_cutoff_crossing(bias):
+
+    def find_crossing(carry, b):
+        above_threshold = b > 0.1
+        never_been_below = carry[1] * above_threshold
+        return (carry[0] + never_been_below, never_been_below), above_threshold
+
+    crossing_index = jax.lax.scan(find_crossing, init= (0, 1), xs = bias, length=len(bias))[0][0]
+
+    return 200.0 / np.sum(crossing_index)#, crossing_index != len(bias)
+
+#

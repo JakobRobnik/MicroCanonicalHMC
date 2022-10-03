@@ -12,7 +12,6 @@ class StandardNormal():
     def __init__(self, d):
         self.d = d
         self.variance = jnp.ones(d)
-        self.gaussianization_available = False
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -36,7 +35,6 @@ class IllConditionedGaussian():
     def __init__(self, d, condition_number):
         self.d = d
         self.variance = jnp.logspace(-0.5*jnp.log10(condition_number), 0.5*jnp.log10(condition_number), d)
-        self.gaussianization_available = False
 
 
     def nlogp(self, x):
@@ -51,7 +49,7 @@ class IllConditionedGaussian():
 
     def prior_draw(self, key):
         """direct sampler from a target"""
-        return jnp.sqrt(self.variance[-1]) * jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
 class BiModal():
@@ -65,7 +63,7 @@ class BiModal():
         self.mu2 = jnp.insert(jnp.zeros(d - 1), 0, mu2)
         self.sigma1, self.sigma2 = sigma1, sigma2
         self.f = f
-        self.gaussianization_available = False
+        self.variance = jnp.insert(jnp.ones(d-1) * ((1 - f) * sigma1**2 + f * sigma2**2), 0, (1-f)*(sigma1**2 + mu1**2) + f*(sigma2**2 + mu2**2))
 
 
     def nlogp(self, x):
@@ -95,6 +93,14 @@ class BiModal():
         return X
 
 
+    def transform(self, x):
+        return x
+
+    def prior_draw(self, key):
+        """direct sampler from a target"""
+        z = jax.random.normal(key, shape = (self.d, ), dtype = 'float64') *self.sigma1
+        #z= z.at[0].set(self.mu1 + z[0])
+        return z
 
 
 class BiModalEqual():
@@ -105,7 +111,6 @@ class BiModalEqual():
 
         self.d = d
         self.mu = mu
-        self.gaussianization_available = False
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -128,7 +133,8 @@ class BiModalEqual():
 
         return X
 
-
+    def transform(self, x):
+        return x
 
 
 class Funnel():
@@ -139,7 +145,6 @@ class Funnel():
         self.d = d
         self.sigma_theta= 3.0
         self.variance = jnp.ones(d)
-        self.gaussianization_available = True
 
 
     def nlogp(self, x):
@@ -159,22 +164,27 @@ class Funnel():
 
     def draw(self, num_samples):
         """direct sampler from a target"""
-        return self.inverse_gaussianize(np.random.normal(size = (num_samples, self.d)))
+        return self.inverse_transform(np.random.normal(size = (num_samples, self.d)))
 
 
-    def inverse_gaussianize(self, xtilde):
+    def inverse_transform(self, xtilde):
         x= jnp.empty(jnp.shape(xtilde))
         x[:, -1] = 3 * xtilde[:, -1]
         x[:, :-1] = xtilde[:, -1] * jnp.exp(1.5*xtilde[:, -1])
         return x
 
 
-    def gaussianize(self, x):
+    def transform(self, x):
+        """gaussianization"""
         xtilde = jnp.empty(x.shape)
-        xtilde[-1] =  x.T[-1] / 3.0
-        xtilde[:-1] = x.T[:-1] * np.exp(-0.5*x.T[-1])
+        xtilde = xtilde.at[-1].set(x.T[-1] / 3.0)
+        xtilde = xtilde.at[:-1].set(x.T[:-1] * jnp.exp(-0.5*x.T[-1]))
         return xtilde.T
 
+
+    def prior_draw(self, key):
+        """direct sampler from a target"""
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
 class Rosenbrock():
@@ -186,7 +196,6 @@ class Rosenbrock():
         self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #var_y is computed numerically (see compute_variance below)
         #self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
         self.variance = jnp.concatenate((var_x * jnp.ones(d//2), var_y * jnp.ones(d//2)))
-        self.gaussianization_available = False
 
 
     def nlogp(self, x):
@@ -207,6 +216,13 @@ class Rosenbrock():
         X[:, n:] = np.random.normal(loc= jnp.square(X[:, :n]), scale= jnp.sqrt(self.Q), size= (num, n))
 
         return X
+
+    def transform(self, x):
+        return x
+
+    def prior_draw(self, key):
+        """direct sampler from a target"""
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
     def compute_variance(self):
@@ -230,7 +246,6 @@ class DiagonalPreconditioned():
         self.d= Target.d
         self.a = a
         self.variance = Target.variance / jnp.square(a)
-        self.gaussianization_available = False
 
 
     def nlogp(self, x):
@@ -242,7 +257,8 @@ class DiagonalPreconditioned():
     def draw(self, num):
         return self.Target.draw(num) / self.a
 
-
+    def transform(self, x):
+        return x
 
 
 def check_gradient(target, x):

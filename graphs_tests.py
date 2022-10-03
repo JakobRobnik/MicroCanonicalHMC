@@ -54,7 +54,7 @@ def bounce_frequency_full_bias():
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
 
-    colors = plt.cm.cividis(np.linspace(0, 0.9, np.sum(mask_plot)))[::-1]
+    colors = plt.cm.gist_heat(np.linspace(0.1, 0.9, np.sum(mask_plot)))[::-1]
     plotted = 0
     dash_size = [1, 5, 15, 25, 40, 80]
     for n in range(len(length)):
@@ -76,22 +76,38 @@ def bounce_frequency_full_bias():
 
 
 
-def dimension_dependence_prelim():
+def dimension_dependence_appendix():
+    generalized = True
 
-    dimensions = [100, 200, 500, 1000]#, 3000, 10000]
-    df = pd.read_csv('Tests/data/dimensions/Kappa100.csv', sep='\t')
-    alpha = np.array(df['alpha'])[:-7]
+    if generalized:
+        dimensions = [100, 200, 500, 1000, 3000, 10000]
+        df = pd.read_csv('Tests/data/dimensions/StandardNormal_l.csv', sep='\t')
+    else:
+        dimensions = [100, 200, 1000, 3000, 10000]
+        df = pd.read_csv('Tests/data/dimensions/StandardNormal.csv', sep='\t')
+
+    skip_large = -7
+    alpha = np.array(df['alpha'])[:skip_large]
     E, L = [], []
-    plt.figure(figsize=(15, 5))
-    plt.subplot(1, 3, 1)
+
+    ff, ff_title, ff_ticks = 18, 20, 14
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize= (20, 7))
+
+    plt.subplot(1, 2, 1)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
     #folder_name = 'Rosenbrock_precondition_t'
     factor = 1.0 #Leapfrog
     #factor = 0.25 #Yoshida
     for i in range(len(dimensions)):
         d = dimensions[i]
         #peak
-        ess = factor * np.array(df['ess (d='+str(d)+')'])[:-7]
-        ess_err = factor * np.array(df['err ess (d=' + str(d) + ')'])[:-7]
+        ess = factor * np.array(df['ess (d='+str(d)+')'])[:skip_large]
+        ess_err = factor * np.array(df['err ess (d=' + str(d) + ')'])[:skip_large]
         plt.plot(alpha * np.sqrt(d), ess, '.:', color = tab_colors[i], alpha = 0.5)
         plt.fill_between(alpha * np.sqrt(d), ess - ess_err, ess + ess_err, color = tab_colors[i], alpha = 0.1)
 
@@ -99,49 +115,62 @@ def dimension_dependence_prelim():
         imax= np.argmax(ess)
         L.append(alpha[imax] * np.sqrt(d))
         E.append(ess[imax])
-        plt.plot(L[-1], E[-1], 'o', color = tab_colors[i])
-        plt.text(L[-1] * 1.05, E[-1]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5) #dimension tag
+        plt.plot(L[-1], E[-1], 'o', markersize =10, color = tab_colors[i])
+        plt.text(L[-1] * 1.08, E[-1]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5) #dimension tag
 
 
-    plt.ylabel('ESS')
     plt.xscale('log')
-    plt.xlabel('orbit length between bounces')
+    plt.ylabel('ESS', fontsize = ff)
+    if generalized:
+        plt.xlabel(r'$L(\nu) = \epsilon / \log \sqrt{1 + \nu^2 d}$', fontsize = ff)
+    else:
+        plt.xlabel(r'$L$', fontsize=ff)
 
     ###  L ~ sqrt(d)  ###
-    plt.subplot(1, 3, 2)
+    plt.subplot(1, 2, 2)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
     for i in range(len(dimensions)):
-        plt.plot(dimensions[i], L[i], 'o', color = tab_colors[i])
+        plt.plot(dimensions[i], L[i], 'o', markersize =10, color = tab_colors[i])
 
     skip = 0
-    slope= np.dot(np.sqrt(dimensions[skip:]), L[skip:]) / np.sum(dimensions[1:])
+    slope= np.dot(np.sqrt(dimensions[skip:]), L[skip:]) / np.sum(dimensions[skip:])
     print(slope)
-    plt.title(r'$L \approx$' +'{0:.4}'.format(slope) + r' $\sqrt{d}$')
+    plt.title(r'$L \approx$' +'{0:.4}'.format(slope) + r' $\sqrt{d}$', fontsize = ff)
     plt.plot(dimensions, slope * np.sqrt(dimensions), ':', color = 'black')
-    plt.xlabel('d')
-    plt.ylabel('optimal orbit length between bounces')
+    plt.xlabel('d', fontsize = ff)
+    plt.ylabel(r'optimal $L$', fontsize = ff)
+    if generalized:
+        plt.ylabel(r'optimal $L(\nu)$', fontsize=ff)
+
     plt.xscale('log')
     plt.yscale('log')
 
 
-    #ESS(d)
-    plt.subplot(1, 3, 3)
+    # #ESS(d)
+    # plt.subplot(1, 3, 3)
+    #
+    # for i in range(len(dimensions)):
+    #     plt.plot(dimensions[i], E[i], 'o', color= tab_colors[i])
+    #
+    # from scipy.stats import linregress
+    #
+    # res = linregress(np.log(dimensions[skip:]), np.log(E[skip:]))
+    #
+    #
+    # plt.title(r'ESS $\propto d^{-\alpha}, \quad \alpha = $' + '{0}'.format(np.round(-res.slope, 2)))
+    # plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), ':', color='black')
+    # plt.xlabel('d')
+    # plt.ylabel('ESS')
+    # plt.xscale('log')
+    # plt.yscale('log')
 
-    for i in range(len(dimensions)):
-        plt.plot(dimensions[i], E[i], 'o', color= tab_colors[i])
-
-    from scipy.stats import linregress
-
-    res = linregress(np.log(dimensions[skip:]), np.log(E[skip:]))
-
-
-    plt.title(r'ESS $\propto d^{-\alpha}, \quad \alpha = $' + '{0}'.format(np.round(-res.slope, 2)))
-    plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), ':', color='black')
-    plt.xlabel('d')
-    plt.ylabel('ESS')
-    plt.xscale('log')
-    plt.yscale('log')
-
-    #plt.savefig('Tests/bounce_dimension_dependence/'+folder_name+'.png')
+    if generalized:
+        plt.savefig('submission/GeneralizedTuning.pdf')
+    else:
+        plt.savefig('submission/BounceTuning.pdf')
     plt.show()
 
 
@@ -151,8 +180,7 @@ def dimension_dependence():
     name= 'StandardNormal'
     df = pd.read_csv('Tests/data/dimensions/'+name+'.csv', sep='\t')
     df_t = pd.read_csv('Tests/data/dimensions/'+name+'_t.csv', sep='\t')
-
-    alpha = np.array(df['alpha'])[:-7]
+    alpha = np.array(df['alpha'])
     E, L = [], []
     Et, Lt = [], []
     plt.figure(figsize=(10, 5))
@@ -160,14 +188,14 @@ def dimension_dependence():
     #factor = 0.25 #Yoshida
     for i in range(len(dimensions)):
         d = dimensions[i]
-        ess = factor * np.array(df['ess (d='+str(d)+')'])[:-7]
+        ess = factor * np.array(df['ess (d='+str(d)+')'])
 
         #highest point
         imax= np.argmax(ess)
         L.append(alpha[imax] * np.sqrt(d))
         E.append(ess[imax])
 
-        ess = factor * np.array(df_t['ess (d=' + str(d) + ')'])[:-7]
+        ess = factor * np.array(df_t['ess (d=' + str(d) + ')'])
 
         # highest point
         imax = np.argmax(ess)
@@ -280,14 +308,35 @@ def ill_conditioned():
     kappa = np.logspace(0, 5, 18)
 
 
-    ess= [np.max(np.load('Tests/data/kappa/' + str(i) + '.npy')[:, 0]) for i in range(18)]
-    plt.plot(kappa, ess, 'o:', color = 'tab:blue',  label = 'MCHMC (fine tuned)')
+    # ess= [np.max(np.load('Tests/data/kappa/' + str(i) + '.npy')[:, 0]) for i in range(18)]
+    # plt.plot(kappa, ess, 'o:', color = 'tab:purple',  label = 'MCHMC (fine tuned)')
 
-    ess_mchmc = np.load('Tests/data/kappa/L1.5.npy')[:, 0]
-    plt.plot(kappa, ess_mchmc, 'o:', color = 'tab:blue', alpha = 0.5, label = 'MCHMC (tuning free)')
+    ess_mchmc = np.load('Tests/data/kappa/fine_tuned_l.npy')
+    color = 'indigo'
+    plt.plot(kappa, ess_mchmc[:, 0], 'o:', color=color, label='generalized MCHMC')
+    plt.fill_between(kappa, ess_mchmc[:, 0] - ess_mchmc[:, 1], ess_mchmc[:, 0] + ess_mchmc[:, 1], color=color, alpha=0.07)
 
-    ess_nuts = np.load('Tests/data/kappa_rotated_NUTS.npy')[0]
-    plt.plot(kappa, ess_nuts, 'o:', color = 'tab:orange', label = 'NUTS')
+    ess_mchmc = np.load('Tests/data/kappa/fine_tuned_t.npy')
+    color = 'cornflowerblue'
+    plt.plot(kappa, ess_mchmc[:, 0], 'o:', color=color, label='MCHMC (fine tuning)')
+    plt.fill_between(kappa, ess_mchmc[:, 0] - ess_mchmc[:, 1], ess_mchmc[:, 0] + ess_mchmc[:, 1], color=color, alpha=0.07)
+
+    # ess_mchmc = np.load('Tests/data/kappa/fine_tuned.npy')
+    # plt.plot(kappa, ess_mchmc[:, 0], 'o:', color='tab:blue', label='MCHMC (bounces in distance)')
+    # plt.fill_between(kappa, ess_mchmc[:, 0] - ess_mchmc[:, 1], ess_mchmc[:, 0] + ess_mchmc[:, 1], color='tab:blue', alpha=0.07)
+
+    # ess_mchmc = np.load('Tests/data/kappa/L1.5.npy')[:, 0]
+    # plt.plot(kappa, ess_mchmc, 'o:', color = 'tab:blue', alpha = 0.5, label = 'MCHMC (tuning free)')
+    ess_mchmc = np.load('Tests/data/kappa/no_tuning_t.npy')
+    color = 'teal'
+    plt.plot(kappa, ess_mchmc[:, 0], 'o:', color = color, label = 'MCHMC (tuning free)')
+    plt.fill_between(kappa, ess_mchmc[:, 0] - ess_mchmc[:, 1], ess_mchmc[:, 0] + ess_mchmc[:, 1], color = color, alpha = 0.07)
+
+
+    ess_nuts = np.load('Tests/data/kappa/NUTS.npy').T
+    color = 'tab:orange'
+    plt.plot(kappa, ess_nuts[:, 0], 'o:', color=color, label='NUTS')
+    plt.fill_between(kappa, ess_nuts[:, 0] - ess_nuts[:, 1], ess_nuts[:, 0] + ess_nuts[:, 1], color=color, alpha=0.07)
 
     plt.ylabel('ESS', fontsize= ff)
     plt.xlabel('condition number', fontsize= ff)
@@ -299,7 +348,7 @@ def ill_conditioned():
 
 
 
-def Bimodal():
+def BimodalMixing():
     """Figure 3"""
 
     ff, ff_title, ff_ticks = 19, 20, 17
@@ -325,6 +374,73 @@ def Bimodal():
     plt.legend(fontsize = ff)
     #plt.savefig('submission/mode_mixing.pdf')
 
+    plt.show()
+
+
+
+def BimodalMarginal():
+
+    #the problem parameters:
+    d = 50
+    mu1, sigma1= 0.0, 1.0 # the first Gaussian
+    mu2, sigma2, f = 8.0, 1.0, 0.2 #the second Gaussian
+
+    #plot parameters
+    ff, ff_title, ff_ticks = 19, 20, 17
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(15, 10))
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+
+    #NUTS
+    X = np.load('Tests/data/bimodal_marginal/NUTS_hard.npz')
+    x0, steps = np.array(X['x0']), np.array(X['steps'])
+
+    plt.hist(x0, density=True, bins = 30, alpha = 0.5, color = 'tab:orange', label = 'NUTS', zorder = 0)
+
+    #MCHMC
+
+    def my_hist(bins, count):
+        probability = count / np.sum(count)
+        print('probability outside of bins', probability[-1])
+
+        for i in range(len(bins)):
+            density = probability[i] / (bins[i][1] - bins[i][0])
+            plt.fill_between(bins[i], np.zeros(2), density * np.ones(2), alpha = 0.5, color='tab:blue', zorder = 1)
+
+        plt.fill_between([], [], [], alpha = 0.5, color = 'tab:blue', label = 'MCHMC')
+
+    xmax = 3.5 #how many sigma away from the mean of the gaussians do we want to have bins
+
+    def get_bins(mu, sigma, num_bins_per_mode):
+        bins_mode = np.array([[- xmax + i * 2 * xmax / num_bins_per_mode, - xmax + (i+1) * 2 * xmax / num_bins_per_mode] for i in range(num_bins_per_mode)])
+
+        bins = np.concatenate(( (bins_mode * sigma[0]) + mu[0], (bins_mode * sigma[1]) + mu[1]  ))
+
+        return bins
+
+    bins_per_mode = 20
+    bins = get_bins([mu1, mu2], [sigma1, sigma2], bins_per_mode)
+    P = np.load('Tests/data/bimodal_marginal/sep'+str(mu2)+'_f'+str(f)+'_sigma'+str(sigma2)+'.npy')
+
+    my_hist(bins, P)
+    f1, f2 = np.sum(P[:bins_per_mode]), np.sum(P[bins_per_mode : 2 * bins_per_mode])
+    print('f = ' + str(f2 / (f1 + f2)) + '  (true f = ' + str(f) + ')')
+
+
+    #exact
+    t = np.linspace(-xmax*sigma1+mu1-0.5, xmax*sigma2 + mu2 + 0.5, 1000)
+    plt.plot(t, (1- f)*norm.pdf(t, loc = mu1, scale = sigma1) + f * norm.pdf(t, loc = mu2, scale = sigma2), color = 'black', label = 'exact', zorder = 2)
+
+    plt.legend(fontsize = ff)
+    plt.xlim(t[0], t[-1])
+    plt.ylim(0, 0.4)
+    plt.xlabel(r'$x_1$', fontsize = ff)
+    plt.ylabel(r'$p(x_1)$', fontsize = ff)
+    plt.savefig('submission/BimodalMarginal.pdf')
     plt.show()
 
 
@@ -674,12 +790,11 @@ def german_credit():
     plt.show()
 
 
-dimension_dependence()
 #bounce_frequency_full_bias()
 #ill_conditioned()
-#Bimodal()
+#BimodalMarginal()
 
 #Funnel()
 #Rosenbrock()
-#dimension_dependence()
+dimension_dependence_appendix()
 #german_credit()

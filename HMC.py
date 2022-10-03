@@ -7,18 +7,27 @@ from numpyro.infer import MCMC, NUTS
 import bias
 import targets_HMC as targets
 
+import pandas as pd
 
-
-def sample_nuts(target, target_params, num_samples, names_output = None):
+def sample_nuts(target, target_params, num_samples, key_num = 0, d= 1, names_output = None):
     """ 'default' nuts, tunes the step size with a prerun"""
 
     # setup
     nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=True, dense_mass= False)  # originally: nuts_kernel
     sampler = MCMC(nuts_setup, num_warmup=500, num_samples=num_samples, num_chains=1, progress_bar=False)
-    random_seed = random.PRNGKey(0)
 
-    # run
-    sampler.run(random_seed, *target_params, extra_fields=['num_steps'])
+    # prior
+    if key_num != 0:
+        key = random.PRNGKey(key_num)
+        key, prior_key = random.split(key)
+        x0 = random.normal(prior_key, shape=(d,), dtype='float64')
+
+        # run
+        sampler.run(key, *target_params, init_params=x0, extra_fields=['num_steps'])
+
+    else:
+        # run
+        sampler.run(random.PRNGKey(0), *target_params, extra_fields=['num_steps'])
 
     # get results
     numpyro_samples = sampler.get_samples()
@@ -34,37 +43,39 @@ def sample_nuts(target, target_params, num_samples, names_output = None):
 
 
 
-def ill_conditioned_gaussian():
+def ill_conditioned():
 
     d = 100
     R = special_ortho_group.rvs(d, random_state=0)
-
+    repeat = 10
 
     def f(condition_number, num_samples):
+        ess_arr = np.zeros(repeat)
+        for key_num in range(repeat):
+            X, steps = sample_nuts(targets.ill_conditioned_gaussian, [d, condition_number], num_samples, d = d, key_num=key_num)
 
-        X, steps = sample_nuts(targets.ill_conditioned_gaussian, [d, condition_number], num_samples)
+            variance_true = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
+            ess, n_crossing = bias.ess_cutoff_crossing(bias.bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
+            ess_arr[key_num] = ess
 
-        variance_true = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
-        ess, n_crossing = bias.ess_cutoff_crossing(bias.bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
-
-        return ess, n_crossing
+        return np.average(ess_arr), np.std(ess_arr), n_crossing
 
 
     kappa_arr = np.logspace(0, 5, 18)
 
     ess_arr= np.zeros(len(kappa_arr))
+    ess_err_arr= np.zeros(len(kappa_arr))
+
     num_samples= 1000
 
     for i in range(len(kappa_arr)):
         print(i, num_samples)
 
-        ess, n_crossing = f(kappa_arr[i], num_samples)
-
-        ess_arr[i] = ess
+        ess_arr[i], ess_err_arr[i], n_crossing = f(kappa_arr[i], num_samples)
 
         num_samples = n_crossing * 5
 
-    np.save('Tests/data/kappa_NUTS.npy', [ess_arr, kappa_arr])
+    np.save('Tests/data/kappa/NUTS.npy', [ess_arr, ess_err_arr, kappa_arr])
 
 
 
@@ -128,7 +139,7 @@ def dimension_dependence():
 
 
 
-def bimodal():
+def bimodal_mixing():
 
     def avg_mode_mixing_steps(signs, steps):
         L = []
@@ -175,14 +186,6 @@ def bimodal():
     np.save('Tests/data/mode_mixing_NUTS.npy', np.array([avg_steps_mode, mu_arr]))
 
 
-def bimodal_marginal():
-
-
-    d = 50
-    X, steps = sample_nuts(targets.bimodal, [d, mu], num_samples)
-
-
-
 
 def kappa100(key_num):
 
@@ -195,7 +198,7 @@ def kappa100(key_num):
     # prior
     key = random.PRNGKey(key_num)
     key, prior_key = random.split(key)
-    x0 = random.normal(prior_key, shape=(d,), dtype='float64') * np.power(condition_number, 0.25)
+    x0 = random.normal(prior_key, shape=(d,), dtype='float64')
 
     # run
     sampler.run(key, d, condition_number, init_params=x0, extra_fields=['num_steps'])
@@ -208,6 +211,34 @@ def kappa100(key_num):
 
     variance_true = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
     ess, n_crossing = bias.ess_cutoff_crossing(bias.bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
+
+    return ess
+
+
+def bimodal(key_num):
+
+    d = 50
+    nuts_setup = NUTS(targets.bimodal_hard, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)  # originally: nuts_kernel
+    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=10000, num_chains=1, progress_bar=False)
+
+    # prior
+    key = random.PRNGKey(key_num)
+    key, prior_key = random.split(key)
+    x0 = random.normal(prior_key, shape=(d,), dtype='float64')
+
+    # run
+    sampler.run(key, init_params=x0, extra_fields=['num_steps'])
+
+    # get results
+    numpyro_samples = sampler.get_samples()
+    X = np.array(numpyro_samples['x'])
+
+    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+
+    variance_true = np.ones(d)
+    variance_true[0] += 0.2 * 8.0**2
+
+    ess, n_crossing = bias.ess_cutoff_crossing(bias.bias(X, np.ones(len(X)), variance_true), steps)
 
     return ess
 
@@ -295,19 +326,57 @@ def rosenbrock(key_num):
     #np.savez('Tests/data/rosenbrock_HMC', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
 
 
+
+
+def bimodal_plot():
+
+    #target setup
+    d= 50
+    thinning = 100
+    # setup
+    nuts_setup = NUTS(targets.bimodal_hard, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
+    sampler = MCMC(nuts_setup, num_warmup= 1000, num_samples= 2143000, thinning = thinning, num_chains= 1, progress_bar= True)
+
+    # run
+    key = random.PRNGKey(0)
+    key, subkey = random.split(key)
+    x0 = random.normal(subkey, shape = (d, ), dtype = 'float64')
+    sampler.run(key, init_params= x0, extra_fields=['num_steps'])
+
+    # get results
+    X = np.array(sampler.get_samples()['x'])
+
+    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+    print(len(steps))
+    np.savez('Tests/data/bimodal_marginal/NUTS_hard.npz', x0 = X[:, 0], steps= np.cumsum(steps) * thinning)
+    print(np.cumsum(steps))
+    import matplotlib.pyplot as plt
+    plt.hist(X[:, 0], bins = 30, density=True)
+    plt.show()
+
+
 def table1():
     repeat = 10
 
-    functions = [kappa100, funnel, rosenbrock]
-    names = ['Kappa 100', 'Funnel', 'Rosenbrock']
+    functions = [kappa100, bimodal, rosenbrock, funnel]
+    names = ['Kappa 100', 'Bimodal', 'Rosenbrock', 'Funnel']
+    ess, ess_std = np.zeros(len(names)), np.zeros(len(names))
+
     for i in range(len(names)):
         print(names[i])
-        ess = [functions[i](j) for j in range(repeat)]
-        print(np.average(ess), np.std(ess))
-        print('---------------')
+        ESS = [functions[i](j) for j in range(repeat)]
+        ess[i], ess_std[i] = np.average(ESS), np.std(ESS)
+
+    data = {'Target ': names, 'ESS': ess, 'ESS std': ess_std}
+    print(data)
+    df = pd.DataFrame(data)
+    print(df)
+    df.to_csv('submission/TableNUTS.csv', sep='\t', index=False)
+
 
 if __name__ == '__main__':
     #bimodal()
     table1()
     #dimension_dependence()
-    #ill_conditioned_gaussian()
+    #ill_conditioned()
+    #bimodal_plot()

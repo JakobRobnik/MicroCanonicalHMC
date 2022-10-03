@@ -9,12 +9,10 @@ import ESH
 import CTV
 import parallel
 from targets import *
-import bias
+import grid_search
 
 import jax
 import jax.numpy as jnp
-
-
 
 
 num_cores = 6
@@ -27,14 +25,15 @@ def parallel_run(function, values):
 
 
 
-def bounce_frequency(d, alpha):
+def bounce_frequency(d, alpha, langevin = False, prerun = 0):
 
-    key = jax.random.PRNGKey(0)
+    key = jax.random.PRNGKey(1)
 
     length = alpha * jnp.sqrt(d)
-    sampler = ESH.Sampler(Target= IllConditionedGaussian(d=d, condition_number=100.0), eps=1.0)
+    sampler = ESH.Sampler(Target= StandardNormal(d=d), eps=1.0)
+    #sampler = ESH.Sampler(Target= IllConditionedGaussian(d=d, condition_number=100.0), eps=1.0)
 
-    ess = parallel_run(lambda L: sampler.sample_multiple_chains(5, 300000, L, key, ess= True, prerun=0), length)
+    ess = parallel_run(lambda L: sampler.sample_multiple_chains(10, 300000, L, key, langevin= langevin, ess= True, prerun=prerun), length)
 
     return jnp.average(ess, 1), jnp.std(ess, 1)
 
@@ -92,27 +91,47 @@ def bimodal_mixing(n):
 
 
 
-def ill_conditioned():
+def ill_conditioned_workhorse(alpha, langevin, prerun):
     d = 100
-    L = 1.5 * np.sqrt(d)
+    L = alpha * np.sqrt(d)
 
     def f(n):
         kappa = jnp.logspace(0, 5, 18)[n]
-        eps = jnp.array(10 * [2.0, ] + 2 * [1.5, ] + 3 * [1.0, ] + [0.7, ] + 2 * [0.5])[n]
+        eps = jnp.array(10 * [2.0, ] + 2 * [1.5, ] + 3 * [1.0, ] + [0.7, ] + 2 * [0.5, ])[n]
 
         key = jax.random.PRNGKey(0)
 
         sampler = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
 
-        ess = sampler.sample_multiple_chains(5, 300000, L, key, ess=True, prerun=0)
+        ess = sampler.sample_multiple_chains(10, 300000, L, key, langevin = langevin, ess=True, prerun= prerun)
 
-        return jnp.array([jnp.average(ess, 1), jnp.std(ess, 1)])
+        return jnp.array([jnp.average(ess), jnp.std(ess)])
 
     results = parallel_run(f, np.arange(18, dtype = int))
 
-    print(np.shape(results))
+    return results
 
-    np.save('Tests/data/ill_conditioned_no_tuning.npy', results)
+
+def ill_conditioned(tunning, langevin, prerun = 0):
+    word = '_l' if langevin else ''
+    if prerun != 0:
+        word += '_t'
+
+    if not tunning:
+        results = ill_conditioned_workhorse(1.0, langevin, prerun)
+        np.save('Tests/data/kappa/no_tuning'+word+'.npy', results)
+
+    else:
+        alpha = (1.5 * jnp.logspace(-0.8, 0.8, 24))
+
+        results= np.empty((len(alpha), 18, 2))
+
+        for i in range(len(alpha)):
+            print(str(i)+ '/' + str(len(alpha)))
+            results[i] = ill_conditioned_workhorse(alpha[i], langevin, prerun)
+
+        np.save('Tests/data/kappa/fine_tuned_full_results'+word+'.npy', results)
+        np.save('Tests/data/kappa/fine_tuned'+word+'.npy', results[np.argmax(results[:, :, 0], axis= 0), np.arange(18, dtype = int), :])
 
 
 
@@ -151,16 +170,6 @@ def rosenbrock():
     x0 = np.zeros(d)
     samples, w = esh.sample(x0, free_steps, max_steps= 10000000, prerun_steps= 500, track= 'FullTrajectory')
     np.savez('Tests/data/rosenbrock3', samples = samples[::10, :], w = w[::10])
-
-
-def my_hist(bins, count):
-    probability = count / np.sum(count)
-    print('probability outside of bins', probability[-1])
-
-    for i in range(len(bins)):
-        density = probability[i] / (bins[i][1] - bins[i][0])
-        plt.fill_between(bins[i], np.zeros(2), density * np.ones(2), alpha = 0.5, color = 'tab:blue')
-
 
 
 def bimodal():
@@ -216,16 +225,17 @@ def bimodal():
 
 def dimension_dependence():
 
-    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
+    dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
     alpha = (1.5 * jnp.logspace(-0.8, 0.8, 24))
     #condition_numbers = np.logspace(0, 5, 18)
     dict = {'alpha': alpha}
+    langevin, prerun = True, 0
     for d in dimensions:
         print(d)
-        avg, std = bounce_frequency(d, alpha)
+        avg, std = bounce_frequency(d, alpha, langevin, prerun)
         dict.update({'ess (d='+str(d)+')': avg, 'err ess (d='+str(d)+')': std})
     df = pd.DataFrame.from_dict(dict)
-    df.to_csv('Tests/data/dimensions/Kappa100.csv', sep='\t', index=False)
+    df.to_csv('Tests/data/dimensions/StandardNormal_l.csv', sep='\t', index=False)
 
 
 def billiard_bimodal():
@@ -271,6 +281,7 @@ def billiard_bimodal():
     plt.ylim(-xmax, xmax)
     #plt.savefig('no bounces')
     plt.show()
+
 
 def bimodal_explore():
     mu = 7.0
@@ -347,7 +358,52 @@ def autocorr():
     plt.show()
 
 
+def table1():
+
+    key = jax.random.PRNGKey(1)
+    langevin = True
+
+
+    def ess_function(L, eps, target, langevin, prerun):
+        sampler = ESH.Sampler(Target=target, eps=eps)
+        return jnp.median(sampler.sample_multiple_chains(20, 300000, L, key, langevin=langevin, ess=True, prerun=prerun))
+
+
+    def ess_ctv_function(L, eps, target):
+        sampler = CTV.Sampler(Target=target, eps=eps)
+        return jnp.median(sampler.sample_multiple_chains(5, 300000, L, key))
+
+
+    def tuning(target, langevin, prerun):
+        return grid_search.search_wrapper(lambda l, e: ess_function(l, e, target, langevin, prerun), 0.3 * np.sqrt(target.d), 20*np.sqrt(target.d), 0.11, 1.0)
+
+    print(ess_ctv_function(1.5 * np.sqrt(100), 1.0, IllConditionedGaussian(d= 100, condition_number= 100.0)))
+
+    #no tuning
+    #print(ess_function(1.5 * np.sqrt(100), 1.0, IllConditionedGaussian(d= 100, condition_number= 100.0), langevin, 0))
+    #print(ess_function(1.0* np.sqrt(50), 2.5, BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), langevin, 0))
+    # print(ess_function(1.5 * np.sqrt(36), 1.0, Rosenbrock(d= 36), langevin, 0))
+    # print(ess_function(1.5* np.sqrt(20), 1.0, Funnel(20), langevin, 0))
+
+    #fine tuning
+    #tuning(IllConditionedGaussian(d= 100, condition_number= 100.0), langevin, 0)
+    #tuning(BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), langevin, 0)
+    #tuning(Rosenbrock(d= 36), langevin, 0)
+    #tuning(Funnel(20), langevin, 0)
+
+    #print(target_results(Funnel(20), langevin= False, prerun= 0))
+
+
+
+#0.017317721850504543
+#0.001867649487468486
+#0.03861093796440974
+#0.005390927547508179
+
 
 if __name__ == '__main__':
 
-    ill_conditioned()
+    table1()
+    #dimension_dependence()
+    #ill_conditioned(tunning=False, langevin=False, prerun=1000)
+    #ill_conditioned(tunning=True)
