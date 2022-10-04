@@ -81,7 +81,7 @@ def dimension_dependence_appendix():
 
     if generalized:
         dimensions = [100, 200, 500, 1000, 3000, 10000]
-        df = pd.read_csv('Tests/data/dimensions/StandardNormal_l.csv', sep='\t')
+        df = pd.read_csv('Tests/data/dimensions/StandardNormal_t.csv', sep='\t')
     else:
         dimensions = [100, 200, 1000, 3000, 10000]
         df = pd.read_csv('Tests/data/dimensions/StandardNormal.csv', sep='\t')
@@ -116,7 +116,7 @@ def dimension_dependence_appendix():
         L.append(alpha[imax] * np.sqrt(d))
         E.append(ess[imax])
         plt.plot(L[-1], E[-1], 'o', markersize =10, color = tab_colors[i])
-        plt.text(L[-1] * 1.08, E[-1]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5) #dimension tag
+        plt.text(L[-1] * 1.05, E[-1]*1.03, 'd= '+str(d), color = tab_colors[i], alpha = 0.5) #dimension tag
 
 
     plt.xscale('log')

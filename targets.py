@@ -69,8 +69,8 @@ class BiModal():
     def nlogp(self, x):
         """- log p of the target distribution"""
 
-        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu1)) / self.sigma1 ** 2, axis= -1) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
-        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu2)) / self.sigma2 ** 2, axis= -1) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
+        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu1), axis= -1) / self.sigma1 ** 2) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
+        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu2), axis= -1) / self.sigma2 ** 2) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
 
         return -jnp.log(N1 + N2)
 

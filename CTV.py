@@ -1,5 +1,4 @@
 import numpy as np
-import bias
 import jax.numpy as jnp
 import jax
 
@@ -47,7 +46,7 @@ class Sampler:
             return (x, p), None
 
         x, p = jax.lax.scan(substep, init = (x0, p0), xs= self.cd)[0]
-        x += self.cd[0, 1] * p * self.eps
+        x += self.cd[0, 0] * p * self.eps
         return x, p
 
 
@@ -57,15 +56,15 @@ class Sampler:
 
         # Hamiltonian step
         xnew, pnew = self.Yoshida_step(x, p)
-
+        speed = jnp.sqrt(jnp.sum(jnp.square(pnew)))
         # bounce
         u_bounce, key = self.random_unit_vector(key)
-        time += self.eps
+        time += self.eps * speed
         do_bounce = time > self.time_max
         time = time * (1 - do_bounce)  # reset time if the bounce is done
-        pneww = pnew * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
+        p_return= pnew * (1 - do_bounce) + u_bounce * speed * do_bounce  # randomly reorient the momentum if the bounce is done
 
-        return xnew, pneww, key, time
+        return xnew, p_return, key, time
 
 
 
@@ -97,7 +96,7 @@ class Sampler:
 
 
 
-    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key):
+    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, langevin = False, ess= True, update_track= None, initial_track= None, prerun= 0, energy_track= False):
 
         def f(key, useless):
             key, key_prior, key_bounces = jax.random.split(key[0], 3)

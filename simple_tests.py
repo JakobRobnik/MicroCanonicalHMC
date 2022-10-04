@@ -31,6 +31,8 @@ def bounce_frequency(d, alpha, langevin = False, prerun = 0):
 
     length = alpha * jnp.sqrt(d)
     sampler = ESH.Sampler(Target= StandardNormal(d=d), eps=1.0)
+    #sampler = CTV.Sampler(Target= StandardNormal(d=d), eps=2.0)
+
     #sampler = ESH.Sampler(Target= IllConditionedGaussian(d=d, condition_number=100.0), eps=1.0)
 
     ess = parallel_run(lambda L: sampler.sample_multiple_chains(10, 300000, L, key, langevin= langevin, ess= True, prerun=prerun), length)
@@ -225,17 +227,18 @@ def bimodal():
 
 def dimension_dependence():
 
-    dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
-    alpha = (1.5 * jnp.logspace(-0.8, 0.8, 24))
+    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
+    #alpha = (1.5 * jnp.logspace(-0.8, 0.8, 24))
+    alpha = (1.5 * jnp.logspace(-0.5, 0.5, 12))
     #condition_numbers = np.logspace(0, 5, 18)
     dict = {'alpha': alpha}
-    langevin, prerun = True, 0
+    langevin, prerun = False, 0
     for d in dimensions:
         print(d)
         avg, std = bounce_frequency(d, alpha, langevin, prerun)
         dict.update({'ess (d='+str(d)+')': avg, 'err ess (d='+str(d)+')': std})
     df = pd.DataFrame.from_dict(dict)
-    df.to_csv('Tests/data/dimensions/StandardNormal_l.csv', sep='\t', index=False)
+    df.to_csv('Tests/data/dimensions/StandardNormal.csv', sep='\t', index=False)
 
 
 def billiard_bimodal():
@@ -364,26 +367,32 @@ def table1():
     langevin = True
 
 
-    def ess_function(L, eps, target, langevin, prerun):
+    def ess_function(alpha, eps, target, langevin, prerun):
         sampler = ESH.Sampler(Target=target, eps=eps)
-        return jnp.median(sampler.sample_multiple_chains(20, 300000, L, key, langevin=langevin, ess=True, prerun=prerun))
+        return jnp.median(sampler.sample_multiple_chains(10, 300000, alpha* np.sqrt(target.d), key, langevin=langevin, ess=True, prerun=prerun))
 
 
-    def ess_ctv_function(L, eps, target):
+
+    def tuning(target, langevin, prerun, eps_min = 0.1, eps_max = 1.0):
+        return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, langevin, prerun), 0.3, 20.0, eps_min, eps_max)
+
+
+    def ess_ctv_function(alpha, eps, target, num_steps = 300000):
         sampler = CTV.Sampler(Target=target, eps=eps)
-        return jnp.median(sampler.sample_multiple_chains(5, 300000, L, key))
+        return jnp.median(sampler.sample_multiple_chains(5, num_steps, alpha * np.sqrt(target.d), key))
 
 
-    def tuning(target, langevin, prerun):
-        return grid_search.search_wrapper(lambda l, e: ess_function(l, e, target, langevin, prerun), 0.3 * np.sqrt(target.d), 20*np.sqrt(target.d), 0.11, 1.0)
+    def tuning_ctv(target, eps_min = 0.5, eps_max = 5.0, num_steps= 300000):
+        return grid_search.search_wrapper(lambda a, e: ess_ctv_function(a, e, target, num_steps), 0.3, 20, eps_min, eps_max)
 
-    print(ess_ctv_function(1.5 * np.sqrt(100), 1.0, IllConditionedGaussian(d= 100, condition_number= 100.0)))
+
+    ### ESH ###
 
     #no tuning
-    #print(ess_function(1.5 * np.sqrt(100), 1.0, IllConditionedGaussian(d= 100, condition_number= 100.0), langevin, 0))
-    #print(ess_function(1.0* np.sqrt(50), 2.5, BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), langevin, 0))
-    # print(ess_function(1.5 * np.sqrt(36), 1.0, Rosenbrock(d= 36), langevin, 0))
-    # print(ess_function(1.5* np.sqrt(20), 1.0, Funnel(20), langevin, 0))
+    #print(ess_function(1.5, 1.0, IllConditionedGaussian(d= 100, condition_number= 100.0), langevin, 0))
+    #print(ess_function(1.0, 2.5, BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), langevin, 0))
+    # print(ess_function(1.5, 1.0, Rosenbrock(d= 36), langevin, 0))
+    # print(ess_function(1.5, 1.0, Funnel(20), langevin, 0))
 
     #fine tuning
     #tuning(IllConditionedGaussian(d= 100, condition_number= 100.0), langevin, 0)
@@ -393,12 +402,20 @@ def table1():
 
     #print(target_results(Funnel(20), langevin= False, prerun= 0))
 
+    ### CTV ###
+
+    #no tuning
+    # print(ess_ctv_function(1.5, 3.0, IllConditionedGaussian(d= 100, condition_number= 100.0)))
+    # print(ess_ctv_function(1.5, 3.0, Rosenbrock(d= 36)))
+    # print(ess_ctv_function(1.5, 3.0, Funnel(20)))
+
+    tuning_ctv(IllConditionedGaussian(d= 100, condition_number= 100.0)) #tuning
+    print([ess_ctv_function(1.5, e, BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2)) for e in [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]])
+    tuning_ctv(Rosenbrock(d= 36), num_steps= 1000000)
+    tuning_ctv(Funnel(20), num_steps= 1000000)
 
 
-#0.017317721850504543
-#0.001867649487468486
-#0.03861093796440974
-#0.005390927547508179
+
 
 
 if __name__ == '__main__':
