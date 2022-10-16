@@ -2,7 +2,6 @@ import numpy as np
 import jax.numpy as jnp
 import jax
 import matplotlib.pyplot as plt
-import pandas as pd
 import ESH
 import myHMC
 from targets import *
@@ -16,6 +15,7 @@ x0 = 3.0*jax.random.normal(subkey, shape=(d, ), dtype='float64')
 loss0 = target.nlogp(x0)
 
 plt.figure(figsize=(15, 10))
+
 #HMC (no resampling)
 sampler = myHMC.Sampler(target, eps=0.01)
 steps = 200
