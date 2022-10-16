@@ -316,11 +316,11 @@ def table1():
 
     esh, generalized = True, False
     key = jax.random.PRNGKey(0)
-    import german_credit
+    import inferencegym
 
     #targets
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), german_credit.Target()]
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), inferencegym.Target('German Credit')]
 
 
     if esh:
