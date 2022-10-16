@@ -3,6 +3,10 @@ from scipy.stats import norm
 import jax
 import jax.numpy as jnp
 
+from numpyro.examples.datasets import SP500, load_dataset
+from numpyro.distributions import StudentT
+
+
 ### targets that we want to sample from ###
 
 
@@ -24,7 +28,6 @@ class StandardNormal():
         return x
 
     def prior_draw(self, key):
-        """direct sampler from a target"""
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
@@ -48,8 +51,40 @@ class IllConditionedGaussian():
         return x
 
     def prior_draw(self, key):
-        """direct sampler from a target"""
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+
+
+
+class IllConditionedGaussianGamma():
+    """Gaussian distribution. Covariance matrix has eigenvalues drawn from the Gamma distribution."""
+
+    def __init__(self):
+        self.d = 1000
+
+        seed = 1234
+        np.random.seed(seed)
+
+        rng = np.random.RandomState(seed=10)
+        eigs = np.sort(rng.gamma(shape=1.0, scale=1., size=self.d)) #get the variance
+        R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
+        self.Hessian = (R * eigs).dot(R.T)
+
+        self.variance = jnp.diagonal((R * eigs ** -1).dot(R.T))
+
+
+    def nlogp(self, x):
+        """- log p of the target distribution"""
+        return 0.5 * x.T @ self.Hessian @ x
+
+    def grad_nlogp(self, x):
+        return self.Hessian @ x
+
+    def transform(self, x):
+        return x
+
+    def prior_draw(self, key):
+
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') #* 100
 
 
 class BiModal():
@@ -97,7 +132,6 @@ class BiModal():
         return x
 
     def prior_draw(self, key):
-        """direct sampler from a target"""
         z = jax.random.normal(key, shape = (self.d, ), dtype = 'float64') *self.sigma1
         #z= z.at[0].set(self.mu1 + z[0])
         return z
@@ -183,8 +217,8 @@ class Funnel():
 
 
     def prior_draw(self, key):
-        """direct sampler from a target"""
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+
 
 
 class Rosenbrock():
@@ -209,19 +243,20 @@ class Rosenbrock():
 
         return jnp.concatenate((X - 1.0 + 2*(jnp.square(X) - Y) * X / self.Q, (Y - jnp.square(X)) / self.Q))
 
+
     def draw(self, num):
         n = self.d // 2
-        X= jnp.empty((num, self.d))
+        X= np.empty((num, self.d))
         X[:, :n] = np.random.normal(loc= 1.0, scale= 1.0, size= (num, n))
         X[:, n:] = np.random.normal(loc= jnp.square(X[:, :n]), scale= jnp.sqrt(self.Q), size= (num, n))
 
         return X
 
+
     def transform(self, x):
         return x
 
     def prior_draw(self, key):
-        """direct sampler from a target"""
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
@@ -233,6 +268,38 @@ class Rosenbrock():
         var_x = jnp.sum(jnp.square(x)) / (num - 1)
         var_y = jnp.sum(jnp.square(y)) / (num - 1)
         print(var_x, var_y)
+
+
+class StohasticVolatility():
+
+    def __init__(self):
+
+
+        _, fetch = load_dataset(SP500, shuffle=False)
+        self.dates, self.returns = fetch()
+        self.d = 2429
+
+        self.typical_sigma, self.typical_nu = 0.02, 10.0
+
+
+    def nlogp(self, x):
+        """- log p of the target distribution"""
+
+        sigma = np.exp(x[-2]) * self.typical_sigma
+        nu = np.exp(x[-1]) * self.typical_nu
+
+        l1= jnp.sum(jnp.exp(x[-2:]) - x[-2:])
+        l2 = (self.d - 2) * np.log(sigma) + 0.5 * (jnp.square(x[0]) + jnp.sum(jnp.square(x[1:] - x[:-1]))) / sigma * 2
+        l3 = - jnp.sum(StudentT(df=nu).log_prob(self.returns / jnp.exp(x[:-2])))
+
+        return l1 + l2 + l3
+
+    def transform(self, x):
+        return x
+
+    def prior_draw(self, key):
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+
 
 
 class DiagonalPreconditioned():
@@ -279,8 +346,9 @@ def check_gradient(target, x):
 
 if __name__ == '__main__':
 
-    d = 10
 
+    target = StohasticVolatility()
+    target.nlogp(jnp.zeros(target.d))
     #target.compute_variance()
     # d = 36
 

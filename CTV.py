@@ -1,7 +1,7 @@
 import numpy as np
 import jax.numpy as jnp
 import jax
-
+import matplotlib.pyplot as plt
 
 class Sampler:
     """the esh sampler"""
@@ -50,6 +50,34 @@ class Sampler:
         return x, p
 
 
+    def dynamics_billiard(self, state):
+        """One step of the dynamics (with bounces and billiard bounces from the walls)"""
+        x, p, key, time = state
+
+        # Hamiltonian step
+        xnew, pnew = self.Yoshida_step(x, p)
+        speed = jnp.sqrt(jnp.sum(jnp.square(pnew)))
+        #speed = jnp.sqrt(-2 * self.V(xnew)) #set total energy = 0
+
+
+        # bounce
+        u_bounce, key = self.random_unit_vector(key)
+        time += self.eps * speed
+        do_bounce = time > self.time_max
+        time = time * (1 - do_bounce) # reset time if the bounce is done
+
+        #wall bounce
+        xmax= 6.0
+        u_random, key = self.random_unit_vector(key)
+        pointing_out = jnp.dot(xnew, u_random) > 0.0
+        u_wall = u_random - pointing_out * 2 * jnp.dot(u_random, xnew) * xnew / xmax ** 2
+        hit_wall = jnp.sqrt(jnp.sum(jnp.square(xnew))) > xmax
+
+        p_return= pnew * (1 - do_bounce - hit_wall + hit_wall*do_bounce) + u_wall * jnp.sqrt(-2 * self.V(x)) * hit_wall + u_bounce * speed * do_bounce * (1- hit_wall)  # randomly reorient the momentum if the bounce is done
+
+        return xnew * (1 - hit_wall) + x * hit_wall, p_return, key, time
+
+
     def dynamics(self, state):
         """One step of the dynamics (with bounces)"""
         x, p, key, time = state
@@ -57,11 +85,14 @@ class Sampler:
         # Hamiltonian step
         xnew, pnew = self.Yoshida_step(x, p)
         speed = jnp.sqrt(jnp.sum(jnp.square(pnew)))
+
+
         # bounce
         u_bounce, key = self.random_unit_vector(key)
         time += self.eps * speed
         do_bounce = time > self.time_max
-        time = time * (1 - do_bounce)  # reset time if the bounce is done
+        time = time * (1 - do_bounce) # reset time if the bounce is done
+
         p_return= pnew * (1 - do_bounce) + u_bounce * speed * do_bounce  # randomly reorient the momentum if the bounce is done
 
         return xnew, p_return, key, time
@@ -92,11 +123,21 @@ class Sampler:
 
         _, bias = jax.lax.scan(bias_step, init=((x0, p0,  key, 0.0), (1, jnp.square(x0))), xs=None, length=num_steps)
 
-        return ess_cutoff_crossing(bias)
+        # steps = point_reduction(len(bias), 100)
+        # plt.plot(steps, bias[steps], '.')
+        # plt.xscale('log')
+        # plt.yscale('log')
+        # plt.show()
+
+        no_nans = 1 - jnp.any(jnp.isnan(bias))
+        cutoff_reached = bias[-1] < 0.1
+
+        return 0.25*ess_cutoff_crossing(bias) * no_nans * cutoff_reached  # return 0 if there are nans, or if the bias cutoff was not reached
 
 
 
-    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, langevin = False, ess= True, update_track= None, initial_track= None, prerun= 0, energy_track= False):
+
+    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, generalized = False, ess= True, update_track= None, initial_track= None, prerun= 0, energy_track= False):
 
         def f(key, useless):
             key, key_prior, key_bounces = jax.random.split(key[0], 3)
@@ -108,14 +149,21 @@ class Sampler:
 
 
 def ess_cutoff_crossing(bias):
+    cutoff = 0.5
 
     def find_crossing(carry, b):
-        above_threshold = b > 0.1
+        above_threshold = b > cutoff
         never_been_below = carry[1] * above_threshold
         return (carry[0] + never_been_below, never_been_below), above_threshold
 
     crossing_index = jax.lax.scan(find_crossing, init= (0, 1), xs = bias, length=len(bias))[0][0]
 
-    return 200.0 / np.sum(crossing_index)#, crossing_index != len(bias)
+    return (2.0 / cutoff**2) / np.sum(crossing_index)#, crossing_index != len(bias)
 
-#
+
+def point_reduction(num_points, reduction_factor):
+    """reduces the number of points for plotting purposes"""
+
+    indexes = np.concatenate((np.arange(1, 1 + num_points // reduction_factor, dtype=int),
+                              np.arange(1 + num_points // reduction_factor, num_points, reduction_factor, dtype=int)))
+    return indexes

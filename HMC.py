@@ -201,18 +201,19 @@ def kappa100(key_num):
     x0 = random.normal(prior_key, shape=(d,), dtype='float64')
 
     # run
-    sampler.run(key, d, condition_number, init_params=x0, extra_fields=['num_steps'])
+    sampler.warmup(key, d, condition_number, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
+    warmup_calls = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
+    sampler.run(key, d, condition_number, extra_fields=['num_steps'])
 
     # get results
     numpyro_samples = sampler.get_samples()
     X = np.array(numpyro_samples['x'])
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
-
     variance_true = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
     ess, n_crossing = bias.ess_cutoff_crossing(bias.bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
 
-    return ess
+    return ess, ess / (1 + ess* warmup_calls / 200.0)
 
 
 def bimodal(key_num):
@@ -227,7 +228,9 @@ def bimodal(key_num):
     x0 = random.normal(prior_key, shape=(d,), dtype='float64')
 
     # run
-    sampler.run(key, init_params=x0, extra_fields=['num_steps'])
+    sampler.warmup(key, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
+    warmup_calls = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
+    sampler.run(key, extra_fields=['num_steps'])
 
     # get results
     numpyro_samples = sampler.get_samples()
@@ -240,7 +243,7 @@ def bimodal(key_num):
 
     ess, n_crossing = bias.ess_cutoff_crossing(bias.bias(X, np.ones(len(X)), variance_true), steps)
 
-    return ess
+    return ess, ess / (1 + ess* warmup_calls / 200.0)
 
 
 
@@ -260,7 +263,9 @@ def funnel(key_num):
     x0 = random.normal(prior_key, shape = (d, ), dtype = 'float64')
 
     # run
-    sampler.run(key, d, init_params=x0, extra_fields=['num_steps'])
+    sampler.warmup(key, d, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
+    warmup_calls = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
+    sampler.run(key, d, extra_fields=['num_steps'])
 
     # get results
     numpyro_samples = sampler.get_samples()
@@ -283,7 +288,7 @@ def funnel(key_num):
 
     ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
 
-    return ess
+    return ess, ess / (1 + ess* warmup_calls / 200.0)
 
     #np.savez('Tests/data/funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
 
@@ -298,14 +303,18 @@ def rosenbrock(key_num):
     variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
 
     # setup
-    nuts_setup = NUTS(targets.rosenbrock, adapt_step_size=True, adapt_mass_matrix=False)#, step_size= stepsize)
+    nuts_setup = NUTS(targets.rosenbrock, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
     sampler = MCMC(nuts_setup, num_warmup= 1000, num_samples= 10000, num_chains= 1, progress_bar= True)
 
     # run
     key = random.PRNGKey(key_num)
     key, prior_key = random.split(key)
     x0 = random.normal(prior_key, shape = (d, ), dtype = 'float64')
-    sampler.run(key, d, Q, init_params= x0, extra_fields=['num_steps'])
+
+    #run
+    sampler.warmup(key, d, Q, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
+    warmup_calls = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
+    sampler.run(key, d, Q, extra_fields=['num_steps'])
 
     # get results
     numpyro_samples = sampler.get_samples()
@@ -321,11 +330,57 @@ def rosenbrock(key_num):
 
     ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
 
-    return ess
+    return ess, ess / (1 + ess* warmup_calls / 200.0)
 
     #np.savez('Tests/data/rosenbrock_HMC', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
 
 
+
+def stohastic_volatility(key_num):
+
+    #target setup
+    #variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
+
+    # setup
+    nuts_setup = NUTS(targets.StohasticVolatility, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
+    sampler = MCMC(nuts_setup, num_warmup= 1000, num_samples= 1000, num_chains= 1, progress_bar= True)
+
+    # run
+    key = random.PRNGKey(key_num)
+    key, prior_key = random.split(key)
+    x0 = random.normal(prior_key, shape = (2429, ), dtype = 'float64')
+
+    #run
+    sampler.warmup(key, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
+    warmup_calls = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
+    sampler.run(key, extra_fields=['num_steps'])
+
+    # get results
+    numpyro_samples = sampler.get_samples()
+
+    #X = {name:  for name in ['x', 'y']}
+
+    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+
+    s= np.array(numpyro_samples['s'])
+    print(np.shape(s))
+    sigma= np.array(numpyro_samples['sigma'])
+    nu= np.array(numpyro_samples['nu'])
+
+
+    np.savez('SVsamples.npz', s= s, sigma = sigma, nu= nu)
+
+    exit()
+    X = np.empty((len(nu), len(s[0]) + 2))
+    X[:, :-2] = s
+    X[:, -2] = sigma
+    X[:, -1] = nu
+
+    B = bias.bias(X, np.ones(len(X)), variance_true)
+
+    ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+
+    return ess, ess / (1 + ess* warmup_calls / 200.0)
 
 
 def bimodal_plot():
@@ -355,19 +410,51 @@ def bimodal_plot():
     plt.show()
 
 
+def SVplot():
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from numpyro.examples.datasets import SP500, load_dataset
+
+    _, fetch = load_dataset(SP500, shuffle=False)
+    dates, returns = fetch()
+
+    X = np.load('SVsamples.npz')
+    s, sigma, nu = X['s'], X['sigma'], X['nu']
+
+    fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
+    dates = mdates.num2date(mdates.datestr2num(dates))
+    ax.plot(dates, returns, '.', color=  'black', label = 'data')
+    # format the ticks
+    ax.xaxis.set_major_locator(mdates.YearLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    ax.xaxis.set_minor_locator(mdates.MonthLocator())
+
+    volatility = np.sort(np.exp(s), axis = 0)
+
+    ax.plot(dates, volatility[len(volatility)//2, :], color = 'orange')
+    ax.fill_between(dates, volatility[len(volatility)//4, :], volatility[3* len(volatility)//4, :], color = 'orange', alpha = 0.5)
+
+    ax.legend()
+    ax.set(xlabel="time", ylabel="returns")
+
+    plt.show()
+
+
 def table1():
     repeat = 10
 
     functions = [kappa100, bimodal, rosenbrock, funnel]
-    names = ['Kappa 100', 'Bimodal', 'Rosenbrock', 'Funnel']
+    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel"]
     ess, ess_std = np.zeros(len(names)), np.zeros(len(names))
+    ess2, ess_std2 = np.zeros(len(names)), np.zeros(len(names))
 
     for i in range(len(names)):
         print(names[i])
-        ESS = [functions[i](j) for j in range(repeat)]
-        ess[i], ess_std[i] = np.average(ESS), np.std(ESS)
+        ESS = np.array([functions[i](j) for j in range(repeat)])
+        ess[i], ess_std[i] = np.average(ESS[:, 0]), np.std(ESS[:, 0])
+        ess2[i], ess_std2[i] = np.average(ESS[:, 1]), np.std(ESS[:, 1])
 
-    data = {'Target ': names, 'ESS': ess, 'ESS std': ess_std}
+    data = {'Target ': names, 'ESS': ess, 'ESS std': ess_std, 'ESS (with warmup)': ess2, 'ESS (with warmup) std': ess_std2}
     print(data)
     df = pd.DataFrame(data)
     print(df)
@@ -375,8 +462,11 @@ def table1():
 
 
 if __name__ == '__main__':
-    #bimodal()
-    table1()
+
+    #stohastic_volatility(0)
+    SVplot()
+
+    #table1()
     #dimension_dependence()
     #ill_conditioned()
     #bimodal_plot()

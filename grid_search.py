@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
 
-    A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
+    A = jnp.array([1e20, ])#jnp.logspace(np.log10(amin), np.log10(amax), 6)
     epsilon = jnp.logspace(np.log10(epsmin), np.log10(epsmax), 6)
 
     results1 = search_step(ess_function, A, epsilon)

@@ -5,6 +5,13 @@ import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
 
+from numpyro.examples.datasets import SP500, load_dataset
+
+
+_, fetch = load_dataset(SP500, shuffle=False)
+SP500_dates, SP500_returns = fetch()
+
+
 ###  targets in the numpyro form  ###
 
 
@@ -66,4 +73,12 @@ def rosenbrock(d, Q):
 
     x = numpyro.sample("x", dist.Normal(jnp.ones(d // 2), jnp.ones(d // 2)))
     numpyro.sample("y", dist.Normal(jnp.square(x), np.sqrt(Q) * jnp.ones(d // 2)))
+
+
+
+def StohasticVolatility():
+    step_size = numpyro.sample("sigma", dist.Exponential(50.0))
+    nu = numpyro.sample("nu", dist.Exponential(0.1))
+    s = numpyro.sample("s", dist.GaussianRandomWalk(scale=step_size, num_steps=jnp.shape(SP500_returns)[0]))
+    numpyro.sample("r", dist.StudentT(df=nu, loc=0.0, scale=jnp.exp(s)), obs=SP500_returns)
 

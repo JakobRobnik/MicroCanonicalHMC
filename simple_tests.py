@@ -1,13 +1,10 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import sys
-from scipy.stats import norm
 import os
 
 import ESH
 import CTV
-import parallel
 from targets import *
 import grid_search
 
@@ -25,7 +22,7 @@ def parallel_run(function, values):
 
 
 
-def bounce_frequency(d, alpha, langevin = False, prerun = 0):
+def bounce_frequency(d, alpha, generalized = False, prerun = 0):
 
     key = jax.random.PRNGKey(1)
 
@@ -35,7 +32,7 @@ def bounce_frequency(d, alpha, langevin = False, prerun = 0):
 
     #sampler = ESH.Sampler(Target= IllConditionedGaussian(d=d, condition_number=100.0), eps=1.0)
 
-    ess = parallel_run(lambda L: sampler.sample_multiple_chains(10, 300000, L, key, langevin= langevin, ess= True, prerun=prerun), length)
+    ess = parallel_run(lambda L: sampler.sample_multiple_chains(10, 300000, L, key, generalized= generalized, ess= True, prerun=prerun), length)
 
     return jnp.average(ess, 1), jnp.std(ess, 1)
 
@@ -50,16 +47,21 @@ def bounce_frequency(d, alpha, langevin = False, prerun = 0):
 
 
 
-def bounce_frequency_full_bias(n, d):
-    length = [2, 5, 10, 30, 50, 75, 80, 90, 100, 1000, 10000, 10000000]
-    L = length[n]
+def full_bias():
+    length = [2, 5, 30, 90, 1e20]
+    d= 200
 
-    sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1)
-    np.random.seed(1)
-    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    bias = sampler.sample(x0, L, track= 'FullBias')
+    bias = np.empty((len(length), 1000000))
+    for n in range(len(length)):
+        print(n)
+        sampler = ESH.Sampler(Target= StandardNormal(d= d), eps=1.0)
+        key = jax.random.PRNGKey(1)
+        key, subkey = jax.random.split(key)
+        x0 = sampler.Target.prior_draw(subkey)
+        bias[n, :] = sampler.sample(x0, 1000000, length[n], key, ess= True)
 
-    return bias
+    np.save('Tests/data/full_bias.npy', bias)
+
 
 
 
@@ -93,7 +95,7 @@ def bimodal_mixing(n):
 
 
 
-def ill_conditioned_workhorse(alpha, langevin, prerun):
+def ill_conditioned_workhorse(alpha, generalized, prerun):
     d = 100
     L = alpha * np.sqrt(d)
 
@@ -105,7 +107,7 @@ def ill_conditioned_workhorse(alpha, langevin, prerun):
 
         sampler = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
 
-        ess = sampler.sample_multiple_chains(10, 300000, L, key, langevin = langevin, ess=True, prerun= prerun)
+        ess = sampler.sample_multiple_chains(10, 300000, L, key, generalized = generalized, ess=True, prerun= prerun)
 
         return jnp.array([jnp.average(ess), jnp.std(ess)])
 
@@ -114,13 +116,13 @@ def ill_conditioned_workhorse(alpha, langevin, prerun):
     return results
 
 
-def ill_conditioned(tunning, langevin, prerun = 0):
-    word = '_l' if langevin else ''
+def ill_conditioned(tunning, generalized, prerun = 0):
+    word = '_l' if generalized else ''
     if prerun != 0:
         word += '_t'
 
     if not tunning:
-        results = ill_conditioned_workhorse(1.0, langevin, prerun)
+        results = ill_conditioned_workhorse(1.0, generalized, prerun)
         np.save('Tests/data/kappa/no_tuning'+word+'.npy', results)
 
     else:
@@ -130,7 +132,7 @@ def ill_conditioned(tunning, langevin, prerun = 0):
 
         for i in range(len(alpha)):
             print(str(i)+ '/' + str(len(alpha)))
-            results[i] = ill_conditioned_workhorse(alpha[i], langevin, prerun)
+            results[i] = ill_conditioned_workhorse(alpha[i], generalized, prerun)
 
         np.save('Tests/data/kappa/fine_tuned_full_results'+word+'.npy', results)
         np.save('Tests/data/kappa/fine_tuned'+word+'.npy', results[np.argmax(results[:, :, 0], axis= 0), np.arange(18, dtype = int), :])
@@ -174,71 +176,20 @@ def rosenbrock():
     np.savez('Tests/data/rosenbrock3', samples = samples[::10, :], w = w[::10])
 
 
-def bimodal():
-
-    xmax = 3.5 #how many sigma away from the mean of the gaussians do we want to have bins
-
-    def get_bins(mu, sigma, num_bins_per_mode):
-        bins_mode = np.array([[- xmax + i * 2 * xmax / num_bins_per_mode, - xmax + (i+1) * 2 * xmax / num_bins_per_mode] for i in range(num_bins_per_mode)])
-
-        bins = np.concatenate(( (bins_mode * sigma[0]) + mu[0], (bins_mode * sigma[1]) + mu[1]  ))
-
-        return bins
-
-    d = 50
-    mu1, sigma1= 0.0, 1.0 # the first Gaussian
-    mu2, sigma2, f = 7.0, 0.5, 0.2 #the second Gaussian
-
-    name = 'sep'+str(mu2)+'_f'+str(f)+'_sigma'+str(sigma2)
-    load = False
-
-    eps, L = 1.0, 1.5 * np.sqrt(d)
-    bins_per_mode = 20
-    bins = get_bins([mu1, mu2], [sigma1, sigma2], bins_per_mode)
-
-    sampler = ESH.Sampler(Target= BiModal(d=d, mu1= mu1, mu2 = mu2, sigma1= sigma1, sigma2 = sigma2, f= f), eps=eps)
-
-    #X = esh.Target.draw(1000)[:, 0]
-    np.random.seed(0)
-    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    if load:
-        P = np.load('Tests/data/bimodal_marginal'+name+'.npy')
-    else:
-        P = sampler.sample(x0, L, prerun_steps=5000, max_steps= 50000000, track='Marginal1d', bins= bins)
-
-    my_hist(bins, P)
-    f1, f2 = np.sum(P[:bins_per_mode]), np.sum(P[bins_per_mode : 2 * bins_per_mode])
-    print('f = ' + str(f2 / (f1 + f2)) + '  (true f = ' + str(f) + ')')
-
-    t = np.linspace(-xmax*sigma1+mu1-0.5, xmax*sigma2 + mu2 + 0.5, 1000)
-
-    plt.plot(t, (1- f)*norm.pdf(t, loc = mu1, scale = sigma1) + f * norm.pdf(t, loc = mu2, scale = sigma2), color = 'black')
-    plt.xlim(t[0], t[-1])
-    plt.ylim(0, 0.4)
-    plt.xlabel(r'$x_1$')
-    plt.ylabel(r'$p(x_1)$')
-
-    plt.savefig('Tests/'+name+'.png')
-    np.save('Tests/data/bimodal_marginal'+name+'.npy', P)
-
-    plt.show()
-
-
-
 def dimension_dependence():
 
-    dimensions = [50, 100, 200, 500, 1000]#, 3000, 10000]
-    #alpha = (1.5 * jnp.logspace(-0.8, 0.8, 24))
-    alpha = (1.5 * jnp.logspace(-0.5, 0.5, 12))
+    dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
+    alpha = (15 * jnp.logspace(-0.8, 0.8, 24))
+    #alpha = (1.5 * jnp.logspace(-0.5, 0.5, 12))
     #condition_numbers = np.logspace(0, 5, 18)
     dict = {'alpha': alpha}
-    langevin, prerun = False, 0
+    generalized, prerun = True, 0
     for d in dimensions:
         print(d)
-        avg, std = bounce_frequency(d, alpha, langevin, prerun)
+        avg, std = bounce_frequency(d, alpha, generalized, prerun)
         dict.update({'ess (d='+str(d)+')': avg, 'err ess (d='+str(d)+')': std})
     df = pd.DataFrame.from_dict(dict)
-    df.to_csv('Tests/data/dimensions/StandardNormal.csv', sep='\t', index=False)
+    df.to_csv('Tests/data/dimensions/StandardNormal'+('_l' if generalized else '')+'.csv', sep='\t', index=False)
 
 
 def billiard_bimodal():
@@ -363,64 +314,91 @@ def autocorr():
 
 def table1():
 
-    key = jax.random.PRNGKey(1)
-    langevin = True
+    esh, generalized = True, False
+    key = jax.random.PRNGKey(0)
+    import german_credit
+
+    #targets
+    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit']
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), german_credit.Target()]
 
 
-    def ess_function(alpha, eps, target, langevin, prerun):
-        sampler = ESH.Sampler(Target=target, eps=eps)
-        return jnp.median(sampler.sample_multiple_chains(10, 300000, alpha* np.sqrt(target.d), key, langevin=langevin, ess=True, prerun=prerun))
+    if esh:
 
 
-
-    def tuning(target, langevin, prerun, eps_min = 0.1, eps_max = 1.0):
-        return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, langevin, prerun), 0.3, 20.0, eps_min, eps_max)
-
-
-    def ess_ctv_function(alpha, eps, target, num_steps = 300000):
-        sampler = CTV.Sampler(Target=target, eps=eps)
-        return jnp.median(sampler.sample_multiple_chains(5, num_steps, alpha * np.sqrt(target.d), key))
+        def ess_function(alpha, eps, target, generalized, prerun):
+            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(10, 1000000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True, prerun=prerun))
 
 
-    def tuning_ctv(target, eps_min = 0.5, eps_max = 5.0, num_steps= 300000):
-        return grid_search.search_wrapper(lambda a, e: ess_ctv_function(a, e, target, num_steps), 0.3, 20, eps_min, eps_max)
+        def tuning(target, generalized, prerun, eps_min = 0.1, eps_max = 1.0):
+            return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized, prerun), 0.3, 20.0, eps_min, eps_max)
 
 
-    ### ESH ###
+        borders_esh = [[1.0, 4.0], [0.5, 3.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]
+        results = np.array([np.array(tuning(targets[i], generalized, 0, borders_esh[i][0], borders_esh[i][1])) for i in range(len(targets))])
 
-    #no tuning
-    #print(ess_function(1.5, 1.0, IllConditionedGaussian(d= 100, condition_number= 100.0), langevin, 0))
-    #print(ess_function(1.0, 2.5, BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), langevin, 0))
-    # print(ess_function(1.5, 1.0, Rosenbrock(d= 36), langevin, 0))
-    # print(ess_function(1.5, 1.0, Funnel(20), langevin, 0))
-
-    #fine tuning
-    #tuning(IllConditionedGaussian(d= 100, condition_number= 100.0), langevin, 0)
-    #tuning(BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), langevin, 0)
-    #tuning(Rosenbrock(d= 36), langevin, 0)
-    #tuning(Funnel(20), langevin, 0)
-
-    #print(target_results(Funnel(20), langevin= False, prerun= 0))
-
-    ### CTV ###
-
-    #no tuning
-    # print(ess_ctv_function(1.5, 3.0, IllConditionedGaussian(d= 100, condition_number= 100.0)))
-    # print(ess_ctv_function(1.5, 3.0, Rosenbrock(d= 36)))
-    # print(ess_ctv_function(1.5, 3.0, Funnel(20)))
-
-    tuning_ctv(IllConditionedGaussian(d= 100, condition_number= 100.0)) #tuning
-    print([ess_ctv_function(1.5, e, BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2)) for e in [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]])
-    tuning_ctv(Rosenbrock(d= 36), num_steps= 1000000)
-    tuning_ctv(Funnel(20), num_steps= 1000000)
+        df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
+        #df.to_csv('submission/TableESH_generalized.csv', sep='\t', index=False)
+        print(df)
 
 
+    else:
+
+        def ess_ctv_function(alpha, eps, target, num_steps=300000):
+            return jnp.average(
+                CTV.Sampler(Target=target, eps=eps).sample_multiple_chains(10, num_steps, alpha * np.sqrt(target.d), key))
+
+
+        def tuning_ctv(target, eps_min=0.5, eps_max=5.0, num_steps=300000):
+            return grid_search.search_wrapper(lambda a, e: ess_ctv_function(a, e, target, num_steps), 0.3, 20, eps_min, eps_max)
+
+        borders_ctv = [[0.5, 5.0], [2.0, 9.0], [0.1, 5.0], [0.0001, 0.005], [5000, 10000]]
+        num_steps_ctv = [300000, 300000, 3000000, 3000000, 300000]
+        i = 4
+        #6.769621324307172e-05
+        #CTV.Sampler(Target=targets[i], eps=10000.0).sample(jnp.zeros(targets[i].d), 300000, 1.5 * jnp.sqrt(targets[i].d), key)
+
+        tuning_ctv(targets[i], borders_ctv[i][0], borders_ctv[i][1])
+        #results = np.array([np.array(tuning_ctv(targets[i], borders_ctv[i][0], borders_ctv[i][1], num_steps= num_steps_ctv[i])) for i in range(4)])
+        #
+        # df = pd.DataFrame({'Target ': names[:4], 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
+        # df.to_csv('submission/TableCTV.csv', sep='\t', index=False)
+        # print(df)
+
+
+def run_problem():
+    target = Rosenbrock(d= 32)
+    eps = 0.1
+
+    sampler = ESH.Sampler(target, eps)
+
+    key = jax.random.PRNGKey(0)
+    key, key_prior = jax.random.split(key)
+    x0 = target.prior_draw(key_prior)
+    L = 20 * jnp.sqrt(target.d)
+    #L = 1e20 * eps
+    ess = sampler.sample(x0, 1000000, L, key, generalized= False, ess= True)
+
+    print(ess)
+
+
+def divergence():
+
+    sampler = ESH.Sampler(IllConditionedGaussian(d = 100, condition_number=1000), eps = 3.0)
+    key = jax.random.PRNGKey(0)
+    key, prior_key = jax.random.split(key)
+    x0 = sampler.Target.prior_draw(prior_key)
+    X, w = sampler.sample(x0, 10000, 10000000000, key, ess = True)
+    print(np.any(np.isnan(w)))
 
 
 
 if __name__ == '__main__':
 
-    table1()
+    #run_problem()
+
+    full_bias()
     #dimension_dependence()
-    #ill_conditioned(tunning=False, langevin=False, prerun=1000)
+
+    #ill_conditioned(tunning=False, generalized=False, prerun=1000)
     #ill_conditioned(tunning=True)

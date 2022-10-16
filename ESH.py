@@ -21,7 +21,7 @@ class Sampler:
         return u, key
 
 
-    def langevin_step(self, u, key, nu):
+    def generalized_step(self, u, key, nu):
         """Adds a small noise to u and normalizes."""
         key, subkey = jax.random.split(key)
         z = nu * jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
@@ -30,7 +30,7 @@ class Sampler:
 
 
     def f(self, eps, g, u):
-        """A convenient function for the leapfrog of the esh dynamics."""
+        """A momentum updating map for the leapfrog of the esh dynamics."""
         g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
         e = - g / g_norm
         ue = jnp.dot(u, e)
@@ -76,7 +76,7 @@ class Sampler:
         w = jnp.exp(rnew) / self.Target.d
 
         # bounce
-        unew, key = self.langevin_step(unew, key, nu)
+        unew, key = self.generalized_step(unew, key, nu)
 
         return xnew, unew, gg_new, rnew, key, 0.0, w
 
@@ -137,7 +137,7 @@ class Sampler:
 
 
 
-    def sample(self, x0, num_steps, bounce_length, key, langevin = False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
+    def sample(self, x0, num_steps, bounce_length, key, generalized = False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
 
 
         def step(state, useless):
@@ -197,7 +197,7 @@ class Sampler:
 
             dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps * w, bounce_time)
 
-        if langevin: #do a continous momentum decoherence (generalized MCHMC)
+        if generalized: #do a continous momentum decoherence (generalized MCHMC)
             nu = jnp.sqrt((jnp.exp(2 * self.eps / bounce_length) - 1.0) / self.Target.d)
             dynamics = lambda state: self.generalized_dynamics_step(state, nu)
 
@@ -206,7 +206,17 @@ class Sampler:
 
             _, bias = jax.lax.scan(bias_step, init=((x, u, g, r, key, 0.0), (w, jnp.square(x))), xs=None, length=num_steps)
 
-            return ess_cutoff_crossing(bias)
+            return bias
+
+            no_nans = 1-jnp.any(jnp.isnan(bias))
+            cutoff_reached = bias[-1] < 0.1
+            #
+            # plt.plot(bias, '.')
+            # plt.xscale('log')
+            # plt.yscale('log')
+            # plt.show()
+
+            return ess_cutoff_crossing(bias) * no_nans * cutoff_reached #return 0 if there are nans, or if the bias cutoff was not reached
 
         elif energy_track:  # only track the expected energy and its variance
 
@@ -234,12 +244,12 @@ class Sampler:
 
 
 
-    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, langevin= False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
+    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, generalized= False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
 
         def f(key, useless):
             key, key_prior, key_bounces = jax.random.split(key[0], 3)
             x0 = self.Target.prior_draw(key_prior)
-            return (key,), self.sample(x0, num_steps, bounce_length, key_bounces, langevin, ess, update_track, initial_track, prerun, energy_track)
+            return (key,), self.sample(x0, num_steps, bounce_length, key_bounces, generalized, ess, update_track, initial_track, prerun, energy_track)
 
         return jax.lax.scan(f, init= (key, ), xs = None, length = num_chains)[1]
 
@@ -289,8 +299,8 @@ def ess_cutoff_crossing(bias):
 #
 #
 #
-#         if langevin_eta != 0:
-#             u = self.langevin_update(u, langevin_eta)
+#         if generalized_eta != 0:
+#             u = self.generalized_update(u, generalized_eta)
 #
 #
 # def random_unit_vector(self):
@@ -298,7 +308,7 @@ def ess_cutoff_crossing(bias):
 #     u /= np.sqrt(np.sum(np.square(u)))
 #     return u
 #
-# def langevin_update(self, u, eta):
+# def generalized_update(self, u, eta):
 #     unew = u + np.random.normal(size=len(u)) * eta
 #     return unew / np.sqrt(np.sum(np.square(unew)))
 
