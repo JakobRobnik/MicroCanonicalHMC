@@ -4,10 +4,40 @@ from scipy.stats import special_ortho_group
 from jax import random
 from numpyro.infer import MCMC, NUTS
 
-import bias
 import targets_HMC as targets
 
 import pandas as pd
+
+
+
+
+def bias(X, w, var_true):
+    """ Bias = average over dimensions ( variance(samples) - variance(true) )^2 / variance(true)^2 )
+        Args:
+            X: samples, an array of shape (num_samples, d)
+            w: weight of each sample, an array of shape (num_samples, )
+            var_true: an exact variance of each dimension, an array of shape (d, )
+        Returns:
+            variance bias as a function of number of samples (in the way they are ordered)
+    """
+    var = (np.cumsum((np.square(X.T) * w), axis = 1) / np.cumsum(w)).T
+
+    return np.sqrt(np.average(np.square((var - var_true) / var_true), axis = 1))
+
+
+def ess_cutoff_crossing(b, step_cost):
+
+    cutoff = 0.1
+
+    n_crossing = 0
+    while b[n_crossing] > cutoff:
+        n_crossing += 1
+        if n_crossing == len(b):
+            return 0, n_crossing
+
+    return 200.0 / np.sum(step_cost[:n_crossing + 1]), n_crossing
+
+
 
 def sample_nuts(target, target_params, num_samples, key_num = 0, d= 1, names_output = None):
     """ 'default' nuts, tunes the step size with a prerun"""
@@ -55,7 +85,7 @@ def ill_conditioned():
             X, steps = sample_nuts(targets.ill_conditioned_gaussian, [d, condition_number], num_samples, d = d, key_num=key_num)
 
             variance_true = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
-            ess, n_crossing = bias.ess_cutoff_crossing(bias.bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
+            ess, n_crossing = ess_cutoff_crossing(bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
             ess_arr[key_num] = ess
 
         return np.average(ess_arr), np.std(ess_arr), n_crossing
@@ -89,8 +119,8 @@ def dimension_dependence():
 
         X, steps = sample_nuts(targets.ill_conditioned_gaussian, [d, kappa], num_samples)
         X = (R @ X.T).T
-        B = bias.bias(X, np.ones(len(X)), variance_true)
-        ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+        B = bias(X, np.ones(len(X)), variance_true)
+        ess, n_crossing = ess_cutoff_crossing(B, steps)
 
         return ess, n_crossing
 
@@ -114,8 +144,8 @@ def dimension_dependence():
 
         X = np.concatenate((np.array(numpyro_samples['x']).T, np.array(numpyro_samples['y']).T)).T
 
-        B = bias.bias(X, np.ones(len(X)), variance_true)
-        ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+        B = bias(X, np.ones(len(X)), variance_true)
+        ess, n_crossing = ess_cutoff_crossing(B, steps)
 
         return ess, n_crossing
 
@@ -211,7 +241,7 @@ def kappa100(key_num):
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
     variance_true = np.logspace(-0.5*np.log10(condition_number), 0.5*np.log10(condition_number), d)
-    ess, n_crossing = bias.ess_cutoff_crossing(bias.bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
+    ess, n_crossing = ess_cutoff_crossing(bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
 
@@ -241,7 +271,7 @@ def bimodal(key_num):
     variance_true = np.ones(d)
     variance_true[0] += 0.2 * 8.0**2
 
-    ess, n_crossing = bias.ess_cutoff_crossing(bias.bias(X, np.ones(len(X)), variance_true), steps)
+    ess, n_crossing = ess_cutoff_crossing(bias(X, np.ones(len(X)), variance_true), steps)
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
 
@@ -284,9 +314,9 @@ def funnel(key_num):
     X[:, :d-1] = Gz
     X[:, -1]= Gtheta
 
-    B = bias.bias(X, np.ones(len(X)), np.ones(d))
+    B = bias(X, np.ones(len(X)), np.ones(d))
 
-    ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+    ess, n_crossing = ess_cutoff_crossing(B, steps)
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
 
@@ -326,9 +356,9 @@ def rosenbrock(key_num):
 
     X = np.concatenate((np.array(numpyro_samples['x']).T, np.array(numpyro_samples['y']).T)).T
 
-    B = bias.bias(X, np.ones(len(X)), variance_true)
+    B = bias(X, np.ones(len(X)), variance_true)
 
-    ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+    ess, n_crossing = ess_cutoff_crossing(B, steps)
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
 
@@ -376,9 +406,9 @@ def stohastic_volatility(key_num):
     X[:, -2] = sigma
     X[:, -1] = nu
 
-    B = bias.bias(X, np.ones(len(X)), variance_true)
+    B = bias(X, np.ones(len(X)), variance_true)
 
-    ess, n_crossing = bias.ess_cutoff_crossing(B, steps)
+    ess, n_crossing = ess_cutoff_crossing(B, steps)
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
 
