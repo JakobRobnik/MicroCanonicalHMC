@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import ESH
 import myHMC
-from targets import *
+from benchmark_targets import *
 
 from moviepy.editor import VideoClip
 from moviepy.video.io.bindings import mplfig_to_npimage
 
 
+### to get movies of the trajectories ###
 
 
 def movie(time, X, duration):

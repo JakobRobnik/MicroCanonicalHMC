@@ -7,7 +7,7 @@ jax.config.update('jax_enable_x64', True)
 
 
 class Sampler:
-    """the esh sampler"""
+    """the ESH sampler (with bounces or the generalzied MCHMC)"""
 
     def __init__(self, Target, eps):
         self.Target, self.eps = Target, eps
@@ -206,15 +206,13 @@ class Sampler:
 
             _, bias = jax.lax.scan(bias_step, init=((x, u, g, r, key, 0.0), (w, jnp.square(x))), xs=None, length=num_steps)
 
-            return bias
-
             no_nans = 1-jnp.any(jnp.isnan(bias))
             cutoff_reached = bias[-1] < 0.1
-            #
-            # plt.plot(bias, '.')
-            # plt.xscale('log')
-            # plt.yscale('log')
-            # plt.show()
+
+            plt.plot(bias, '.')
+            plt.xscale('log')
+            plt.yscale('log')
+            plt.show()
 
             return ess_cutoff_crossing(bias) * no_nans * cutoff_reached #return 0 if there are nans, or if the bias cutoff was not reached
 
@@ -245,6 +243,7 @@ class Sampler:
 
 
     def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, generalized= False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
+        """Run multiple chains. The initial conditions are drawn with self.Target.prior_draw(key)"""
 
         def f(key, useless):
             key, key_prior, key_bounces = jax.random.split(key[0], 3)
@@ -258,6 +257,8 @@ class Sampler:
         return 0.5* self.Target.d * jnp.log(self.Target.d * jnp.square(W)) + self.Target.nlogp(X)
 
 
+
+#some functions for tracking quantities (kind of obsolete)
 
 def update_moments(track, x, w):
     W = track[0]

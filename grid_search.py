@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 
+### Some convenient function for doing grid search of the hyperparameters ###
+
 
 
 def search_wrapper(ess_function, amin, amax, epsmin, epsmax):

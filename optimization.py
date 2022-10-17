@@ -4,7 +4,9 @@ import jax
 import matplotlib.pyplot as plt
 import ESH
 import myHMC
-from targets import *
+from benchmark_targets import *
+
+
 
 key = jax.random.PRNGKey(0)
 d = 50

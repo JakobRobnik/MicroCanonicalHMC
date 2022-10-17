@@ -9,11 +9,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import ESH
-import CTV
+import TplusV
 
-#to get ground truth, run the following from the source directory of inference-gym:
+### inference gym problems (https://pypi.org/project/inference-gym/) ###
 
 
+
+#to get 'ground truth' chains, run the following from the source directory of inference-gym (not working for me yet):
 #python -m inference_gym.tools.get_ground_truth --target= GermanCreditNumericSparseLogisticRegression
 
 
