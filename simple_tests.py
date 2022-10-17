@@ -319,23 +319,22 @@ def table1():
     import inferencegym
 
     #targets
-    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), inferencegym.Target('German Credit')]
+    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stohastic Volatility']
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), inferencegym.Target('German Credit'), StohasticVolatility()]
 
 
     if esh:
 
-
         def ess_function(alpha, eps, target, generalized, prerun):
-            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(10, 1000000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True, prerun=prerun))
+            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(10, 300000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True, prerun=prerun))
 
 
         def tuning(target, generalized, prerun, eps_min = 0.1, eps_max = 1.0):
             return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized, prerun), 0.3, 20.0, eps_min, eps_max)
 
 
-        borders_esh = [[1.0, 4.0], [0.5, 3.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]
-        results = np.array([np.array(tuning(targets[i], generalized, 0, borders_esh[i][0], borders_esh[i][1])) for i in range(len(targets))])
+        borders_esh = [[1.0, 4.0], [0.5, 3.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]
+        results = np.array([np.array(tuning(targets[i], generalized, 0, borders_esh[i][0], borders_esh[i][1])) for i in range(len(targets)-1, len(targets))])
 
         df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
         #df.to_csv('submission/TableESH_generalized.csv', sep='\t', index=False)
@@ -396,8 +395,8 @@ def divergence():
 if __name__ == '__main__':
 
     #run_problem()
-
-    full_bias()
+    table1()
+    #full_bias()
     #dimension_dependence()
 
     #ill_conditioned(tunning=False, generalized=False, prerun=1000)

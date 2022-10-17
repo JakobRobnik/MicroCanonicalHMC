@@ -274,28 +274,40 @@ class StohasticVolatility():
 
     def __init__(self):
 
-
         _, fetch = load_dataset(SP500, shuffle=False)
         self.dates, self.returns = fetch()
         self.d = 2429
 
-        self.typical_sigma, self.typical_nu = 0.02, 10.0
+        self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
+
+        self.variance = np.load('Tests/data/stohastic_volatility/ground_truth_moments.npy')
+        self.grad_nlogp = jax.grad(self.nlogp)
 
 
     def nlogp(self, x):
         """- log p of the target distribution"""
 
-        sigma = np.exp(x[-2]) * self.typical_sigma
-        nu = np.exp(x[-1]) * self.typical_nu
+        sigma = jnp.exp(x[-2]) * self.typical_sigma #we used this transformation to make x unconstrained
+        nu = jnp.exp(x[-1]) * self.typical_nu
 
         l1= jnp.sum(jnp.exp(x[-2:]) - x[-2:])
-        l2 = (self.d - 2) * np.log(sigma) + 0.5 * (jnp.square(x[0]) + jnp.sum(jnp.square(x[1:] - x[:-1]))) / sigma * 2
+        l2 = (self.d - 2) * jnp.log(sigma) + 0.5 * (jnp.square(x[0]) + jnp.sum(jnp.square(x[1:] - x[:-1]))) / sigma * 2
         l3 = - jnp.sum(StudentT(df=nu).log_prob(self.returns / jnp.exp(x[:-2])))
 
         return l1 + l2 + l3
 
+
     def transform(self, x):
-        return x
+        """sigma and nu were transformed to make them unconstrained"""
+
+        z = jnp.empty(x.shape)
+        z = z.at[:-2].set(x.T[:-2])
+        z = z.at[-2].set(jnp.exp(x.T[-2]) * self.typical_sigma)
+        z = z.at[-1].set(jnp.exp(x.T[-1]) * self.typical_nu)
+
+        return z.T
+
+
 
     def prior_draw(self, key):
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
@@ -326,6 +338,7 @@ class DiagonalPreconditioned():
 
     def transform(self, x):
         return x
+
 
 
 def check_gradient(target, x):

@@ -368,12 +368,17 @@ def rosenbrock(key_num):
 
 def stohastic_volatility(key_num):
 
+    ground_truth = False
     #target setup
     #variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
 
     # setup
     nuts_setup = NUTS(targets.StohasticVolatility, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
-    sampler = MCMC(nuts_setup, num_warmup= 1000, num_samples= 1000, num_chains= 1, progress_bar= True)
+
+    if ground_truth:
+        sampler = MCMC(nuts_setup, num_warmup= 10000, num_samples= 10000 * 50, num_chains= 1, progress_bar= True, thinning=50) #will return num_samples / thinning
+    else:
+        sampler = MCMC(nuts_setup, num_warmup=1000, num_samples=5000, num_chains=1, progress_bar=True)
 
     # run
     key = random.PRNGKey(key_num)
@@ -388,29 +393,37 @@ def stohastic_volatility(key_num):
     # get results
     numpyro_samples = sampler.get_samples()
 
-    #X = {name:  for name in ['x', 'y']}
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
 
     s= np.array(numpyro_samples['s'])
-    print(np.shape(s))
     sigma= np.array(numpyro_samples['sigma'])
     nu= np.array(numpyro_samples['nu'])
 
+    if ground_truth:
+        var = np.empty(len(s[0]) + 2)
+        var[:-2] = np.average(np.square(s), axis=0)
+        var[-2] = np.average(np.square(sigma))
+        var[-1] = np.average(np.square(nu))
 
-    np.savez('SVsamples.npz', s= s, sigma = sigma, nu= nu)
+        np.save('Tests/data/stohastic_volatility/ground_truth'+str(key_num)+'.npy', var)
 
-    exit()
-    X = np.empty((len(nu), len(s[0]) + 2))
-    X[:, :-2] = s
-    X[:, -2] = sigma
-    X[:, -1] = nu
+        #np.savez('SVsamples.npz', s= s, sigma = sigma, nu= nu)
 
-    B = bias(X, np.ones(len(X)), variance_true)
+    else:
+        X = np.empty((len(nu), len(s[0]) + 2))
+        X[:, :-2] = s
+        X[:, -2] = sigma
+        X[:, -1] = nu
 
-    ess, n_crossing = ess_cutoff_crossing(B, steps)
+        variance_true = np.load('Tests/data/stohastic_volatility/ground_truth_moments.npy')
 
-    return ess, ess / (1 + ess* warmup_calls / 200.0)
+        B = bias(X, np.ones(len(X)), variance_true)
+
+        ess, n_crossing = ess_cutoff_crossing(B, steps)
+        print(ess)
+
+        return ess, ess / (1 + ess* warmup_calls / 200.0)
 
 
 def bimodal_plot():
@@ -473,12 +486,12 @@ def SVplot():
 def table1():
     repeat = 10
 
-    functions = [kappa100, bimodal, rosenbrock, funnel]
-    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel"]
+    functions = [kappa100, bimodal, rosenbrock, funnel, stohastic_volatility]
+    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'Stohastic Volatility']
     ess, ess_std = np.zeros(len(names)), np.zeros(len(names))
     ess2, ess_std2 = np.zeros(len(names)), np.zeros(len(names))
 
-    for i in range(len(names)):
+    for i in range(len(names)-1, len(names)):
         print(names[i])
         ESS = np.array([functions[i](j) for j in range(repeat)])
         ess[i], ess_std[i] = np.average(ESS[:, 0]), np.std(ESS[:, 0])
@@ -488,15 +501,22 @@ def table1():
     print(data)
     df = pd.DataFrame(data)
     print(df)
-    df.to_csv('submission/TableNUTS.csv', sep='\t', index=False)
+    #df.to_csv('submission/TableNUTS.csv', sep='\t', index=False)
 
 
 if __name__ == '__main__':
 
     #stohastic_volatility(0)
-    SVplot()
 
-    #table1()
+    # var = np.array([np.load('ground_truth'+str(i)+'.npy') for i in range(3)])
+    # var_avg = np.average(var, axis = 0)
+    # np.save('StohasticVolatility_ground_truth_moments.npy', var_avg)
+    # bias = [np.sqrt(np.average(np.square((var[i, :] - var_avg) / var_avg))) for i in range(3)]
+    # print(bias)
+
+    #SVplot()
+
+    table1()
     #dimension_dependence()
     #ill_conditioned()
     #bimodal_plot()
