@@ -280,7 +280,6 @@ class StohasticVolatility():
     """Example from https://num.pyro.ai/en/latest/examples/stochastic_volatility.html"""
 
     def __init__(self):
-
         self.d = 2429
 
         self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
@@ -295,9 +294,9 @@ class StohasticVolatility():
         sigma = jnp.exp(x[-2]) * self.typical_sigma #we used this transformation to make x unconstrained
         nu = jnp.exp(x[-1]) * self.typical_nu
 
-        l1= jnp.sum(jnp.exp(x[-2:]) - x[-2:])
-        l2 = (self.d - 2) * jnp.log(sigma) + 0.5 * (jnp.square(x[0]) + jnp.sum(jnp.square(x[1:] - x[:-1]))) / sigma * 2
-        l3 = - jnp.sum(StudentT(df=nu).log_prob(self.returns / jnp.exp(x[:-2])))
+        l1= (jnp.exp(x[-2]) - x[-2]) + (jnp.exp(x[-1]) - x[-1])
+        l2 = (self.d - 2) * jnp.log(sigma) + 0.5 * (jnp.square(x[0]) + jnp.sum(jnp.square(x[1:-2] - x[:-3]))) / jnp.square(sigma)
+        l3 = jnp.sum(StudentT(df=nu, scale= jnp.exp(x[:-2])).log_prob(SP500_returns))
 
         return l1 + l2 + l3
 
@@ -305,11 +304,11 @@ class StohasticVolatility():
     def transform(self, x):
 
         z = jnp.empty(x.shape)
-        z = z.at[:-2].set(x.T[:-2])
-        z = z.at[-2].set(jnp.exp(x.T[-2]) * self.typical_sigma)
-        z = z.at[-1].set(jnp.exp(x.T[-1]) * self.typical_nu)
+        z = z.at[:-2].set(x[:-2]) # = s = log R
+        z = z.at[-2].set(jnp.exp(x[-2]) * self.typical_sigma) # = sigma
+        z = z.at[-1].set(jnp.exp(x[-1]) * self.typical_nu) # = nu
 
-        return z.T
+        return z
 
 
 
@@ -363,9 +362,19 @@ def check_gradient(target, x):
 
 if __name__ == '__main__':
 
+    t = np.linspace(-5, 5, 100)
 
-    target = StohasticVolatility()
-    x = np.random.normal(size=target.d)
+    nus=  [1, 2, 5, 500]
+
+    import matplotlib.pyplot as plt
+
+    for nu in nus:
+        plt.plot(t, jnp.exp(StudentT(nu).log_prob(t)))
+
+    plt.show()
+
+    #target = StohasticVolatility()
+    #x = np.random.normal(size=target.d)
 
 
     #check_gradient(target, x)

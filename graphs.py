@@ -576,10 +576,6 @@ def german_credit():
 def stohastic_volatility():
 
 
-    X = np.load('Tests/data/stohastic_volatility/NUTS_samples.npz')
-    s, sigma, nu = X['s'], X['sigma'], X['nu']
-
-
 
     ff, ff_title, ff_ticks = 22, 22, 18
     plt.rcParams['xtick.labelsize'] = ff_ticks
@@ -596,38 +592,26 @@ def stohastic_volatility():
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     ax.xaxis.set_minor_locator(mdates.MonthLocator())
 
-
+    #data
     dates = mdates.num2date(mdates.datestr2num(SP500_dates))
     plt.plot(dates, SP500_returns, '.', color=  'black', label = 'data')
 
-    volatility = np.sort(np.exp(s), axis = 0)
+    # MCHMC
+    band = np.load('Tests/data/stohastic_volatility/MCHMC_posterior_band.npy')
+    plt.plot(dates, band[1], color='tab:blue', label='MCHMC')
+    plt.fill_between(dates, band[0], band[2], color='tab:blue', alpha=0.5)
 
-    plt.plot(dates, volatility[len(volatility)//2, :], color = 'orange')
-    plt.fill_between(dates, volatility[len(volatility)//4, :], volatility[3* len(volatility)//4, :], color = 'orange', alpha = 0.5)
+    #NUTS
+    X = np.load('Tests/data/stohastic_volatility/NUTS_samples.npz')
+    s, sigma, nu = X['s'], X['sigma'], X['nu']
+    volatility = np.sort(np.exp(s), axis = 0)
+    plt.plot(dates, volatility[len(volatility)//2, :], color = 'tab:orange', label = 'NUTS')
+    plt.fill_between(dates, volatility[len(volatility)//4, :], volatility[3* len(volatility)//4, :], color = 'tab:orange', alpha = 0.5)
 
     plt.legend(fontsize = ff)
     plt.xlabel('time', fontsize = ff)
     plt.ylabel('returns', fontsize = ff)
-
-
-    plot = sns.JointGrid(height = 10)#, xlim= (xmin, xmax), ylim= (ymin, ymax))
-
-    # # marginals
-    #sns.histplot(x= x, weights= w, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:blue', zorder = 2)
-    #sns.histplot(y= y, weights= w, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_y, stat= 'density', color= 'tab:blue', label= 'MCHMC', zorder = 2)
-
-
-    # NUTS
-    sns.scatterplot(sigma, nu, s= 6, linewidth= 0, ax= plot.ax_joint, alpha = 0.7, color= 'tab:orange')
-
-    # marginals
-    sns.histplot(x=sigma, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:orange', zorder = 1)
-    sns.histplot(y=nu, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_y, stat= 'density', color= 'tab:orange', label= 'NUTS', zorder = 1)
-
-    plot.set_axis_labels(r'$\sigma$', r'$\nu$', fontsize= ff)
-    plt.tight_layout()
-
-
+    plt.ylim(np.min(SP500_returns)-0.1, np.max(SP500_returns)+0.1)
     plt.show()
 
 
