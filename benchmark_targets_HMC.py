@@ -8,7 +8,7 @@ import numpyro.distributions as dist
 from numpyro.examples.datasets import SP500, load_dataset
 
 
-#load stohastic volatility data
+#load stochastic volatility data
 _, fetch = load_dataset(SP500, shuffle=False)
 SP500_dates, SP500_returns = fetch()
 
@@ -77,7 +77,7 @@ def rosenbrock(d, Q):
 
 
 
-def StohasticVolatility():
+def StochasticVolatility():
     sigma = numpyro.sample("sigma", dist.Exponential(50.0))
     nu = numpyro.sample("nu", dist.Exponential(0.1))
     s = numpyro.sample("s", dist.GaussianRandomWalk(scale=sigma, num_steps=jnp.shape(SP500_returns)[0]))

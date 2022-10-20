@@ -5,6 +5,7 @@ from jax import random
 from numpyro.infer import MCMC, NUTS
 
 import benchmark_targets_HMC as targets
+import benchmark_targets
 
 import pandas as pd
 
@@ -368,24 +369,28 @@ def rosenbrock(key_num):
 
 
 
-def stohastic_volatility(key_num):
+def stochastic_volatility(key_num):
 
     ground_truth = False
+    posterior_band = True
     #target setup
     #variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
 
     # setup
-    nuts_setup = NUTS(targets.StohasticVolatility, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
+    nuts_setup = NUTS(targets.StochasticVolatility, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
 
     if ground_truth:
         sampler = MCMC(nuts_setup, num_warmup= 10000, num_samples= 10000 * 50, num_chains= 1, progress_bar= True, thinning=50) #will return num_samples / thinning
     else:
-        sampler = MCMC(nuts_setup, num_warmup=500, num_samples=1000, num_chains=1, progress_bar=True)
+        sampler = MCMC(nuts_setup, num_warmup=500, num_samples=10000, num_chains=1, progress_bar=True)
 
     # run
     key = random.PRNGKey(key_num)
     key, prior_key = random.split(key)
-    x0 = random.normal(prior_key, shape = (2429, ), dtype = 'float64')
+    MCHMC_target = benchmark_targets.StochasticVolatility()
+
+    x0 = MCHMC_target.transform(MCHMC_target.prior_draw(prior_key))
+
 
     #run
     sampler.warmup(key, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
@@ -395,14 +400,17 @@ def stohastic_volatility(key_num):
     # get results
     numpyro_samples = sampler.get_samples()
 
-
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
 
     s= np.array(numpyro_samples['s'])
     sigma= np.array(numpyro_samples['sigma'])
     nu= np.array(numpyro_samples['nu'])
 
-    np.savez('Tests/data/stohastic_volatility/NUTS_samples.npz', s= s, sigma = sigma, nu= nu)
+    if posterior_band:
+        volatility = np.sort(np.exp(s), axis=0)
+        np.save('Tests/data/stochastic_volatility/NUTS_posterior_band.npy', [volatility[len(volatility) // 4, :], volatility[len(volatility) // 2, :], volatility[3 * len(volatility) // 4, :]])
+
+    #np.savez('Tests/data/stochastic_volatility/NUTS_samples.npz', s= s, sigma = sigma, nu= nu)
 
     if ground_truth:
         var = np.empty(len(s[0]) + 2)
@@ -410,7 +418,7 @@ def stohastic_volatility(key_num):
         var[-2] = np.average(np.square(sigma))
         var[-1] = np.average(np.square(nu))
 
-        np.save('Tests/data/stohastic_volatility/ground_truth'+str(key_num)+'.npy', var)
+        np.save('Tests/data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', var)
 
         #np.savez('SVsamples.npz', s= s, sigma = sigma, nu= nu)
 
@@ -420,7 +428,7 @@ def stohastic_volatility(key_num):
         X[:, -2] = sigma
         X[:, -1] = nu
 
-        variance_true = np.load('Tests/data/stohastic_volatility/ground_truth_moments.npy')
+        variance_true = np.load('Tests/data/stochastic_volatility/ground_truth_moments.npy')
 
         B = bias(X, np.ones(len(X)), variance_true)
 
@@ -459,8 +467,8 @@ def bimodal_plot():
 def table1():
     repeat = 10
 
-    functions = [kappa100, bimodal, rosenbrock, funnel, stohastic_volatility]
-    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'Stohastic Volatility']
+    functions = [kappa100, bimodal, rosenbrock, funnel, stochastic_volatility]
+    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'Stochastic Volatility']
     ess, ess_std = np.zeros(len(names)), np.zeros(len(names))
     ess2, ess_std2 = np.zeros(len(names)), np.zeros(len(names))
 
@@ -479,11 +487,11 @@ def table1():
 
 if __name__ == '__main__':
 
-    stohastic_volatility(0)
+    stochastic_volatility(0)
 
     # var = np.array([np.load('ground_truth'+str(i)+'.npy') for i in range(3)])
     # var_avg = np.average(var, axis = 0)
-    # np.save('StohasticVolatility_ground_truth_moments.npy', var_avg)
+    # np.save('StochasticVolatility_ground_truth_moments.npy', var_avg)
     # bias = [np.sqrt(np.average(np.square((var[i, :] - var_avg) / var_avg))) for i in range(3)]
     # print(bias)
 

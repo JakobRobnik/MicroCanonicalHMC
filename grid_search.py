@@ -2,15 +2,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
+import os
 
 ### Some convenient function for doing grid search of the hyperparameters ###
 
 
+def search_wrapper(ess_function, amin, amax, epsmin, epsmax, original_esh = False):
 
-def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
+    A = jnp.array([1e20, ]) if original_esh else jnp.logspace(np.log10(amin), np.log10(amax), 6)
 
-    #A = jnp.array([1e20, ]) #without bounces
-    A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
     epsilon = jnp.logspace(np.log10(epsmin), np.log10(epsmax), 6)
 
     results1 = search_step(ess_function, A, epsilon)

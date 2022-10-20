@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 
 import ESH
-import TplusV
+import standardKinetic
 from benchmark_targets import *
 import grid_search
 
@@ -30,7 +30,7 @@ def bounce_frequency(d, alpha, generalized = False, prerun = 0):
 
     length = alpha * jnp.sqrt(d)
     sampler = ESH.Sampler(Target= StandardNormal(d=d), eps=1.0)
-    #sampler = TplusV.Sampler(Target= StandardNormal(d=d), eps=2.0)
+    #sampler = standardKinetic.Sampler(Target= StandardNormal(d=d), eps=2.0)
 
     #sampler = ESH.Sampler(Target= IllConditionedGaussian(d=d, condition_number=100.0), eps=1.0)
 
@@ -41,7 +41,7 @@ def bounce_frequency(d, alpha, generalized = False, prerun = 0):
     #eta = (2.93 * np.power(d, -0.78) * np.logspace(-0.8, 0.8, 24))[n]
 
     #length = 1.5 * np.sqrt(d)
-    #sampler = TplusV.Sampler(Target = IllConditionedGaussian(d= d, condition_number=100), eps= 3)
+    #sampler = standardKinetic.Sampler(Target = IllConditionedGaussian(d= d, condition_number=100), eps= 3)
     #sampler = ESH.Sampler(Target= Rosenbrock(d= d), eps= 0.5)
     #a= np.sqrt(np.concatenate((np.ones(d//2) * 2.0, np.ones(d//2) * 10.498957879911487)))
     #sampler = ESH.Sampler(Target= DiagonalPreconditioned(Rosenbrock(d= d), a), eps= 0.5)
@@ -317,13 +317,14 @@ def autocorr():
 def table1():
     """For generating Table 1 in the paper"""
 
-    esh, generalized = True, False
+    esh, generalized = False, False
+    original_esh = False #True if no momentum decoherence
     key = jax.random.PRNGKey(0)
     import inferencegym
 
     #targets
-    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stohastic Volatility']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), inferencegym.Target('German Credit'), StohasticVolatility()]
+    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), inferencegym.Target('German Credit'), StochasticVolatility()]
 
 
     if esh:
@@ -333,7 +334,7 @@ def table1():
 
 
         def tuning(target, generalized, prerun, eps_min = 0.1, eps_max = 1.0):
-            return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized, prerun), 0.3, 20.0, eps_min, eps_max)
+            return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized, prerun), 0.3, 20.0, eps_min, eps_max, original_esh)
 
 
         borders_esh = [[1.0, 4.0], [0.5, 3.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]
@@ -347,46 +348,42 @@ def table1():
     else:
 
         def ess_ctv_function(alpha, eps, target, num_steps=300000):
-            return jnp.average(
-                TplusV.Sampler(Target=target, eps=eps).sample_multiple_chains(10, num_steps, alpha * np.sqrt(target.d), key))
+            return jnp.average(standardKinetic.Sampler(Target=target, eps=eps).sample_multiple_chains(10, num_steps, alpha * np.sqrt(target.d), key))
 
 
         def tuning_ctv(target, eps_min=0.5, eps_max=5.0, num_steps=300000):
-            return grid_search.search_wrapper(lambda a, e: ess_ctv_function(a, e, target, num_steps), 0.3, 20, eps_min, eps_max)
+            return grid_search.search_wrapper(lambda a, e: ess_ctv_function(a, e, target, num_steps), 0.3, 20, eps_min, eps_max, original_esh)
 
-        borders_ctv = [[0.5, 5.0], [2.0, 9.0], [0.1, 5.0], [0.0001, 0.005], [5000, 10000]]
+        borders_ctv = [[0.5, 5.0], [2.0, 9.0], [0.1, 5.0], [0.0001, 0.005], [5000, 10000], [0.004, 0.02]]
         num_steps_ctv = [300000, 300000, 3000000, 3000000, 300000]
-        i = 4
+        i = -1
         #6.769621324307172e-05
-        #TplusV.Sampler(Target=targets[i], eps=10000.0).sample(jnp.zeros(targets[i].d), 300000, 1.5 * jnp.sqrt(targets[i].d), key)
+        #standardKinetic.Sampler(Target=targets[i], eps=10000.0).sample(jnp.zeros(targets[i].d), 300000, 1.5 * jnp.sqrt(targets[i].d), key)
 
         tuning_ctv(targets[i], borders_ctv[i][0], borders_ctv[i][1])
         #results = np.array([np.array(tuning_ctv(targets[i], borders_ctv[i][0], borders_ctv[i][1], num_steps= num_steps_ctv[i])) for i in range(4)])
         #
         # df = pd.DataFrame({'Target ': names[:4], 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
-        # df.to_csv('submission/TableTplusV.csv', sep='\t', index=False)
+        # df.to_csv('submission/TablestandardKinetic.csv', sep='\t', index=False)
         # print(df)
 
 
-def stohastic_volatility():
+def stochastic_volatility():
 
-    target = StohasticVolatility()
-    eps = 0.1
+    target = StochasticVolatility()
+    eps = 0.63
 
     sampler = ESH.Sampler(target, eps)
 
     key = jax.random.PRNGKey(0)
     key, key_prior = jax.random.split(key)
     x0 = target.prior_draw(key_prior)
-    L = 1 * jnp.sqrt(target.d)
+    #x0 = jnp.zeros(target.d)
+    L = 1.61 * jnp.sqrt(target.d)
     #L = 1e20 * eps
-    ess = sampler.sample(x0, 300000, L, key, generalized= True, ess= True)
 
-    print(ess)
 
-    exit()
-
-    X, W = sampler.sample(x0, 300000, L, key, generalized= False, ess= False)
+    X, W = sampler.sample(x0, 300000, L, key, generalized= True, ess= False)
 
     thin = 10
     X= X[::thin, :]
@@ -394,6 +391,7 @@ def stohastic_volatility():
     print('done sampling')
     print(np.sum(X[:, -2] * W) / np.sum(W))
     print(np.sum(X[:, -1] * W) / np.sum(W))
+
 
     def posterior_band(R, W):
 
@@ -412,30 +410,30 @@ def stohastic_volatility():
         return band
 
     band = posterior_band(np.exp(X[:, :-2]), W)
-    np.save('Tests/data/stohastic_volatility/MCHMC_posterior_band.npy', band)
+    np.save('Tests/data/stochastic_volatility/MCHMC_posterior_band.npy', band)
 
 
-    #np.savez('Tests/data/stohastic_volatility/MCHMC_samples.npz', s= X[:, :-2], sigma = X[:, :-2], nu= X[:, :-1], w = W)
+    #np.savez('Tests/data/stochastic_volatility/MCHMC_samples.npz', s= X[:, :-2], sigma = X[:, :-2], nu= X[:, :-1], w = W)
 
 
 
-#
-# def run_problem():
-#     """Code for runing a generic problem"""
-#
-#     target = StohasticVolatility()
-#     eps = 1.0
-#
-#     sampler = ESH.Sampler(target, eps)
-#
-#     key = jax.random.PRNGKey(0)
-#     key, key_prior = jax.random.split(key)
-#     x0 = target.prior_draw(key_prior)
-#     L = 0.1 * jnp.sqrt(target.d)
-#     #L = 1e20 * eps
-#     ess = sampler.sample(x0, 300000, L, key, generalized= False, ess= True)
-#
-#     print(ess)
+
+def run_problem():
+    """Code for runing a generic problem"""
+
+    target = StochasticVolatility()
+    eps = 0.001
+
+    sampler = standardKinetic.Sampler(target, eps)
+
+    key = jax.random.PRNGKey(0)
+    key, key_prior = jax.random.split(key)
+    x0 = target.prior_draw(key_prior)
+    L = 1 * jnp.sqrt(target.d)
+    #L = 1e20 * eps
+    ess = sampler.sample(x0, 3000000, L, key)
+
+    print(ess)
 
 
 def divergence():
@@ -451,8 +449,10 @@ def divergence():
 
 if __name__ == '__main__':
 
-    stohastic_volatility()
+    #stochastic_volatility()
     #table1()
+
+    run_problem()
     #full_bias()
     #dimension_dependence()
 

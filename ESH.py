@@ -209,10 +209,10 @@ class Sampler:
             no_nans = 1-jnp.any(jnp.isnan(bias))
             cutoff_reached = bias[-1] < 0.1
 
-            plt.plot(bias, '.')
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.show()
+            # plt.plot(bias, '.')
+            # plt.xscale('log')
+            # plt.yscale('log')
+            # plt.show()
 
             return ess_cutoff_crossing(bias) * no_nans * cutoff_reached #return 0 if there are nans, or if the bias cutoff was not reached
 

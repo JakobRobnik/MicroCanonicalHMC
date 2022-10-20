@@ -575,9 +575,14 @@ def german_credit():
 
 def stohastic_volatility():
 
+    from numpyro.examples.datasets import SP500, load_dataset
+
+    _, fetch = load_dataset(SP500, shuffle=False)
+    SP500_dates, SP500_returns = fetch()
 
 
-    ff, ff_title, ff_ticks = 22, 22, 18
+
+    ff, ff_title, ff_ticks = 24, 22, 20
     plt.rcParams['xtick.labelsize'] = ff_ticks
     plt.rcParams['ytick.labelsize'] = ff_ticks
     plt.figure(figsize=(20, 8))
@@ -596,24 +601,20 @@ def stohastic_volatility():
     dates = mdates.num2date(mdates.datestr2num(SP500_dates))
     plt.plot(dates, SP500_returns, '.', color=  'black', label = 'data')
 
-    # MCHMC
-    band = np.load('Tests/data/stohastic_volatility/MCHMC_posterior_band.npy')
-    plt.plot(dates, band[1], color='tab:blue', label='MCHMC')
-    plt.fill_between(dates, band[0], band[2], color='tab:blue', alpha=0.5)
+    name= ['MCHMC', 'NUTS']
 
-    #NUTS
-    X = np.load('Tests/data/stohastic_volatility/NUTS_samples.npz')
-    s, sigma, nu = X['s'], X['sigma'], X['nu']
-    volatility = np.sort(np.exp(s), axis = 0)
-    plt.plot(dates, volatility[len(volatility)//2, :], color = 'tab:orange', label = 'NUTS')
-    plt.fill_between(dates, volatility[len(volatility)//4, :], volatility[3* len(volatility)//4, :], color = 'tab:orange', alpha = 0.5)
+    for method_index in range(2):
+        band = np.load('Tests/data/stohastic_volatility/'+name[method_index]+'_posterior_band.npy')
+        plt.plot(dates, band[1], color=tab_colors[method_index], label= name[method_index])
+        plt.fill_between(dates, band[0], band[2], color= tab_colors[method_index], alpha=0.5)
+
 
     plt.legend(fontsize = ff)
     plt.xlabel('time', fontsize = ff)
     plt.ylabel('returns', fontsize = ff)
     plt.ylim(np.min(SP500_returns)-0.1, np.max(SP500_returns)+0.1)
+    plt.savefig('submission/StochasticVolatility.pdf')
     plt.show()
-
 
 
 

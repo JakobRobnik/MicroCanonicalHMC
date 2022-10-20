@@ -5,12 +5,7 @@ import jax.numpy as jnp
 
 from numpyro.examples.datasets import SP500, load_dataset
 from numpyro.distributions import StudentT
-
-
-#load stohastic volatility data
-_, fetch = load_dataset(SP500, shuffle=False)
-SP500_dates, SP500_returns = fetch()
-SV_ground_truth = np.load('Tests/data/stohastic_volatility/ground_truth_moments.npy')
+from numpyro.distributions import Exponential
 
 
 ### Benchmark targets ###
@@ -276,32 +271,37 @@ class Rosenbrock():
         print(var_x, var_y)
 
 
-class StohasticVolatility():
+class StochasticVolatility():
     """Example from https://num.pyro.ai/en/latest/examples/stochastic_volatility.html"""
 
     def __init__(self):
+        _, fetch = load_dataset(SP500, shuffle=False)
+        SP500_dates, self.SP500_returns = fetch()
+
         self.d = 2429
 
         self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
 
-        self.variance = SV_ground_truth
+        self.variance = np.load('Tests/data/stochastic_volatility/ground_truth_moments.npy')
         self.grad_nlogp = jax.grad(self.nlogp)
 
 
     def nlogp(self, x):
-        """- log p of the target distribution"""
+        """- log p of the target distribution
+            x=  [s1, s2, ... s2427, log sigma / typical_sigma, log nu / typical_nu]"""
 
         sigma = jnp.exp(x[-2]) * self.typical_sigma #we used this transformation to make x unconstrained
         nu = jnp.exp(x[-1]) * self.typical_nu
 
         l1= (jnp.exp(x[-2]) - x[-2]) + (jnp.exp(x[-1]) - x[-1])
         l2 = (self.d - 2) * jnp.log(sigma) + 0.5 * (jnp.square(x[0]) + jnp.sum(jnp.square(x[1:-2] - x[:-3]))) / jnp.square(sigma)
-        l3 = jnp.sum(StudentT(df=nu, scale= jnp.exp(x[:-2])).log_prob(SP500_returns))
+        l3 = -jnp.sum(StudentT(df=nu, scale= jnp.exp(x[:-2])).log_prob(self.SP500_returns))
 
         return l1 + l2 + l3
 
 
     def transform(self, x):
+        """transforms to the variables which are used by numpyro (and in which we have the ground truth moments)"""
 
         z = jnp.empty(x.shape)
         z = z.at[:-2].set(x[:-2]) # = s = log R
@@ -313,7 +313,24 @@ class StohasticVolatility():
 
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        """draws x from the prior"""
+
+        key_walk, key_exp1, key_exp2 = jax.random.split(key, 3)
+
+        sigma = jax.random.exponential(key_exp1) * self.typical_sigma
+
+        def step(track, useless):
+            randkey, subkey = jax.random.split(track[1])
+            x = jax.random.normal(subkey, shape= track[0].shape, dtype = track[0].dtype) + track[0]
+            return (x, randkey), x
+
+        x = jnp.empty(self.d)
+        x = x.at[:-2].set(jax.lax.scan(step, init=(0.0, key_walk), xs=None, length=self.d - 2)[1] * sigma) # = s
+        x = x.at[-2].set(jnp.log(sigma / self.typical_sigma))
+        x = x.at[-1].set(jnp.log(jax.random.exponential(key_exp2)))
+
+        return x
+        #return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
 
@@ -362,20 +379,13 @@ def check_gradient(target, x):
 
 if __name__ == '__main__':
 
-    t = np.linspace(-5, 5, 100)
 
-    nus=  [1, 2, 5, 500]
+    target = StochasticVolatility()
 
-    import matplotlib.pyplot as plt
 
-    for nu in nus:
-        plt.plot(t, jnp.exp(StudentT(nu).log_prob(t)))
+    key = jax.random.PRNGKey(0)
 
-    plt.show()
-
-    #target = StohasticVolatility()
-    #x = np.random.normal(size=target.d)
-
+    target.prior_draw(key)
 
     #check_gradient(target, x)
     #target.compute_variance()
