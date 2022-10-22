@@ -116,7 +116,9 @@ def dimension_dependence():
         plt.plot(L[-1], E[-1], 'o', markersize =10, color = tab_colors[i])
         plt.text(L[-1] * 1.06, E[-1]*1.07, 'd= '+str(d), color = tab_colors[i], alpha = 0.5, fontsize = ff) #dimension tag
 
-
+    eps = 1.0
+    l = np.linspace(np.min(L), np.max(L))
+    plt.plot(l, (eps/l), color = 'black', alpha = 0.5)
     plt.xscale('log')
     plt.ylabel('ESS', fontsize = ff)
     if generalized:
@@ -619,10 +621,10 @@ def stohastic_volatility():
 
 
 #bounce_frequency_full_bias()
-#dimension_dependence()
+dimension_dependence()
 #ill_conditioned()
 #BimodalMarginal()
 #Rosenbrock()
 #Funnel()
-stohastic_volatility()
+#stohastic_volatility()
 #german_credit()

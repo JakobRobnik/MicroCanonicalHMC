@@ -39,6 +39,22 @@ class Sampler:
         return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh)
 
 
+    def dynamics_step(self, state):
+        """One step of the dynamics (with bounces)"""
+        x, u, g, r = state
+
+        # Hamiltonian step
+        uhalf = self.f(self.eps * 0.5, g, u)
+        xnew = x + self.eps * uhalf
+        gg_new = self.Target.grad_nlogp(xnew)
+        unew = self.f(self.eps * 0.5, gg_new, uhalf)
+        rnew = r - self.eps * 0.5 * (jnp.dot(u, g) + jnp.dot(unew, gg_new)) / self.Target.d
+
+        w = jnp.exp(rnew) / self.Target.d
+
+        return xnew, unew, gg_new, rnew, w
+
+
     def dynamics_bounces_step(self, state, add_time_distance, time_max):
         """One step of the dynamics (with bounces)"""
         x, u, g, r, key, time = state
@@ -163,10 +179,10 @@ class Sampler:
             W, F2 = state_track[1]
 
             F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
-
+            W += w
             bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
 
-            return ((x, u, g, r, key, time), (W+w, F2)), bias
+            return ((x, u, g, r, key, time), (W, F2)), bias
 
 
         def energy_step(state_track, useless):
@@ -238,6 +254,68 @@ class Sampler:
             X, W = track[0], track[1]
 
             return X, W
+
+
+    def parallel_sample(self, num_samples, num_chains, key):
+
+        bounce_length = 1e20#100*self.eps#self.eps * 100
+        dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps, bounce_length) #bounces equally spaced in distance
+
+        def bias_step(state_track, useless):
+            """Only tracks bias as a function of number of iterations."""
+
+            x, u, g, r, key, time, w = dynamics(state_track[0])
+            W, F2 = state_track[1]
+
+            F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
+            W += w
+
+            return ((x, u, g, r, key, time), (W, F2)), (W, F2)
+
+
+
+        def single_chain(track, key):
+
+            #initial conditions
+            key_bounces, key_x, key_u = jax.random.split(key, 3)
+            x0 = self.Target.prior_draw(key_x)
+
+            g = self.Target.grad_nlogp(x0)
+            r = 0.5 * (1 + np.log(self.Target.d) - 2 * self.Target.nlogp(x0) / self.Target.d)  # initialize such that all the chains have the same energy
+            w = jnp.exp(r) / self.Target.d
+            u = self.random_unit_vector(key_u)[0]
+
+            #run the chain
+            w, f2 = jax.lax.scan(bias_step, init=((x0, u, g, r, key_bounces, 0.0), (w, jnp.square(x0))), xs=None, length=num_samples)[1]
+
+            #update the expected moments (as a function of number of steps)
+            # F2_ij = E[x_j^2] after i steps using the chains that we already computed
+            # W_i = total sum of weights after i steps using all the chains that we already computed
+            W, F2 = track
+            F2 = (F2.T * W /(W + w)).T + (f2.T * w / (W + w)).T #update F2 with the new chain
+            W += w
+            return (W, F2), None
+
+        W, F2 = jax.lax.scan(single_chain, init= (jnp.zeros(num_samples), jnp.zeros((num_samples, self.Target.d))), xs = jax.random.split(key, num_chains))[0]
+
+        bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance), axis = 1))
+        #bias = jnp.average(F2 / self.Target.variance, axis = 1)
+        no_nans = 1-jnp.any(jnp.isnan(bias))
+        cutoff_reached = bias[-1] < 0.1
+
+        #plt.plot(W / np.arange(len(W)), '.')
+
+        # plt.plot(bias, '.')
+        # plt.plot([0, len(bias)], np.ones(2), ':', color = 'black')
+        # plt.xlabel('# steps / # chains')
+        # plt.ylabel('bias')
+        # plt.ylabel(r'$x^T H x$ / d')
+        # plt.xscale('log')
+        # plt.yscale('log')
+        # plt.savefig('optimization_eps.png')
+        # plt.show()
+
+        return ess_cutoff_crossing(bias) * no_nans * cutoff_reached / num_chains #return 0 if there are nans, or if the bias cutoff was not reached
 
 
 

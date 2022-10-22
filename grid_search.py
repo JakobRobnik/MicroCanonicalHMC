@@ -7,9 +7,9 @@ import os
 ### Some convenient function for doing grid search of the hyperparameters ###
 
 
-def search_wrapper(ess_function, amin, amax, epsmin, epsmax, original_esh = False):
+def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
 
-    A = jnp.array([1e20, ]) if original_esh else jnp.logspace(np.log10(amin), np.log10(amax), 6)
+    A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
 
     epsilon = jnp.logspace(np.log10(epsmin), np.log10(epsmax), 6)
 
@@ -33,6 +33,7 @@ def search_wrapper(ess_function, amin, amax, epsmin, epsmax, original_esh = Fals
         plt.show()
 
     return ess, A[i], epsilon[j]
+
 
 
 def search_step(ess_function, A, epsilon):
@@ -62,3 +63,35 @@ def visualize(ess_arr, A, epsilon, show):
         ax.invert_yaxis()
 
     return ess_best, I // len(epsilon), I % (len(epsilon))
+
+
+
+
+def search_wrapper_1d(ess_function, epsmin, epsmax):
+
+    epsilon = jnp.logspace(np.log10(epsmin), np.log10(epsmax), 6)
+
+    results1 = jax.pmap(ess_function)(epsilon)
+
+    j = jnp.argmax(results1)
+    ess = results1[j]
+
+    plt.figure(figsize= (15, 10))
+    plt.plot(epsilon, results1, 'o', color = 'black')
+    plt.xlabel(r'$\epsilon$')
+    plt.ylabel('ESS')
+
+    if (j == 0) or (j == 5):
+        plt.title(r'ESS = {0}, $\epsilon$ = {1}'.format(np.round(ess, 4), np.round(epsilon[j], 2)))
+        plt.show()
+
+    else:
+        epsilon = jnp.logspace(np.log10(epsilon[j-1]), np.log10(epsilon[j+1]), 6)
+        results2 = jax.pmap(ess_function)(epsilon)
+
+        plt.plot(epsilon, results2, 'o', color='black')
+        plt.title(r'ESS = {0}, $\epsilon$ = {1}'.format(np.round(ess, 4), np.round(epsilon[j], 2)))
+        plt.show()
+
+    print(ess)
+    return ess, epsilon[j]

@@ -52,7 +52,7 @@ class IllConditionedGaussian():
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 4
 
 
 
@@ -85,7 +85,7 @@ class IllConditionedGaussianGamma():
 
     def prior_draw(self, key):
 
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') #* 100
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')#* 100
 
 
 class BiModal():

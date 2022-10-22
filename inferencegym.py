@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import ESH
-import TplusV
+import standardKinetic
 
 ### inference gym problems (https://pypi.org/project/inference-gym/) ###
 
@@ -44,9 +44,11 @@ class Target():
 
         identity_fn = target.sample_transformations['identity']
 
+        xmap = self.map_solution()
+
 
         def target_nlog_prob_fn(x):
-            y = target.default_event_space_bijector(x)
+            y = target.default_event_space_bijector(x + xmap)
             return -(target.unnormalized_log_prob(y) + target.default_event_space_bijector.forward_log_det_jacobian(y, event_ndims=1))
 
         self.nlogp = target_nlog_prob_fn
@@ -54,7 +56,7 @@ class Target():
 
         self.variance = jnp.square(identity_fn.ground_truth_standard_deviation) + jnp.square(identity_fn.ground_truth_mean) #in the transformed coordinates
 
-        self.transform = target.default_event_space_bijector
+        self.transform = lambda x: target.default_event_space_bijector(x + xmap)
 
 
 

@@ -317,35 +317,20 @@ def autocorr():
 def table1():
     """For generating Table 1 in the paper"""
 
-    esh, generalized = False, False
-    original_esh = False #True if no momentum decoherence
+    row = ['MCHMC q = 0', 'tuning free MCHMC q = 0', 'generalized MCHMC', 'tuning free generalized MCHMC', 'no bounce MCHMC', 'MCHMC q = 2', 'ESH'][3]
+    print(row)
+    generalized=  (row == 'generalized MCHMC')
+
     key = jax.random.PRNGKey(0)
-    import inferencegym
+    import german_credit
 
     #targets
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), inferencegym.Target('German Credit'), StochasticVolatility()]
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), german_credit.Target(), StochasticVolatility()]
 
 
-    if esh:
 
-        def ess_function(alpha, eps, target, generalized, prerun):
-            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(10, 300000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True, prerun=prerun))
-
-
-        def tuning(target, generalized, prerun, eps_min = 0.1, eps_max = 1.0):
-            return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized, prerun), 0.3, 20.0, eps_min, eps_max, original_esh)
-
-
-        borders_esh = [[1.0, 4.0], [0.5, 3.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]
-        results = np.array([np.array(tuning(targets[i], generalized, 0, borders_esh[i][0], borders_esh[i][1])) for i in range(len(targets)-1, len(targets))])
-
-        df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
-        #df.to_csv('submission/TableESH_generalized.csv', sep='\t', index=False)
-        print(df)
-
-
-    else:
+    if row == 'MCHMC q = 2':
 
         def ess_ctv_function(alpha, eps, target, num_steps=300000):
             return jnp.average(standardKinetic.Sampler(Target=target, eps=eps).sample_multiple_chains(10, num_steps, alpha * np.sqrt(target.d), key))
@@ -366,6 +351,42 @@ def table1():
         # df = pd.DataFrame({'Target ': names[:4], 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
         # df.to_csv('submission/TablestandardKinetic.csv', sep='\t', index=False)
         # print(df)
+
+    else:
+
+        def ess_function(alpha, eps, target, generalized, prerun):
+            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(10, 300000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True, prerun=prerun))
+
+
+        def ess_function_parallel(eps, target):
+            return jnp.average(jnp.array([ESH.Sampler(Target=target, eps=eps).parallel_sample(6000, 300, k) for k in jax.random.split(key, 3)]))
+
+
+        def tuning(target, generalized, prerun, eps_min = 0.1, eps_max = 1.0):
+            return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized, prerun), 0.3, 20.0, eps_min, eps_max)
+
+
+        borders_esh = [[1.0, 4.0], [0.5, 3.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]
+
+        if row == 'ESH':
+            results = [grid_search.search_wrapper_1d(lambda e: ess_function_parallel(e, targets[i]), borders_esh[i][0], borders_esh[i][1]) for i in range(len(targets))]
+            print(results)
+
+        elif (row == 'tuning free MCHMC q = 0') or (row == 'tuning free generalized MCHMC'):
+            generalized = (row == 'tuning free generalized MCHMC')
+            alpha = 1.0 if generalized else 1.625
+            results = [grid_search.search_wrapper_1d(lambda e: ess_function(alpha, e, targets[i], generalized, 0), borders_esh[i][0], borders_esh[i][1]) for i in range(len(targets))]
+            print(results)
+
+
+        else:
+            results = np.array([np.array(tuning(targets[i], generalized, 0, borders_esh[i][0], borders_esh[i][1])) for i in range(len(targets)-1, len(targets))])
+
+            df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
+            #df.to_csv('submission/TableESH_generalized.csv', sep='\t', index=False)
+            print(df)
+
+
 
 
 def stochastic_volatility():
@@ -421,19 +442,19 @@ def stochastic_volatility():
 def run_problem():
     """Code for runing a generic problem"""
 
-    target = StochasticVolatility()
-    eps = 0.001
+    target = IllConditionedGaussian(d= 50, condition_number= 10000)
+    #target = StochasticVolatility()
+    eps = 1.5
 
-    sampler = standardKinetic.Sampler(target, eps)
+    sampler = ESH.Sampler(target, eps)
 
-    key = jax.random.PRNGKey(0)
-    key, key_prior = jax.random.split(key)
-    x0 = target.prior_draw(key_prior)
-    L = 1 * jnp.sqrt(target.d)
-    #L = 1e20 * eps
-    ess = sampler.sample(x0, 3000000, L, key)
+    key = jax.random.PRNGKey(1)
+
+    #ess = sampler.sample(jnp.zeros(51), 300000, 1.5*7, key, ess= True)
+    ess = sampler.parallel_sample(2000, 300, key)
 
     print(ess)
+
 
 
 def divergence():
@@ -450,11 +471,12 @@ def divergence():
 if __name__ == '__main__':
 
     #stochastic_volatility()
-    #table1()
+    table1()
 
-    run_problem()
+    #run_problem()
     #full_bias()
     #dimension_dependence()
 
     #ill_conditioned(tunning=False, generalized=False, prerun=1000)
     #ill_conditioned(tunning=True)
+
