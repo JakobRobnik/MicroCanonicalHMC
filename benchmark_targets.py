@@ -52,7 +52,7 @@ class IllConditionedGaussian():
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 4
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') #* jnp.sqrt(self.variance[-1]) * 1.5
 
 
 

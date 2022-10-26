@@ -359,7 +359,7 @@ def table1():
 
 
         def ess_function_parallel(eps, target):
-            return jnp.average(jnp.array([ESH.Sampler(Target=target, eps=eps).parallel_sample(6000, 300, k) for k in jax.random.split(key, 3)]))
+            return jnp.average(jnp.array([ESH.Sampler(Target=target, eps=eps).parallel_sample(6000, 300, 1e20, k) for k in jax.random.split(key, 3)]))
 
 
         def tuning(target, generalized, prerun, eps_min = 0.1, eps_max = 1.0):
@@ -442,18 +442,49 @@ def stochastic_volatility():
 def run_problem():
     """Code for runing a generic problem"""
 
+
+    target = StandardNormal(d= 100)
+
+    #grid_search.search_wrapper_1d(lambda e: jnp.average(ESH.Sampler(Target=target, eps=e).sample_multiple_chains(10, 300000, 1.6 * np.sqrt(target.d), jax.random.PRNGKey(0), ess=True)), 0.1, 1.5)
+
+    sampler = ESH.Sampler(target, 0.6)
+    L = 1.6 * jnp.sqrt(target.d)
+    key, key_prior = jax.random.split(jax.random.PRNGKey(0))
+    x0 = target.prior_draw(key_prior)
+
+    X, W, E = sampler.sample(x0, 100000, L, key, monitor_energy=True)
+
+    plt.plot(E, '.')
+    plt.show()
+
+
+
+
+def esh_not_converging():
+
     target = IllConditionedGaussian(d= 50, condition_number= 10000)
-    #target = StochasticVolatility()
-    eps = 1.5
+    bounces = False
+    L = 1.6 * jnp.sqrt(target.d) if bounces else 1e20
+    eps = 1.0
+    num_chains = 300
+    num_steps = 10000
 
     sampler = ESH.Sampler(target, eps)
 
     key = jax.random.PRNGKey(1)
+                    # time  coordinate   chain
+    results = np.empty((4, 2, num_chains))
 
-    #ess = sampler.sample(jnp.zeros(51), 300000, 1.5*7, key, ess= True)
-    ess = sampler.parallel_sample(2000, 300, key)
+    for i in range(num_chains):
+        key, key_prior, key_bounces = jax.random.split(key, 3)
+        x0 = target.prior_draw(key_prior)#jax.random.normal(key_prior, shape= (target.d, ), dtype = 'float64')
+        X, w = sampler.sample(x0, num_steps, L, key_bounces)
 
-    print(ess)
+        results[:, :, i] = (X[[0, 100, 1000, 10000], :])[:, [0, -1]]
+
+    np.save('Tests/esh_not_converging_'+('MCHMC' if bounces else 'ESH')+'.npy', results)
+
+
 
 
 
@@ -463,17 +494,17 @@ def divergence():
     key = jax.random.PRNGKey(0)
     key, prior_key = jax.random.split(key)
     x0 = sampler.Target.prior_draw(prior_key)
-    X, w = sampler.sample(x0, 10000, 10000000000, key, ess = True)
+    X, w = sampler.sample(x0, 10000, 1e20, key, ess = True)
     print(np.any(np.isnan(w)))
-
 
 
 if __name__ == '__main__':
 
     #stochastic_volatility()
-    table1()
+    #esh_not_converging()
+    #table1()
 
-    #run_problem()
+    run_problem()
     #full_bias()
     #dimension_dependence()
 

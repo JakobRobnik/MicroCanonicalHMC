@@ -79,7 +79,7 @@ def bounce_frequency_full_bias():
 def dimension_dependence():
     """Figure 2, 3"""
 
-    generalized = False
+    generalized = True
     dimensions = [100, 200, 500, 1000, 3000, 10000]
 
     df = pd.read_csv('Tests/data/dimensions/StandardNormal'+('_l' if generalized else '')+'.csv', sep='\t')
@@ -117,8 +117,11 @@ def dimension_dependence():
         plt.text(L[-1] * 1.06, E[-1]*1.07, 'd= '+str(d), color = tab_colors[i], alpha = 0.5, fontsize = ff) #dimension tag
 
     eps = 1.0
-    l = np.linspace(np.min(L), np.max(L))
-    plt.plot(l, (eps/l), color = 'black', alpha = 0.5)
+    l = np.linspace(np.min(L)*0.9, np.max(L)*1.1)
+
+    coeff = np.dot(L, eps/np.array(E)) / np.dot(L, L)
+    print(coeff)
+    plt.plot(l, (eps/l) / coeff, color = 'black', alpha = 0.5)
     plt.xscale('log')
     plt.ylabel('ESS', fontsize = ff)
     if generalized:
@@ -138,6 +141,7 @@ def dimension_dependence():
     skip = 0
     slope= np.dot(np.sqrt(dimensions[skip:]), L[skip:]) / np.sum(dimensions[skip:])
     print(slope)
+    print(coeff*slope)
     plt.title(r'$L \approx$' +'{0:.4}'.format(slope) + r' $\sqrt{d}$', fontsize = ff)
     plt.plot(dimensions, slope * np.sqrt(dimensions), ':', color = 'black')
     plt.xlabel('d', fontsize = ff)
@@ -619,12 +623,141 @@ def stohastic_volatility():
     plt.show()
 
 
+def esh_not_converging():
 
-#bounce_frequency_full_bias()
+    data1 = np.load('Tests/esh_not_converging_ESH.npy')
+    data2 = np.load('Tests/esh_not_converging_MCHMC.npy')
+
+    target = IllConditionedGaussian(d = 50, condition_number= 10000)
+    sigma1, sigmad = np.sqrt(target.variance[0]), np.sqrt(target.variance[-1])
+
+    plt.figure(figsize=(21, 7))
+
+
+    ff, ff_title, ff_ticks = 24, 22, 20
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+
+
+    steps = [0, 100, 1000, 10000]
+    times= [0, 1, 3]
+    for i in range(3):
+        t = times[i]
+        plt.subplot(1, 3, i+1)
+        ax = plt.gca()
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+
+        plt.title('steps = ' + str(steps[t]), fontsize= ff_title)
+        lim_x = 42 if i == 0 else 0.42#np.max(np.abs([data1[t, 0, :], data2[t, 0, :]]))*1.05
+        lim_y = 43#np.max(np.abs([data1[t, 1, :], data2[t, 1, :]]))*1.05
+
+        x = np.linspace(-lim_x, lim_x, 100)
+        y = np.linspace(-lim_y, lim_y, 100)
+        X, Y = np.meshgrid(x, y)
+        Z = np.exp(- 0.5 * (np.square(X/sigma1) + np.square(Y/sigmad)))
+        
+        plt.contourf(X, Y, Z, cmap = 'Blues', levels = 100)
+        plt.plot(data1[t, 0, :], data1[t, 1, :], '.', color= 'tab:red', markersize =7)
+        plt.plot(data2[t, 0, :], data2[t, 1, :], '.', color='gold', markersize = 3 if t == 0 else 7)
+
+        plt.xlim(-lim_x, lim_x)
+        plt.ylim(-lim_y, lim_y)
+        plt.xlabel(r'$x_{1}$', fontsize= ff)
+
+        if i == 0:
+            plt.ylabel(r'$x_{50}$', fontsize= ff)
+            plt.yticks([-40, -20, 0, 20, 40])
+            plt.xticks([-40, -20, 0, 20, 40])
+
+        else:
+            plt.yticks([])
+            plt.xticks([-0.2, 0, 0.2])
+
+        if i == 2:
+            plt.plot([], [], '.', markersize =10, color = 'tab:red', label = 'ESH')
+            plt.plot([], [], '.', markersize=10, color='gold', label='MCHMC')
+            plt.legend(fontsize = ff-2, loc= 0)
+
+
+
+    plt.subplots_adjust(wspace=0, hspace=0)
+    plt.savefig('submission/particles.pdf')
+    plt.show()
+
+
+
+def qspace():
+    from scipy.stats import norm
+    xmax = 4
+    t = np.linspace(-xmax, xmax, 200)
+
+    plt.figure(figsize = (20, 5))
+
+    p = norm.pdf(t)
+
+
+    plt.subplot(1, 4, 1)
+    ax = plt.gca()
+    #ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    plt.title('Target')
+    plt.plot(t, p, color = 'black')
+    plt.xlabel('x')
+    plt.yticks([])
+    plt.xticks([])
+    plt.xlim(-xmax, xmax)
+    plt.ylim(0, 0.45)
+
+    plt.subplot(1, 4, 2)
+    ax = plt.gca()
+    #ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    plt.title('q > 0', color ='tab:blue')
+    plt.plot(t, -p, color = 'tab:blue')
+    plt.xlabel('x')
+
+    plt.yticks([])
+    plt.xticks([])
+    plt.xlim(-xmax, xmax)
+    plt.ylim(-0.4, 0.05)
+
+    plt.subplot(1, 4, 3)
+    ax = plt.gca()
+    #ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    plt.title('q = 0', color = 'tab:orange')
+    plt.plot(t, np.square(t), color = 'tab:orange')
+    plt.yticks([])
+    plt.xticks([])
+
+    plt.xlabel('x')
+    plt.xlim(-xmax, xmax)
+    plt.ylim(0, 9)
+
+    plt.subplot(1, 4, 4)
+    ax = plt.gca()
+    #ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    plt.title('q < 0', color = 'tab:red')
+    plt.plot(t, 1/p, color = 'tab:red')
+    plt.xlabel('x')
+    plt.yticks([])
+    plt.xticks([])
+
+    plt.xlim(-xmax, xmax)
+    plt.ylim(0, 50)
+
+
+    plt.subplots_adjust(wspace=0, hspace=0)
+
+    plt.show()
+
+
 dimension_dependence()
-#ill_conditioned()
-#BimodalMarginal()
-#Rosenbrock()
-#Funnel()
-#stohastic_volatility()
-#german_credit()
+#qspace()
+#esh_not_converging()

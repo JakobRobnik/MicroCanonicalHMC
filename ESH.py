@@ -152,8 +152,42 @@ class Sampler:
         return track
 
 
+    def tune_epsilon(self, bounce_length):
 
-    def sample(self, x0, num_steps, bounce_length, key, generalized = False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
+        dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps, bounce_length) #bounces equally spaced in distance
+
+        def step(state, useless):
+            """Tracks full x as a function of number of iterations"""
+
+            x, u, g, r, key, time, w = dynamics(state)
+
+            return (x, u, g, r, key, time), self.energy(x, w)
+
+        key, key_prior = jax.random.split(jax.random.PRNGKey(0))
+        x0 = self.Target.prior_draw(key_prior)
+        g0 = self.Target.grad_nlogp(x0)
+        r0 = 0.0
+        u0, key = self.random_unit_vector(key)
+        trend = []
+        eps_arr = [0.5,  5.0]#np.linspace(0.1, 2, 5)
+        for i in range(len(eps_arr)):
+            self.eps = eps_arr[i]
+            print(self.eps)
+            E = jax.lax.scan(step, init=(x0, u0, g0, r0, key, 0.0), xs=None, length=1000)[1]
+            print(E[-1])
+            plt.plot(E, '.')
+            #scale = jnp.std(energy[:10])
+            #val0 = jnp.average(energy[:10])
+            #val1 = jnp.average(energy[-10:])
+            #trend.append((val1 - val0) / scale)
+
+        #plt.plot(eps_arr, trend)
+        plt.show()
+
+
+
+
+    def sample(self, x0, num_steps, bounce_length, key, generalized = False, ess=False, monitor_energy= False):
 
 
         def step(state, useless):
@@ -164,12 +198,12 @@ class Sampler:
             return (x, u, g, r, key, time), (self.Target.transform(x), w)
 
 
-        def track_step(state_track, useless):
-            """Does not track the full d-dimensional x, but some function (can be a vector function) of x. This can be expected values of some quantities of interest, 1d marginal histogram, etc."""
+        def step_with_energy(state, useless):
+            """Tracks full x as a function of number of iterations"""
 
-            x, u, g, r, key, time, w = dynamics(state_track[0])
+            x, u, g, r, key, time, w = dynamics(state)
 
-            return ((x, u, g, r, key, time), update_track(state_track[1], self.Target.transform(x), w)), True
+            return (x, u, g, r, key, time), (self.Target.transform(x), w, self.energy(x, w))
 
 
         def bias_step(state_track, useless):
@@ -185,17 +219,6 @@ class Sampler:
             return ((x, u, g, r, key, time), (W, F2)), bias
 
 
-        def energy_step(state_track, useless):
-            """Only outputs the average energy and it's fluctuations"""
-
-            x, u, g, r, key, time, w = dynamics(state_track[0])
-            W, E1, E2 = state_track[1]
-
-            E = self.energy(x, w)
-            E1 = (W * E1 + w * E) / (W + w)  # Update <x> with a Kalman filter
-            E2 = (W * E2 + w * jnp.square(E)) / (W + w)  # Update <x^2> with a Kalman filter
-
-            return ((x, u, g, r, key, time), (W + w, E1, E2)), True
 
         # initial conditions
         x = x0
@@ -207,11 +230,6 @@ class Sampler:
 
 
         dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps, bounce_length) #bounces equally spaced in distance
-
-        if prerun != 0: # do a short prerun to determine the typical speed of the particle and then have bounces equally spaced in time
-            bounce_time = bounce_length * jnp.average(jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=prerun)[1][1])
-
-            dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps * w, bounce_time)
 
         if generalized: #do a continous momentum decoherence (generalized MCHMC)
             nu = jnp.sqrt((jnp.exp(2 * self.eps / bounce_length) - 1.0) / self.Target.d)
@@ -232,33 +250,22 @@ class Sampler:
 
             return ess_cutoff_crossing(bias) * no_nans * cutoff_reached #return 0 if there are nans, or if the bias cutoff was not reached
 
-        elif energy_track:  # only track the expected energy and its variance
-
-            energy_tracer = jax.lax.scan(energy_step, init=((x, u, g, r, key, 0.0), (0.0, 0.0, 0.0)), xs=None, length=num_steps)[0][1]
-
-            return [energy_tracer[1], jnp.sqrt(energy_tracer[2] - jnp.square(energy_tracer[1]))]
-
-
-        elif initial_track != None:  # track some function of x
-
-            track = update_track(initial_track, x, w)
-
-            final_state, _ = jax.lax.scan(track_step, init=((x, u, g, r, key, 0.0), track), xs=None, length=num_steps)
-
-            return final_state[1]  # return the final values of the quantities that we wanted to track
 
         else:  # track the full x
 
-            final_state, track = jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)
+            if monitor_energy:
+                X, W, E = jax.lax.scan(step_with_energy, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
+                return X, W, E
 
-            X, W = track[0], track[1]
+            else:
+                final_state, track = jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)
+                X, W = track[0], track[1]
+                return X, W
 
-            return X, W
 
+    def parallel_sample(self, num_samples, num_chains, bounce_length, key):
 
-    def parallel_sample(self, num_samples, num_chains, key):
-
-        bounce_length = 1e20#100*self.eps#self.eps * 100
+        burn_in_steps = 200
         dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps, bounce_length) #bounces equally spaced in distance
 
         def bias_step(state_track, useless):
@@ -272,21 +279,28 @@ class Sampler:
 
             return ((x, u, g, r, key, time), (W, F2)), (W, F2)
 
-
+        def step(state, useless):
+            return dynamics(state)[:-1], None
 
         def single_chain(track, key):
 
             #initial conditions
-            key_bounces, key_x, key_u = jax.random.split(key, 3)
-            x0 = self.Target.prior_draw(key_x)
+            key_bounces1, key_bounces2, key_prior, key_u = jax.random.split(key, 4)
+            x0 = self.Target.prior_draw(key_prior)
 
             g = self.Target.grad_nlogp(x0)
+            u = -g / jnp.sqrt(jnp.sum(jnp.square(g)))
+
+            #a short burn in
+            state = jax.lax.scan(step, init=(x0, u, g, 0.0, key_bounces2, 0.0), xs=None, length= burn_in_steps)[0]
+            x0, g = state[0], state[2]
+            #
             r = 0.5 * (1 + np.log(self.Target.d) - 2 * self.Target.nlogp(x0) / self.Target.d)  # initialize such that all the chains have the same energy
             w = jnp.exp(r) / self.Target.d
             u = self.random_unit_vector(key_u)[0]
 
             #run the chain
-            w, f2 = jax.lax.scan(bias_step, init=((x0, u, g, r, key_bounces, 0.0), (w, jnp.square(x0))), xs=None, length=num_samples)[1]
+            w, f2 = jax.lax.scan(bias_step, init=((x0, u, g, r, key_bounces1, 0.0), (w, jnp.square(x0))), xs=None, length=num_samples)[1]
 
             #update the expected moments (as a function of number of steps)
             # F2_ij = E[x_j^2] after i steps using the chains that we already computed
@@ -295,6 +309,8 @@ class Sampler:
             F2 = (F2.T * W /(W + w)).T + (f2.T * w / (W + w)).T #update F2 with the new chain
             W += w
             return (W, F2), None
+
+
 
         W, F2 = jax.lax.scan(single_chain, init= (jnp.zeros(num_samples), jnp.zeros((num_samples, self.Target.d))), xs = jax.random.split(key, num_chains))[0]
 
@@ -305,15 +321,15 @@ class Sampler:
 
         #plt.plot(W / np.arange(len(W)), '.')
 
-        # plt.plot(bias, '.')
-        # plt.plot([0, len(bias)], np.ones(2), ':', color = 'black')
-        # plt.xlabel('# steps / # chains')
-        # plt.ylabel('bias')
-        # plt.ylabel(r'$x^T H x$ / d')
-        # plt.xscale('log')
-        # plt.yscale('log')
-        # plt.savefig('optimization_eps.png')
-        # plt.show()
+        plt.plot(np.arange(200, len(bias) + 200), bias, '.')
+        plt.plot([0, len(bias)], np.ones(2)*0.1, ':', color = 'black')
+        plt.xlabel('# steps / # chains')
+        plt.ylabel('bias')
+        #plt.ylabel(r'$x^T H x$ / d')
+        plt.xscale('log')
+        plt.yscale('log')
+        #plt.savefig('optimization_eps.png')
+        plt.show()
 
         return ess_cutoff_crossing(bias) * no_nans * cutoff_reached / num_chains #return 0 if there are nans, or if the bias cutoff was not reached
 
