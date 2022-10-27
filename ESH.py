@@ -263,10 +263,11 @@ class Sampler:
                 return X, W
 
 
-    def parallel_sample(self, num_samples, num_chains, bounce_length, key):
 
-        burn_in_steps = 200
+    def parallel_bias(self, num_samples, num_chains, bounce_length, key):
+
         dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps, bounce_length) #bounces equally spaced in distance
+
 
         def bias_step(state_track, useless):
             """Only tracks bias as a function of number of iterations."""
@@ -279,8 +280,7 @@ class Sampler:
 
             return ((x, u, g, r, key, time), (W, F2)), (W, F2)
 
-        def step(state, useless):
-            return dynamics(state)[:-1], None
+
 
         def single_chain(track, key):
 
@@ -292,8 +292,8 @@ class Sampler:
             u = -g / jnp.sqrt(jnp.sum(jnp.square(g)))
 
             #a short burn in
-            state = jax.lax.scan(step, init=(x0, u, g, 0.0, key_bounces2, 0.0), xs=None, length= burn_in_steps)[0]
-            x0, g = state[0], state[2]
+            # state = jax.lax.scan(step, init=(x0, u, g, 0.0, key_bounces2, 0.0), xs=None, length= burn_in_steps)[0]
+            # x0, g = state[0], state[2]
             #
             r = 0.5 * (1 + np.log(self.Target.d) - 2 * self.Target.nlogp(x0) / self.Target.d)  # initialize such that all the chains have the same energy
             w = jnp.exp(r) / self.Target.d
@@ -320,8 +320,8 @@ class Sampler:
         cutoff_reached = bias[-1] < 0.1
 
         #plt.plot(W / np.arange(len(W)), '.')
-
-        plt.plot(np.arange(200, len(bias) + 200), bias, '.')
+        print(np.array(bias)[[0, 100, 1000, 10000-1]])
+        plt.plot(bias, '.')
         plt.plot([0, len(bias)], np.ones(2)*0.1, ':', color = 'black')
         plt.xlabel('# steps / # chains')
         plt.ylabel('bias')
@@ -336,15 +336,16 @@ class Sampler:
 
 
 
-    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, generalized= False, ess=False, update_track=None, initial_track=None, prerun=0, energy_track = False):
+    def sample_multiple_chains(self, num_chains, num_steps, bounce_length, key, generalized= False, ess=False):
         """Run multiple chains. The initial conditions are drawn with self.Target.prior_draw(key)"""
 
         def f(key, useless):
             key, key_prior, key_bounces = jax.random.split(key[0], 3)
             x0 = self.Target.prior_draw(key_prior)
-            return (key,), self.sample(x0, num_steps, bounce_length, key_bounces, generalized, ess, update_track, initial_track, prerun, energy_track)
+            return (key,), self.sample(x0, num_steps, bounce_length, key_bounces, generalized, ess)
 
         return jax.lax.scan(f, init= (key, ), xs = None, length = num_chains)[1]
+
 
 
     def energy(self, X, W):

@@ -443,46 +443,42 @@ def run_problem():
     """Code for runing a generic problem"""
 
 
-    target = StandardNormal(d= 100)
+    target = IllConditionedESH()
 
     #grid_search.search_wrapper_1d(lambda e: jnp.average(ESH.Sampler(Target=target, eps=e).sample_multiple_chains(10, 300000, 1.6 * np.sqrt(target.d), jax.random.PRNGKey(0), ess=True)), 0.1, 1.5)
 
-    sampler = ESH.Sampler(target, 0.6)
-    L = 1.6 * jnp.sqrt(target.d)
-    key, key_prior = jax.random.split(jax.random.PRNGKey(0))
-    x0 = target.prior_draw(key_prior)
+    sampler = ESH.Sampler(target, 0.5)
+    L = 1e20#1.6 * jnp.sqrt(target.d)
 
-    X, W, E = sampler.sample(x0, 100000, L, key, monitor_energy=True)
-
-    plt.plot(E, '.')
-    plt.show()
+    ess = sampler.parallel_sample(10000, 500, L, jax.random.PRNGKey(0))
 
 
 
 
 def esh_not_converging():
 
-    target = IllConditionedGaussian(d= 50, condition_number= 10000)
+    target = IllConditionedESH()
     bounces = False
     L = 1.6 * jnp.sqrt(target.d) if bounces else 1e20
-    eps = 1.0
-    num_chains = 300
+    eps = 1.0 #if bounces else 0.1
+    num_chains = 500
     num_steps = 10000
 
     sampler = ESH.Sampler(target, eps)
 
     key = jax.random.PRNGKey(1)
                     # time  coordinate   chain
-    results = np.empty((4, 2, num_chains))
+    results = np.empty((4, target.d, num_chains))
 
     for i in range(num_chains):
         key, key_prior, key_bounces = jax.random.split(key, 3)
         x0 = target.prior_draw(key_prior)#jax.random.normal(key_prior, shape= (target.d, ), dtype = 'float64')
         X, w = sampler.sample(x0, num_steps, L, key_bounces)
 
-        results[:, :, i] = (X[[0, 100, 1000, 10000], :])[:, [0, -1]]
+        results[:, :, i] = X[[0, 100, 1000, 10000], :]
+        results[0, :, i] = x0
 
-    np.save('Tests/esh_not_converging_'+('MCHMC' if bounces else 'ESH')+'.npy', results)
+    np.save('ESH_not_converging/data/ESHexample_eps1_'+('MCHMC' if bounces else 'ESH')+'.npy', results)
 
 
 

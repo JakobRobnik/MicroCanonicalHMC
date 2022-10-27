@@ -52,7 +52,35 @@ class IllConditionedGaussian():
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') #* jnp.sqrt(self.variance[-1]) * 1.5
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') #* jnp.sqrt(self.variance[-1]) * 4.0
+
+
+
+class IllConditionedESH():
+    """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber^1/2 to condition_number^1/2."""
+
+    def __init__(self):
+        self.d = 50
+        self.variance = jnp.linspace(0.01, 1, self.d)
+
+
+    def nlogp(self, x):
+        """- log p of the target distribution"""
+        return 0.5 * jnp.sum(jnp.square(x) / self.variance, axis= -1)
+
+    def grad_nlogp(self, x):
+        return x / self.variance
+
+    def transform(self, x):
+        return x
+
+
+    def draw(self, key):
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * jnp.sqrt(self.variance)
+
+    def prior_draw(self, key):
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+
 
 
 

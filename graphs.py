@@ -9,7 +9,7 @@ import arviz as az
 import matplotlib.dates as mdates
 from numpyro.examples.datasets import SP500, load_dataset
 
-import ESH
+from old import MMD
 from benchmark_targets import *
 
 tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
@@ -623,16 +623,30 @@ def stohastic_volatility():
     plt.show()
 
 
+
+def first_nonzero_decimal(x):
+    """works for x>0"""
+    if np.abs(x) > 1:
+        return 0
+    else:
+        return 1 + first_nonzero_decimal(x*10)
+
+
 def esh_not_converging():
 
-    data1 = np.load('Tests/esh_not_converging_ESH.npy')
-    data2 = np.load('Tests/esh_not_converging_MCHMC.npy')
+    data1 = np.load('ESH_not_converging/data/ESHexample_ESH.npy')
+    data2 = np.load('ESH_not_converging/data/ESHexample_MCHMC.npy')
 
-    target = IllConditionedGaussian(d = 50, condition_number= 10000)
+
+    target = IllConditionedESH()#IllConditionedGaussian(d = 50, condition_number= 1)
     sigma1, sigmad = np.sqrt(target.variance[0]), np.sqrt(target.variance[-1])
 
-    plt.figure(figsize=(21, 7))
+    bias_esh= [5.4, 0.64, 0.64, 0.64]
+    bias_mchmc = [5.4, 0.64, 0.48, 0.05]
 
+    exact_samples = np.array([target.draw(k) for k in jax.random.split(jax.random.PRNGKey(0), 5000)])
+
+    plt.figure(figsize=(21, 7))
 
     ff, ff_title, ff_ticks = 24, 22, 20
     plt.rcParams['xtick.labelsize'] = ff_ticks
@@ -649,30 +663,40 @@ def esh_not_converging():
         ax.spines['top'].set_visible(False)
 
         plt.title('steps = ' + str(steps[t]), fontsize= ff_title)
-        lim_x = 42 if i == 0 else 0.42#np.max(np.abs([data1[t, 0, :], data2[t, 0, :]]))*1.05
-        lim_y = 43#np.max(np.abs([data1[t, 1, :], data2[t, 1, :]]))*1.05
+        lim_x = 4#if i == 0 else 0.7
+        lim_y = 4
+        #lim_x, lim_y = 10, 10
+        #lim_x = np.max(np.abs([data1[t, 0, :], data2[t, 0, :]]))*1.05
+        #lim_y = np.max(np.abs([data1[t, -1, :], data2[t, -1, :]]))*1.05
 
+        # background
         x = np.linspace(-lim_x, lim_x, 100)
         y = np.linspace(-lim_y, lim_y, 100)
         X, Y = np.meshgrid(x, y)
         Z = np.exp(- 0.5 * (np.square(X/sigma1) + np.square(Y/sigmad)))
-        
         plt.contourf(X, Y, Z, cmap = 'Blues', levels = 100)
-        plt.plot(data1[t, 0, :], data1[t, 1, :], '.', color= 'tab:red', markersize =7)
-        plt.plot(data2[t, 0, :], data2[t, 1, :], '.', color='gold', markersize = 3 if t == 0 else 7)
+
+        # MMD
+        mmd_avg, mmd_conf = MMD.mmd((data1[t, :, :].T) / np.sqrt(target.variance), exact_samples / np.sqrt(target.variance))
+
+        plt.title('steps = ' + str(steps[t]) + '\nMMD = {0}'.format(np.round(mmd_avg, first_nonzero_decimal(mmd_avg) + 1)), fontsize= ff_title)
+
+
+        plt.plot(data1[t, 0, :], data1[t, -1, :], '.', color= 'tab:red', markersize = 4 if t == 0 else 4)
+        plt.plot(data2[t, 0, :], data2[t, -1, :], '.', color='gold', markersize = 2 if t == 0 else 4)
 
         plt.xlim(-lim_x, lim_x)
         plt.ylim(-lim_y, lim_y)
         plt.xlabel(r'$x_{1}$', fontsize= ff)
 
-        if i == 0:
-            plt.ylabel(r'$x_{50}$', fontsize= ff)
-            plt.yticks([-40, -20, 0, 20, 40])
-            plt.xticks([-40, -20, 0, 20, 40])
-
-        else:
-            plt.yticks([])
-            plt.xticks([-0.2, 0, 0.2])
+        # if i == 0:
+        #     plt.ylabel(r'$x_{50}$', fontsize= ff)
+        #     plt.yticks([-40, -20, 0, 20, 40])
+        #     plt.xticks([-40, -20, 0, 20, 40])
+        #
+        # else:
+        #     plt.yticks([])
+        #     plt.xticks([-0.2, 0, 0.2])
 
         if i == 2:
             plt.plot([], [], '.', markersize =10, color = 'tab:red', label = 'ESH')
@@ -682,7 +706,7 @@ def esh_not_converging():
 
 
     plt.subplots_adjust(wspace=0, hspace=0)
-    plt.savefig('submission/particles.pdf')
+    plt.savefig('submission/particles.png')
     plt.show()
 
 
@@ -758,6 +782,6 @@ def qspace():
     plt.show()
 
 
-dimension_dependence()
+#dimension_dependence()
 #qspace()
-#esh_not_converging()
+esh_not_converging()
