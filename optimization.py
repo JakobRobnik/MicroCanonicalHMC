@@ -8,6 +8,11 @@ from benchmark_targets import *
 
 
 
+def accelerated_gradient():
+    
+
+
+
 key = jax.random.PRNGKey(0)
 d = 50
 target = IllConditionedGaussian(d, 10000.0)

@@ -29,14 +29,16 @@ class Sampler:
         return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
 
 
-    def f(self, eps, g, u):
-        """A momentum updating map for the leapfrog of the esh dynamics."""
+    def momentum_step(self, eps, g, u, r):
+        """The momentum updating map for the leapfrog of the esh dynamics."""
         g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
         e = - g / g_norm
         ue = jnp.dot(u, e)
         sh = jnp.sinh(eps * g_norm / self.Target.d)
         ch = jnp.cosh(eps * g_norm / self.Target.d)
-        return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh)
+        th = jnp.tanh(eps * g_norm / self.Target.d)
+        delta_r = jnp.log(ch) + jnp.log1p(ue * th)
+        return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), r + delta_r
 
 
     def dynamics_step(self, state):
@@ -44,11 +46,10 @@ class Sampler:
         x, u, g, r = state
 
         # Hamiltonian step
-        uhalf = self.f(self.eps * 0.5, g, u)
+        uhalf, rhalf = self.momentum_step(self.eps * 0.5, g, u, r)
         xnew = x + self.eps * uhalf
         gg_new = self.Target.grad_nlogp(xnew)
-        unew = self.f(self.eps * 0.5, gg_new, uhalf)
-        rnew = r - self.eps * 0.5 * (jnp.dot(u, g) + jnp.dot(unew, gg_new)) / self.Target.d
+        unew, rnew = self.momentum_step(self.eps * 0.5, gg_new, uhalf, rhalf)
 
         w = jnp.exp(rnew) / self.Target.d
 
@@ -60,11 +61,10 @@ class Sampler:
         x, u, g, r, key, time = state
 
         # Hamiltonian step
-        uhalf = self.f(self.eps * 0.5, g, u)
+        uhalf, rhalf = self.momentum_step(self.eps * 0.5, g, u, r)
         xnew = x + self.eps * uhalf
         gg_new = self.Target.grad_nlogp(xnew)
-        unew = self.f(self.eps * 0.5, gg_new, uhalf)
-        rnew = r - self.eps * 0.5 * (jnp.dot(u, g) + jnp.dot(unew, gg_new)) / self.Target.d
+        unew, rnew = self.momentum_step(self.eps * 0.5, gg_new, uhalf, rhalf)
 
         w = jnp.exp(rnew) / self.Target.d
 
@@ -83,11 +83,10 @@ class Sampler:
 
         x, u, g, r, key, time = state
         # Hamiltonian step
-        uhalf = self.f(self.eps * 0.5, g, u)
+        uhalf, rhalf = self.momentum_step(self.eps * 0.5, g, u, r)
         xnew = x + self.eps * uhalf
         gg_new = self.Target.grad_nlogp(xnew)
-        unew = self.f(self.eps * 0.5, gg_new, uhalf)
-        rnew = r - self.eps * 0.5 * (jnp.dot(u, g) + jnp.dot(unew, gg_new)) / self.Target.d
+        unew, rnew = self.momentum_step(self.eps * 0.5, gg_new, uhalf, rhalf)
 
         w = jnp.exp(rnew) / self.Target.d
 
@@ -102,11 +101,10 @@ class Sampler:
 
         x, u, g, r, key, time = state
         # Hamiltonian step
-        uhalf = self.f(self.eps * 0.5, g, u)
+        uhalf, rhalf = self.momentum_step(self.eps * 0.5, g, u, r)
         xnew = x + self.eps * uhalf
         gg_new = self.Target.grad_nlogp(xnew)
-        unew = self.f(self.eps * 0.5, gg_new, uhalf)
-        rnew = r - self.eps * 0.5 * (jnp.dot(u, g) + jnp.dot(unew, gg_new)) / self.Target.d
+        unew, rnew = self.momentum_step(self.eps * 0.5, gg_new, uhalf, rhalf)
 
         w = jnp.exp(rnew) / self.Target.d
 

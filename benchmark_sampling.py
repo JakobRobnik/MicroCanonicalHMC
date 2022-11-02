@@ -23,7 +23,7 @@ def parallel_run(function, values):
     return results.reshape([len(values), ] + [results.shape[i] for i in range(2, len(results.shape))])
 
 
-def bounce_frequency(d, alpha, generalized = False, prerun = 0):
+def bounce_frequency(d, alpha, generalized = False):
     """For scaning over the L parameter"""
 
     key = jax.random.PRNGKey(1)
@@ -34,7 +34,7 @@ def bounce_frequency(d, alpha, generalized = False, prerun = 0):
 
     #sampler = ESH.Sampler(Target= IllConditionedGaussian(d=d, condition_number=100.0), eps=1.0)
 
-    ess = parallel_run(lambda L: sampler.sample_multiple_chains(10, 300000, L, key, generalized= generalized, ess= True, prerun=prerun), length)
+    ess = parallel_run(lambda L: sampler.sample_multiple_chains(10, 300000, L, key, generalized= generalized, ess= True), length)
 
     return jnp.average(ess, 1), jnp.std(ess, 1)
 
@@ -91,13 +91,13 @@ def bimodal_mixing(n):
     x0 = np.random.normal(size= d)
     x0[0] += mu * 0.5
 
-    avg_island_size = esh.sample(x0, L, prerun_steps= 500, track= 'ModeMixing')
+    avg_island_size = esh.sample(x0, L, track= 'ModeMixing')
 
     return [avg_island_size, mu, L, eps, d]
 
 
 
-def ill_conditioned_workhorse(alpha, generalized, prerun):
+def ill_conditioned_workhorse(alpha, generalized):
     d = 100
     L = alpha * np.sqrt(d)
 
@@ -109,7 +109,7 @@ def ill_conditioned_workhorse(alpha, generalized, prerun):
 
         sampler = ESH.Sampler(Target=IllConditionedGaussian(d=d, condition_number=kappa), eps=eps)
 
-        ess = sampler.sample_multiple_chains(10, 300000, L, key, generalized = generalized, ess=True, prerun= prerun)
+        ess = sampler.sample_multiple_chains(10, 300000, L, key, generalized = generalized, ess=True)
 
         return jnp.array([jnp.average(ess), jnp.std(ess)])
 
@@ -118,13 +118,11 @@ def ill_conditioned_workhorse(alpha, generalized, prerun):
     return results
 
 
-def ill_conditioned(tunning, generalized, prerun = 0):
+def ill_conditioned(tunning, generalized):
     word = '_l' if generalized else ''
-    if prerun != 0:
-        word += '_t'
 
     if not tunning:
-        results = ill_conditioned_workhorse(1.0, generalized, prerun)
+        results = ill_conditioned_workhorse(1.0, generalized)
         np.save('Tests/data/kappa/no_tuning'+word+'.npy', results)
 
     else:
@@ -134,7 +132,7 @@ def ill_conditioned(tunning, generalized, prerun = 0):
 
         for i in range(len(alpha)):
             print(str(i)+ '/' + str(len(alpha)))
-            results[i] = ill_conditioned_workhorse(alpha[i], generalized, prerun)
+            results[i] = ill_conditioned_workhorse(alpha[i], generalized)
 
         np.save('Tests/data/kappa/fine_tuned_full_results'+word+'.npy', results)
         np.save('Tests/data/kappa/fine_tuned'+word+'.npy', results[np.argmax(results[:, :, 0], axis= 0), np.arange(18, dtype = int), :])
@@ -155,29 +153,6 @@ def funnel_plot():
     np.savez('Tests/data/funnel_free'+str(free_time) + '_eps'+str(eps), z = samples[:, :-1], theta= samples[:, -1], w = w)
 
 
-def funnel_ess(n):
-    length = (1 * np.sqrt(d) * np.logspace(-0.4, 0.4, 12))[n]
-    sampler = ESH.Sampler(Target=Funnel(d =20), eps= 0.1)
-
-    x0 = sampler.Target.draw(1)[0]  # we draw an initial condition from the target
-    ess = sampler.sample(x0, length, prerun_steps=500, track= 'ESS')
-
-    return [ess, length, sampler.eps, d]
-
-
-
-def rosenbrock():
-
-    eps = 0.001
-    free_steps = (int)(1 / eps)
-    d = 36
-    esh = ESH.Sampler(Target= Rosenbrock(d=d), eps=eps)
-    np.random.seed(0)
-    x0 = np.zeros(d)
-    samples, w = esh.sample(x0, free_steps, max_steps= 10000000, prerun_steps= 500, track= 'FullTrajectory')
-    np.savez('Tests/data/rosenbrock3', samples = samples[::10, :], w = w[::10])
-
-
 def dimension_dependence():
 
     dimensions = [50, 100, 200, 500, 1000, 3000, 10000]
@@ -185,10 +160,10 @@ def dimension_dependence():
     #alpha = (1.5 * jnp.logspace(-0.5, 0.5, 12))
     #condition_numbers = np.logspace(0, 5, 18)
     dict = {'alpha': alpha}
-    generalized, prerun = True, 0
+    generalized = True
     for d in dimensions:
         print(d)
-        avg, std = bounce_frequency(d, alpha, generalized, prerun)
+        avg, std = bounce_frequency(d, alpha, generalized)
         dict.update({'ess (d='+str(d)+')': avg, 'err ess (d='+str(d)+')': std})
     df = pd.DataFrame.from_dict(dict)
     df.to_csv('Tests/data/dimensions/StandardNormal'+('_l' if generalized else '')+'.csv', sep='\t', index=False)
@@ -249,7 +224,7 @@ def bimodal_explore():
     x0 = np.random.normal(size=d)
     x0[0] += mu * 0.5
 
-    X, W = esh.sample(x0, L, prerun_steps=500, track='FullTrajectory')
+    X, W = esh.sample(x0, L, track='FullTrajectory')
 
     plt.subplot(2, 1, 1)
     plt.plot(X[:, 0])
@@ -273,9 +248,9 @@ def energy_fluctuations():
 
     def f(e):
         esh = ESH.Sampler(Target=IllConditionedGaussian(d=100, condition_number=10000.0), eps=e)
-        ess_chains = esh.sample_multiple_chains(3, 300000, 1.5 * jnp.sqrt(esh.Target.d), key, prerun=0, ess=True)
+        ess_chains = esh.sample_multiple_chains(3, 300000, 1.5 * jnp.sqrt(esh.Target.d), key, ess=True)
         ess, err_ess = jnp.average(ess_chains), jnp.std(ess_chains)
-        energy_chains = esh.sample_multiple_chains(3, 300000, 1.5 * jnp.sqrt(esh.Target.d), key, prerun=0, energy_track = True)
+        energy_chains = esh.sample_multiple_chains(3, 300000, 1.5 * jnp.sqrt(esh.Target.d), key, energy_track = True)
         #print(np.shape(energy_chains))
         relative_energy_fluctuations = energy_chains[1]/energy_chains[0]
         Eavg, Estd = jnp.average(relative_energy_fluctuations), jnp.std(relative_energy_fluctuations)
@@ -317,9 +292,9 @@ def autocorr():
 def table1():
     """For generating Table 1 in the paper"""
 
-    row = ['MCHMC q = 0', 'tuning free MCHMC q = 0', 'generalized MCHMC', 'tuning free generalized MCHMC', 'no bounce MCHMC', 'MCHMC q = 2', 'ESH'][3]
+    row = ['MCHMC q = 0', 'tuning free MCHMC q = 0', 'generalized MCHMC', 'tuning free generalized MCHMC', 'no bounce MCHMC', 'MCHMC q = 2', 'ESH'][0]
     print(row)
-    generalized=  (row == 'generalized MCHMC')
+    generalized= (row == 'generalized MCHMC')
 
     key = jax.random.PRNGKey(0)
     import german_credit
@@ -354,16 +329,16 @@ def table1():
 
     else:
 
-        def ess_function(alpha, eps, target, generalized, prerun):
-            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(10, 300000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True, prerun=prerun))
+        def ess_function(alpha, eps, target, generalized):
+            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(10, 300000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True))
 
 
         def ess_function_parallel(eps, target):
             return jnp.average(jnp.array([ESH.Sampler(Target=target, eps=eps).parallel_sample(6000, 300, 1e20, k) for k in jax.random.split(key, 3)]))
 
 
-        def tuning(target, generalized, prerun, eps_min = 0.1, eps_max = 1.0):
-            return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized, prerun), 0.3, 20.0, eps_min, eps_max)
+        def tuning(target, generalized, eps_min = 0.1, eps_max = 1.0):
+            return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized), 0.3, 20.0, eps_min, eps_max)
 
 
         borders_esh = [[1.0, 4.0], [0.5, 3.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]
@@ -380,10 +355,10 @@ def table1():
 
 
         else:
-            results = np.array([np.array(tuning(targets[i], generalized, 0, borders_esh[i][0], borders_esh[i][1])) for i in range(len(targets)-1, len(targets))])
+            results = np.array([np.array(tuning(targets[i], generalized, borders_esh[i][0], borders_esh[i][1])) for i in range(len(targets)-1, len(targets))])
 
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
-            #df.to_csv('submission/TableESH_generalized.csv', sep='\t', index=False)
+            df.to_csv('submission/Table '+row+'.csv', sep='\t', index=False)
             print(df)
 
 
@@ -443,14 +418,18 @@ def run_problem():
     """Code for runing a generic problem"""
 
 
-    target = IllConditionedESH()
+    target = StandardNormal(d = 100)
 
     #grid_search.search_wrapper_1d(lambda e: jnp.average(ESH.Sampler(Target=target, eps=e).sample_multiple_chains(10, 300000, 1.6 * np.sqrt(target.d), jax.random.PRNGKey(0), ess=True)), 0.1, 1.5)
 
     sampler = ESH.Sampler(target, 0.5)
-    L = 1e20#1.6 * jnp.sqrt(target.d)
+    L = 1.6 * jnp.sqrt(target.d)
+    key, prior_key = jax.random.split(jax.random.PRNGKey(0))
+    x0 = target.prior_draw(prior_key)
 
-    ess = sampler.parallel_sample(10000, 500, L, jax.random.PRNGKey(0))
+    ess = sampler.sample(x0, 10000, L, key, ess= True)
+
+    print(ess)
 
 
 
@@ -492,18 +471,55 @@ def divergence():
     x0 = sampler.Target.prior_draw(prior_key)
     X, w = sampler.sample(x0, 10000, 1e20, key, ess = True)
     print(np.any(np.isnan(w)))
+    
+    
+def epsilon_dimension_dependence():
+
+    generalized= False
+    key = jax.random.PRNGKey(0)
+    dimensions = [100, 300, 1000, 3000]
+    #dimensions = [3000, ]
+
+    def ess_function(eps, d):
+        L = 1.6 * np.sqrt(d)
+        target = StandardNormal(d)
+        return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(5, 100000, L, key, generalized= generalized, ess=True))
+
+
+    def scan(d):
+        print(d)
+        eps_expected=  5.6 * np.sqrt(d / 100.0)
+        epsilon = jnp.logspace(np.log10(0.5 *eps_expected), np.log10(2 * eps_expected), 24)
+
+        ess = parallel_run(lambda e: ess_function(e, d), epsilon)
+
+        j = jnp.argmax(ess)
+        ess_best = ess[j]
+        eps = epsilon[j]
+
+        # plt.plot(epsilon, ess, '.:')
+        # plt.show()
+
+        cf_mask = ess > ess_best * 0.9
+        cf_low, cf_high = np.min(epsilon[cf_mask]), np.max(epsilon[cf_mask])
+
+        return np.array([d, ess_best, eps, cf_low, cf_high, ess_best])
+
+    scan(100)
+    #np.save('Tests/data/epsilon_scaling_kappa100.npy', [scan(d) for d in dimensions])
 
 
 if __name__ == '__main__':
 
     #stochastic_volatility()
     #esh_not_converging()
-    #table1()
+    table1()
 
-    run_problem()
+    #epsilon_dimension_dependence()
+    #run_problem()
     #full_bias()
     #dimension_dependence()
 
-    #ill_conditioned(tunning=False, generalized=False, prerun=1000)
+    #ill_conditioned(tunning=False, generalized=False)
     #ill_conditioned(tunning=True)
 

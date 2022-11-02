@@ -689,14 +689,14 @@ def esh_not_converging():
         plt.ylim(-lim_y, lim_y)
         plt.xlabel(r'$x_{1}$', fontsize= ff)
 
-        # if i == 0:
-        #     plt.ylabel(r'$x_{50}$', fontsize= ff)
-        #     plt.yticks([-40, -20, 0, 20, 40])
-        #     plt.xticks([-40, -20, 0, 20, 40])
-        #
-        # else:
-        #     plt.yticks([])
-        #     plt.xticks([-0.2, 0, 0.2])
+        if i == 0:
+            plt.ylabel(r'$x_{50}$', fontsize= ff)
+            plt.yticks([-3, -2, -1, 0, 1, 2, 3])
+            plt.xticks([-2, 0, 2])
+
+        else:
+            plt.yticks([])
+            plt.xticks([-2, 0, 2])
 
         if i == 2:
             plt.plot([], [], '.', markersize =10, color = 'tab:red', label = 'ESH')
@@ -706,7 +706,7 @@ def esh_not_converging():
 
 
     plt.subplots_adjust(wspace=0, hspace=0)
-    plt.savefig('submission/particles.png')
+    plt.savefig('submission/particles.pdf')
     plt.show()
 
 
@@ -782,6 +782,56 @@ def qspace():
     plt.show()
 
 
+def epsilon_scaling():
+    data = np.load('Tests/data/epsilon_scaling.npy')
+    dimensions = data[:, 0]
+    ess = data[:, 1]
+    eps = data[:, 2]
+    cf = data[:, 3:].T
+
+
+    low_scan = 0.5 * 5.6 * np.sqrt(dimensions / 100.0)
+    high_scan = 2* 5.6 * np.sqrt(dimensions / 100.0)
+
+    #plt.fill_between(dimensions, low_scan, high_scan, color = 'tab:blue', alpha = 0.1)
+    plt.fill_between(dimensions, cf[0], cf[1], color='tab:blue', alpha=0.5)
+
+    plt.plot(dimensions, eps, 'o', color = 'tab:blue')
+
+    res = linregress(np.log(dimensions), np.log(eps))
+
+    plt.title(r'$\epsilon \propto d^{\beta}, \quad \beta = $' + '{0}'.format(np.round(res.slope, 2)))
+    plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), color='black')
+
+    plt.xlabel('dimensions')
+    plt.ylabel(r'$\epsilon$')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.savefig('epsilon_scaling.png')
+
+    plt.show()
+
+
+
+    plt.plot(dimensions, ess, 'o', color = 'tab:blue')
+
+    res = linregress(np.log(dimensions), np.log(ess))
+
+    plt.title(r'$ESS \propto d^{\beta}, \quad \beta = $' + '{0}'.format(np.round(res.slope, 2)))
+    plt.plot(dimensions, np.exp(res.intercept) * np.power(dimensions, res.slope), color='black')
+
+    plt.xlabel('dimensions')
+    plt.ylabel(r'ESS')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.savefig('epsilon_ess.png')
+
+    plt.show()
+
+
+
+epsilon_scaling()
+
 #dimension_dependence()
 #qspace()
-esh_not_converging()
+#esh_not_converging()
