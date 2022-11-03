@@ -78,22 +78,46 @@ class Sampler:
         return xnew, u_return, gg_new, rnew, key, time, w
 
 
+    # def generalized_dynamics_step(self, state, nu):
+    #     """One step of the generalized dynamics: Leapfrog integrator"""
+    #
+    #     x, u, g, r, key, time = state
+    #     # Hamiltonian step
+    #     uhalf, rhalf = self.momentum_step(self.eps * 0.5, g, u, r)
+    #     xnew = x + self.eps * uhalf
+    #     gg_new = self.Target.grad_nlogp(xnew)
+    #     unew, rnew = self.momentum_step(self.eps * 0.5, gg_new, uhalf, rhalf)
+    #
+    #     w = jnp.exp(rnew) / self.Target.d
+    #
+    #     # bounce
+    #     unew, key = self.generalized_step(unew, key, nu)
+    #
+    #     return xnew, unew, gg_new, rnew, key, 0.0, w
+
+
     def generalized_dynamics_step(self, state, nu):
-        """One step of the generalized dynamics"""
+        """One step of the generalized dynamics: minimum norm integrator (see Equation 20 in https://arxiv.org/pdf/hep-lat/0505020.pdf)"""
 
         x, u, g, r, key, time = state
-        # Hamiltonian step
-        uhalf, rhalf = self.momentum_step(self.eps * 0.5, g, u, r)
-        xnew = x + self.eps * uhalf
-        gg_new = self.Target.grad_nlogp(xnew)
-        unew, rnew = self.momentum_step(self.eps * 0.5, gg_new, uhalf, rhalf)
 
-        w = jnp.exp(rnew) / self.Target.d
+        # Hamiltonian step
+        lambda_c = 0.1931833275037836
+        uu, rr = self.momentum_step(self.eps * lambda_c, g, u, r)
+        xx = x + self.eps * 0.5 * uu
+        gg = self.Target.grad_nlogp(xx)
+        uu, rr = self.momentum_step(self.eps * (1-2*lambda_c), gg, uu, rr)
+        xx = xx + self.eps * 0.5 * uu
+        gg = self.Target.grad_nlogp(xx)
+        uu, rr = self.momentum_step(self.eps * lambda_c, gg, uu, rr)
+
+        w = jnp.exp(rr) / self.Target.d
 
         # bounce
-        unew, key = self.generalized_step(unew, key, nu)
+        uu, key = self.generalized_step(uu, key, nu)
 
-        return xnew, unew, gg_new, rnew, key, 0.0, w
+        return xx, uu, gg, rr, key, 0.0, w
+
 
 
     def dynamics_bounces_billiard_step(self, state, time_max, xmax):
@@ -246,7 +270,7 @@ class Sampler:
             # plt.yscale('log')
             # plt.show()
 
-            return ess_cutoff_crossing(bias) * no_nans * cutoff_reached #return 0 if there are nans, or if the bias cutoff was not reached
+            return 0.5* ess_cutoff_crossing(bias) * no_nans * cutoff_reached #return 0 if there are nans, or if the bias cutoff was not reached
 
 
         else:  # track the full x

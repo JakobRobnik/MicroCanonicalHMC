@@ -292,9 +292,9 @@ def autocorr():
 def table1():
     """For generating Table 1 in the paper"""
 
-    row = ['MCHMC q = 0', 'tuning free MCHMC q = 0', 'generalized MCHMC', 'tuning free generalized MCHMC', 'no bounce MCHMC', 'MCHMC q = 2', 'ESH'][0]
+    row = ['MCHMC q = 0', 'tuning free MCHMC q = 0', 'generalized MCHMC', 'tuning free generalized MCHMC', 'no bounce MCHMC', 'MCHMC q = 2', 'ESH'][2]
     print(row)
-    generalized= (row == 'generalized MCHMC')
+    generalized= (row == 'generalized MCHMC') or (row == 'tuning free generalized MCHMC')
 
     key = jax.random.PRNGKey(0)
     import german_credit
@@ -330,7 +330,7 @@ def table1():
     else:
 
         def ess_function(alpha, eps, target, generalized):
-            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(10, 300000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True))
+            return jnp.average(ESH.Sampler(Target=target, eps=eps).sample_multiple_chains(3, 30000, alpha* np.sqrt(target.d), key, generalized=generalized, ess=True))
 
 
         def ess_function_parallel(eps, target):
@@ -341,7 +341,8 @@ def table1():
             return grid_search.search_wrapper(lambda a, e: ess_function(a, e, target, generalized), 0.3, 20.0, eps_min, eps_max)
 
 
-        borders_esh = [[1.0, 4.0], [0.5, 3.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]
+        borders_esh = np.array([[1.0, 4.0], [0.5, 10.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]]) * np.sqrt(10.9)
+
 
         if row == 'ESH':
             results = [grid_search.search_wrapper_1d(lambda e: ess_function_parallel(e, targets[i]), borders_esh[i][0], borders_esh[i][1]) for i in range(len(targets))]
@@ -355,7 +356,7 @@ def table1():
 
 
         else:
-            results = np.array([np.array(tuning(targets[i], generalized, borders_esh[i][0], borders_esh[i][1])) for i in range(len(targets)-1, len(targets))])
+            results = np.array([np.array(tuning(targets[i], generalized, borders_esh[i][0], borders_esh[i][1])) for i in [-1]])
 
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
             df.to_csv('submission/Table '+row+'.csv', sep='\t', index=False)
@@ -418,18 +419,18 @@ def run_problem():
     """Code for runing a generic problem"""
 
 
-    target = StandardNormal(d = 100)
+    target = IllConditionedGaussian(d = 100, condition_number= 100.0)
 
     #grid_search.search_wrapper_1d(lambda e: jnp.average(ESH.Sampler(Target=target, eps=e).sample_multiple_chains(10, 300000, 1.6 * np.sqrt(target.d), jax.random.PRNGKey(0), ess=True)), 0.1, 1.5)
 
-    sampler = ESH.Sampler(target, 0.5)
+    sampler = ESH.Sampler(target, 1.0)
     L = 1.6 * jnp.sqrt(target.d)
     key, prior_key = jax.random.split(jax.random.PRNGKey(0))
-    x0 = target.prior_draw(prior_key)
+    x0 = target.prior_draw(prior_key) * 4
 
-    ess = sampler.sample(x0, 10000, L, key, ess= True)
+    ess = sampler.sample(x0, 300000, L, key, generalized= True, ess= True)
 
-    print(ess)
+    print(ess * 0.5)
 
 
 
@@ -513,10 +514,10 @@ if __name__ == '__main__':
 
     #stochastic_volatility()
     #esh_not_converging()
-    table1()
-
+    #table1()
+    run_problem()
     #epsilon_dimension_dependence()
-    #run_problem()
+
     #full_bias()
     #dimension_dependence()
 
