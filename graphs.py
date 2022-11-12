@@ -76,15 +76,15 @@ def bounce_frequency_full_bias():
 
 
 
-def dimension_dependence():
+def dimension_dependence_with_peaks():
     """Figure 2, 3"""
 
-    generalized = True
-    dimensions = [100, 200, 500, 1000, 3000, 10000]
+    generalized = False
+    dimensions = [100, 300, 1000, 3000]
 
-    df = pd.read_csv('Tests/data/dimensions/StandardNormal'+('_l' if generalized else '')+'.csv', sep='\t')
+    df = pd.read_csv('Tests/data/dimensions/StandardNormal'+('_g' if generalized else '')+'_eps4.csv', sep='\t')
 
-    skip_large = -7
+    skip_large = -1
     alpha = np.array(df['alpha'])[:skip_large]
     E, L = [], []
 
@@ -153,12 +153,103 @@ def dimension_dependence():
     plt.yscale('log')
 
 
-    if generalized:
-        plt.savefig('submission/GeneralizedTuning.pdf')
-    else:
-        plt.savefig('submission/BounceTuning.pdf')
+    # if generalized:
+    #     plt.savefig('submission/GeneralizedTuning.pdf')
+    # else:
+    #     plt.savefig('submission/BounceTuning.pdf')
 
     plt.show()
+
+
+
+def dimension_dependence():
+
+    ff, ff_title, ff_ticks = 20, 22, 18
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize= (21, 8))
+
+
+    dimensions = [100, 300, 1000, 3000, 10000]
+    targets = ['Kappa1', 'Kappa100', 'Rosenbrock']
+    colors= ['tab:blue', 'tab:orange', 'tab:red']
+    names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.5$)']
+    method_marker = ['s', 'o']
+    method_name = ['bounces', 'generalized']
+    DF= [[pd.read_csv('Tests/data/dimensions_dependence/'+tar+method+'.csv') for tar in targets] for method in ['', 'g']]
+
+    plt.subplot(1, 3, 1)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    for j in range(len(method_name)):
+        for i in range(len(targets)):
+            df = DF[j][i]
+            plt.plot(dimensions, df['eps'], method_marker[j], color = colors[i])
+            eps1 = np.dot(np.sqrt(dimensions), df['eps']) / np.sum(dimensions)
+            print(eps1)
+            plt.plot(dimensions, eps1 * np.sqrt(dimensions), color = colors[i], alpha= 0.2)
+
+    plt.xlabel('d', fontsize= ff)
+    plt.ylabel(r'$\epsilon$', fontsize= ff)
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.ylim(0.8, 1.1e2)
+
+
+    plt.subplot(1, 3, 2)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    for j in range(len(method_name)):
+        for i in range(len(targets)):
+            df = DF[j][i]
+            plt.plot(dimensions, df['alpha'] *np.sqrt(dimensions), method_marker[j], color = colors[i])
+            alpha = np.dot(np.sqrt(dimensions), df['alpha'] * np.sqrt(dimensions)) / np.sum(dimensions)
+            print(alpha)
+            plt.plot(dimensions, alpha * np.sqrt(dimensions), color = colors[i], alpha= 0.2)
+            plt.plot(dimensions, df['eps'] / df['ESS'], ':', color = colors[i])
+
+    plt.xlabel('d', fontsize= ff)
+    plt.ylabel('L', fontsize= ff)
+    plt.xscale('log')
+    plt.yscale('log')
+
+
+    plt.subplot(2, 3, 3)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    for j in range(len(method_name)):
+        for i in range(len(targets)):
+            df = DF[j][i]
+            plt.plot(dimensions, df['ESS'] / df['ESS'][2], method_marker[j], color = colors[i])
+            print(df['ESS'][0])
+            plt.plot(dimensions, np.ones(len(dimensions)), color = 'black')
+
+    plt.xlabel('d', fontsize= ff)
+    plt.ylabel('ESS / ESS(d = 1000)', fontsize= ff)
+    plt.xscale('log')
+    plt.ylim(0.8, 1.3)
+
+    plt.subplot(2, 3, 6)
+    plt.axis('off')
+    [plt.plot([], [], color=colors[i], label = names_targets[i]) for i in range(len(names_targets))]
+    plt.legend(loc = 3, fontsize= ff)
+
+    [plt.plot([], [], method_marker[j], color = colors[0], label = method_name[j]) for j in range(len(method_name))]
+    plt.legend(loc = 3, fontsize= ff)
+
+    #plt.gca().add_artist(plt.legend(, names_targets, loc = 4))
+    #plt.legend([plt.plot([], [], method_marker[j], color = 'black') for j in range(len(method_name))], method_name, loc = 3)
+
+
+    plt.savefig('submission/dimension_scaling2.png')
+
+    plt.show()
+
 
 
 
@@ -632,11 +723,12 @@ def first_nonzero_decimal(x):
         return 1 + first_nonzero_decimal(x*10)
 
 
+
 def esh_not_converging():
 
     data1 = np.load('ESH_not_converging/data/ESHexample_ESH.npy')
     data2 = np.load('ESH_not_converging/data/ESHexample_MCHMC.npy')
-
+    color1, color2, color_target = 'tab:red', 'tab:blue', 'binary'
 
     target = IllConditionedESH()#IllConditionedGaussian(d = 50, condition_number= 1)
     sigma1, sigmad = np.sqrt(target.variance[0]), np.sqrt(target.variance[-1])
@@ -655,6 +747,17 @@ def esh_not_converging():
 
     steps = [0, 100, 1000, 10000]
     times= [0, 1, 3]
+
+    # MMD
+    #mmd_avg = np.array([[MMD.mmd((data[t, :, :].T) / np.sqrt(target.variance), exact_samples / np.sqrt(target.variance))[0] for t in range(4)] for data in [data1, data2]])
+    #print(mmd_avg)
+
+    mmd_strings = [[r'$0.01$', r'$4.5 \cdot 10^{-4}$', '', r'$3.4 \cdot 10^{-5}$'],
+                   [r'$0.01$', r'$ < 10^{-5}$', '', r'$ < 10^{-5}$']]
+
+    shift = [0.8, -0.3, -0.3]
+    shift2 = [0, -0.15, -0.15]
+
     for i in range(3):
         t = times[i]
         plt.subplot(1, 3, i+1)
@@ -674,16 +777,23 @@ def esh_not_converging():
         y = np.linspace(-lim_y, lim_y, 100)
         X, Y = np.meshgrid(x, y)
         Z = np.exp(- 0.5 * (np.square(X/sigma1) + np.square(Y/sigmad)))
-        plt.contourf(X, Y, Z, cmap = 'Blues', levels = 100)
+        plt.contourf(X, Y, Z, cmap = color_target, levels = 100)
+
+
+        plt.title('steps = ' + str(steps[t]), fontsize= ff_title)
 
         # MMD
-        mmd_avg, mmd_conf = MMD.mmd((data1[t, :, :].T) / np.sqrt(target.variance), exact_samples / np.sqrt(target.variance))
+        plt.text(0.2 + shift[i], 3.5, 'MMD = ', fontsize= ff_title, color = 'black')
+        plt.text(2.0 + shift[i], 3.5, mmd_strings[0][t], fontsize= ff_title, color = color1)
+        plt.text(2.0 + shift[i], 3.0, mmd_strings[1][t], fontsize=ff_title, color = color2)
 
-        plt.title('steps = ' + str(steps[t]) + '\nMMD = {0}'.format(np.round(mmd_avg, first_nonzero_decimal(mmd_avg) + 1)), fontsize= ff_title)
+        # bias
+        plt.text(1.4 + shift2[i], -3.0, 'bias = ', fontsize=ff_title, color='black')
+        plt.text(3 + shift2[i], -3.0, bias_esh[t], fontsize=ff_title, color= color1)
+        plt.text(3 + shift2[i], -3.5, bias_mchmc[t], fontsize=ff_title, color= color2)
 
-
-        plt.plot(data1[t, 0, :], data1[t, -1, :], '.', color= 'tab:red', markersize = 4 if t == 0 else 4)
-        plt.plot(data2[t, 0, :], data2[t, -1, :], '.', color='gold', markersize = 2 if t == 0 else 4)
+        plt.plot(data1[t, 0, :], data1[t, -1, :], '.', color= color1, markersize = 6 if t == 0 else 2)
+        plt.plot(data2[t, 0, :], data2[t, -1, :], '.', color= color2, markersize = 3 if t == 0 else 2)
 
         plt.xlim(-lim_x, lim_x)
         plt.ylim(-lim_y, lim_y)
@@ -694,14 +804,14 @@ def esh_not_converging():
             plt.yticks([-3, -2, -1, 0, 1, 2, 3])
             plt.xticks([-2, 0, 2])
 
+            plt.plot([], [], '.', markersize =10, color = color1, label = 'ESH')
+            plt.plot([], [], '.', markersize=10, color= color2, label='MCHMC')
+            plt.legend(fontsize = ff-2, loc= 2)
+
+
         else:
             plt.yticks([])
             plt.xticks([-2, 0, 2])
-
-        if i == 2:
-            plt.plot([], [], '.', markersize =10, color = 'tab:red', label = 'ESH')
-            plt.plot([], [], '.', markersize=10, color='gold', label='MCHMC')
-            plt.legend(fontsize = ff-2, loc= 0)
 
 
 
@@ -783,15 +893,12 @@ def qspace():
 
 
 def epsilon_scaling():
-    data = np.load('Tests/data/epsilon_scaling.npy')
+    data = np.load('Tests/data/epsilon_scaling_kappa100.npy')
     dimensions = data[:, 0]
     ess = data[:, 1]
     eps = data[:, 2]
     cf = data[:, 3:].T
 
-
-    low_scan = 0.5 * 5.6 * np.sqrt(dimensions / 100.0)
-    high_scan = 2* 5.6 * np.sqrt(dimensions / 100.0)
 
     #plt.fill_between(dimensions, low_scan, high_scan, color = 'tab:blue', alpha = 0.1)
     plt.fill_between(dimensions, cf[0], cf[1], color='tab:blue', alpha=0.5)
@@ -807,7 +914,7 @@ def epsilon_scaling():
     plt.ylabel(r'$\epsilon$')
     plt.xscale('log')
     plt.yscale('log')
-    plt.savefig('epsilon_scaling.png')
+    plt.savefig('epsilon_scaling_kappa100.png')
 
     plt.show()
 
@@ -824,14 +931,17 @@ def epsilon_scaling():
     plt.ylabel(r'ESS')
     plt.xscale('log')
     plt.yscale('log')
-    plt.savefig('epsilon_ess.png')
+    plt.savefig('epsilon_ess_kappa100.png')
 
     plt.show()
 
 
 
-epsilon_scaling()
+#0.7, 0.2, 0.1
+#
 
+#epsilon_scaling()
+dimension_dependence_with_peaks()
 #dimension_dependence()
 #qspace()
 #esh_not_converging()

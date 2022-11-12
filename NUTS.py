@@ -220,7 +220,7 @@ def bimodal_mixing():
 
 
 
-def kappa100(key_num):
+def ill_conditioned(key_num, d = 100, condition_numer = 100.0):
 
     d, condition_number = 100, 100.0
     R = special_ortho_group.rvs(d, random_state=0)
@@ -328,11 +328,12 @@ def funnel(key_num):
 
 
 
-def rosenbrock(key_num):
+def rosenbrock(key_num, d = 36):
 
     #target setup
-    d= 36
-    Q, var_x, var_y = 0.1, 2.0, 10.098433122783046
+    #Q, var_x, var_y = 0.1, 2.0, 10.098433122783046
+    Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
+
     variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
 
     # setup
@@ -464,10 +465,11 @@ def bimodal_plot():
     plt.hist(X[:, 0], bins = 30, density=True)
     plt.show()
 
+
 def table1():
     repeat = 10
 
-    functions = [kappa100, bimodal, rosenbrock, funnel, stochastic_volatility]
+    functions = [ill_conditioned, bimodal, rosenbrock, funnel, stochastic_volatility]
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'Stochastic Volatility']
     ess, ess_std = np.zeros(len(names)), np.zeros(len(names))
     ess2, ess_std2 = np.zeros(len(names)), np.zeros(len(names))
@@ -485,9 +487,32 @@ def table1():
     #df.to_csv('submission/TableNUTS.csv', sep='\t', index=False)
 
 
+def dimension_scaling():
+
+    target = ill_conditioned
+    dimensions = [100, 300, 1000, 3000, 10000]
+    repeat = 3
+
+    ess, ess_std = np.zeros(len(dimensions)), np.zeros(len(dimensions))
+    ess2, ess_std2 = np.zeros(len(dimensions)), np.zeros(len(dimensions))
+
+    for i in range(len(dimensions)):
+        d = dimensions[i]
+        print(d)
+        ESS = np.array([target(key_num, d, 1.0) for key_num in range(repeat)])
+        ess[i], ess_std[i] = np.average(ESS[:, 0]), np.std(ESS[:, 0])
+        ess2[i], ess_std2[i] = np.average(ESS[:, 1]), np.std(ESS[:, 1])
+
+
+    np.save('Tests/data/dimensions_dependence/HMC_kappa1.npy', [ess, ess2])
+
+    print(ess)
+
+
 if __name__ == '__main__':
 
-    stochastic_volatility(0)
+    dimension_scaling()
+    #stochastic_volatility(0)
 
     # var = np.array([np.load('ground_truth'+str(i)+'.npy') for i in range(3)])
     # var_avg = np.average(var, axis = 0)

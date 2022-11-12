@@ -8,6 +8,7 @@ import os
 
 
 def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
+    show= True
 
     A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
 
@@ -15,22 +16,28 @@ def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
 
     results1 = search_step(ess_function, A, epsilon)
 
-    plt.figure(figsize= (15, 10))
-    plt.subplot(1, 2, 1)
-    ess, i, j = visualize(results1, A, epsilon, show = True)
+    if show:
+        plt.figure(figsize= (15, 10))
+        plt.subplot(1, 2, 1)
+    ess, i, j = visualize(results1, A, epsilon, show = show)
 
     if (i == 0) or (i == 5) or (j == 0) or (j == 5):
-        plt.show()
+        if show:
+            plt.show()
+        print('warning bounds')
+        return ess, A[i], epsilon[j]
+
 
     else:
         A = jnp.logspace(np.log10(A[i-1]), np.log10(A[i+1]), 6)
         epsilon = jnp.logspace(np.log10(epsilon[j-1]), np.log10(epsilon[j+1]), 6)
         results2 = search_step(ess_function, A, epsilon)
 
-        plt.subplot(1, 2, 2)
-        ess, i, j = visualize(results2, A, epsilon, show=True)
-
-        plt.show()
+        if show:
+            plt.subplot(1, 2, 2)
+        ess, i, j = visualize(results2, A, epsilon, show=show)
+        if show:
+            plt.show()
 
     return ess, A[i], epsilon[j]
 
@@ -75,6 +82,7 @@ def search_wrapper_1d(ess_function, epsmin, epsmax):
 
     j = jnp.argmax(results1)
     ess = results1[j]
+    eps= epsilon[j]
 
     plt.figure(figsize= (15, 10))
     plt.plot(epsilon, results1, 'o', color = 'black')
@@ -88,10 +96,15 @@ def search_wrapper_1d(ess_function, epsmin, epsmax):
     else:
         epsilon = jnp.logspace(np.log10(epsilon[j-1]), np.log10(epsilon[j+1]), 6)
         results2 = jax.pmap(ess_function)(epsilon)
+        j = jnp.argmax(results2)
+        ess_new = results2[j]
+        if ess_new > ess:
+            ess = ess_new
+            eps = epsilon[j]
 
         plt.plot(epsilon, results2, 'o', color='black')
         plt.title(r'ESS = {0}, $\epsilon$ = {1}'.format(np.round(ess, 4), np.round(epsilon[j], 2)))
         plt.show()
 
     print(ess)
-    return ess, epsilon[j]
+    return ess, eps

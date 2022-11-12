@@ -65,12 +65,12 @@ class Sampler:
 
             x, p, key, time = self.dynamics(state)
 
-            return (x, p, key, time), x
+            return (x, p, key, time), (x, p)
 
 
         # initial conditions
         p0, key = self.resample(key)
 
-        _, X = jax.lax.scan(step, init=(x0, p0,  key, 0.0), xs=None, length=num_steps)
+        X, P = jax.lax.scan(step, init=(x0, p0, key, 0.0), xs=None, length=num_steps)[1]
 
-        return X
+        return X, P
