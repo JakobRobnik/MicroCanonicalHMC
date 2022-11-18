@@ -568,7 +568,55 @@ def epsilon_dimension_dependence():
     np.save('Tests/data/epsilon_scaling_kappa100.npy', [scan(d) for d in dimensions])
 
 
+def full_bias_eps():
+
+    target = Rosenbrock(d = 100)
+    epsilon = np.linspace(0.05, 1.5, 10)
+    num_steps = 1000000
+    bias = np.empty((len(epsilon), num_steps))
+    sampler = ESH.Sampler(target, eps= 1.0)
+    L = 15 * jnp.sqrt(target.d)
+    key = jax.random.PRNGKey(0)
+    key, subkey = jax.random.split(key)
+    x0 = target.prior_draw(subkey)
+
+    for i in range(len(epsilon)):
+        print(i)
+        sampler.eps = epsilon[i]
+        bias[i, :] = sampler.sample(x0, num_steps, L, key, generalized= False, integrator= 'LF', monitor_energy= False, ess= True)
+
+    np.save('Tests/data/full_bias_eps_ross.npy', bias)
+
+
+def plot_full_bias():
+    from matplotlib import ticker
+
+    bias = np.load('Tests/data/full_bias_eps_ross.npy')
+    epsilon = np.linspace(0.05, 1.5, 10)
+    steps = np.arange(1, len(bias[0])+1)
+
+
+    X, Y = np.meshgrid(epsilon, steps)
+
+    plt.contourf(X, Y, bias.T, locator=ticker.LogLocator(subs = [1., 3.]), cmap = 'cividis_r')
+
+    plt.yscale('log')
+    plt.xlabel('$\epsilon$')
+    plt.ylabel('steps')
+
+    cbar = plt.colorbar()
+    cbar.ax.set_ylabel('bias')
+
+    plt.savefig('full_bias_eps_ross')
+
+    plt.show()
+
+
+
 if __name__ == '__main__':
+
+    #full_bias_eps()
+    plot_full_bias()
 
     #stochastic_volatility()
     #esh_not_converging()
@@ -578,7 +626,7 @@ if __name__ == '__main__':
     #epsilon_dimension_dependence()
 
     #full_bias()
-    dimension_dependence()
+    #dimension_dependence()
 
     #ill_conditioned(tunning=False, generalized=False)
     #ill_conditioned(tunning=True)

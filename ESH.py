@@ -155,8 +155,18 @@ class Sampler:
 
 
 
-    def sample(self, x0, num_steps, L, key, generalized = True, integrator= 'MN', ess=False, monitor_energy= False):
+    def sample(self, x_initial, num_steps, L, random_key, generalized = True, integrator= 'MN', ess=False, monitor_energy= False):
 
+        if isinstance(x_initial, str):
+            if x_initial == 'prior':
+                key, prior_key = jax.random.split(random_key)
+                x0 = self.Target.prior_draw(prior_key)
+            else:
+                raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
+
+        else:
+            key = random_key
+            x0 = x_initial
 
         def step(state, useless):
             """Tracks transform(x) as a function of number of iterations"""
@@ -216,6 +226,7 @@ class Sampler:
 
             _, bias = jax.lax.scan(bias_step, init=((x, u, g, r, key, 0.0), (w, jnp.square(x))), xs=None, length=num_steps)
 
+            return bias
             no_nans = 1-jnp.any(jnp.isnan(bias))
             cutoff_reached = bias[-1] < 0.1
 

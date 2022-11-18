@@ -256,8 +256,8 @@ class Rosenbrock():
     def __init__(self, d):
 
         self.d = d
-        self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #var_y is computed numerically (see compute_variance below)
-        #self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
+        #self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #var_y is computed numerically (see compute_variance below)
+        self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
         self.variance = jnp.concatenate((var_x * jnp.ones(d//2), var_y * jnp.ones(d//2)))
 
 
