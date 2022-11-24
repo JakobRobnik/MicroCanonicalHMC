@@ -270,7 +270,7 @@ class Rosenbrock():
     def grad_nlogp(self, x):
         X, Y = x[..., :self.d//2], x[..., self.d//2:]
 
-        return jnp.concatenate((X - 1.0 + 2*(jnp.square(X) - Y) * X / self.Q, (Y - jnp.square(X)) / self.Q))
+        return jnp.concatenate((X - 1.0 + 2*(jnp.square(X) - Y) * X / self.Q, (Y - jnp.square(X)) / self.Q), axis = -1)
 
 
     def draw(self, num):
