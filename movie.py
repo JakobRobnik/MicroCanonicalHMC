@@ -25,8 +25,8 @@ def movie(time, X, duration):
     x = np.linspace(-lim, lim, num)
     y = np.linspace(-lim, lim, num)
     xmesh, ymesh = np.meshgrid(x, y)
-    condition_number = 100.0
-    zmesh = np.exp(- 0.5 * (np.square(xmesh) * np.sqrt(condition_number)  + np.square(ymesh) /np.sqrt(condition_number)))
+    zmesh = np.exp(-)
+    #zmesh = np.exp(- 0.5 * (np.square(xmesh) * np.sqrt(condition_number)  + np.square(ymesh) /np.sqrt(condition_number)))
     ax.contourf(xmesh, ymesh, zmesh, cmap= 'cividis')
 
     # ax.colorbar()
@@ -59,13 +59,12 @@ def MCHMC():
     return time / time[-1], X
 
 
-def samples():
+def samples(target):
     steps = 40
 
-    #sampler = ESH.Sampler(target, eps=1.5)
-    sampler = myHMC.Sampler(target, eps=0.1)
-
-    X = sampler.sample(x0, steps, 1.5, key)
+    sampler = ESH.Sampler(target, eps=0.5)
+    alpha =  1e20
+    X = sampler.sample('prior', steps, alpha * np.sqrt(target.d), key, generalized= False, integrator='LF')
 
     time = np.arange(len(X))
     return time / time[-1], X
@@ -73,9 +72,6 @@ def samples():
 
 target= IllConditionedGaussian(50, 100.0)
 
-key = jax.random.PRNGKey(0)
-np.random.seed(1)
-x0 = np.random.normal(size= target.d)*2
 
 T, X = samples()
-movie(T, X, 10)
+movie(samples, target)

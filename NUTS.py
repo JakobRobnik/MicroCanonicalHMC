@@ -76,7 +76,7 @@ def sample_nuts(target, target_params, num_samples, key_num = 0, d= 1, names_out
 
 
 
-def ill_conditioned():
+def ill_conditioned_scan():
 
     d = 100
     R = special_ortho_group.rvs(d, random_state=0)
@@ -220,13 +220,12 @@ def bimodal_mixing():
 
 
 
-def ill_conditioned(key_num, d = 100, condition_numer = 100.0):
+def ill_conditioned(key_num, d = 100, condition_number = 100.0):
 
-    d, condition_number = 100, 100.0
     R = special_ortho_group.rvs(d, random_state=0)
 
-    nuts_setup = NUTS(targets.ill_conditioned_gaussian, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)  # originally: nuts_kernel
-    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=3000, num_chains=1, progress_bar=False)
+    nuts_setup = NUTS(targets.ill_conditioned_gaussian, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
+    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=1000, num_chains=1, progress_bar=False)
 
     # prior
     key = random.PRNGKey(key_num)
@@ -490,6 +489,7 @@ def table1():
 def dimension_scaling():
 
     target = ill_conditioned
+    #target = rosenbrock
     dimensions = [100, 300, 1000, 3000, 10000]
     repeat = 3
 
@@ -499,17 +499,20 @@ def dimension_scaling():
     for i in range(len(dimensions)):
         d = dimensions[i]
         print(d)
-        ESS = np.array([target(key_num, d, 1.0) for key_num in range(repeat)])
+        ESS = np.array([target(key_num, d, 100.0) for key_num in range(repeat)])
         ess[i], ess_std[i] = np.average(ESS[:, 0]), np.std(ESS[:, 0])
         ess2[i], ess_std2[i] = np.average(ESS[:, 1]), np.std(ESS[:, 1])
+        print(ess[i])
 
-
-    np.save('Tests/data/dimensions_dependence/HMC_kappa1.npy', [ess, ess2])
+    np.save('Tests/data/dimensions_dependence/HMC_kappa100.npy', [ess, ess2])
 
     print(ess)
 
 
 if __name__ == '__main__':
+
+    # ess, ess2 = np.load('Tests/data/dimensions_dependence/HMC_rosenbrock.npy')
+    # print(ess)
 
     dimension_scaling()
     #stochastic_volatility(0)
@@ -524,5 +527,5 @@ if __name__ == '__main__':
 
     #table1()
     #dimension_dependence()
-    #ill_conditioned()
+    #ill_conditioned_scan()
     #bimodal_plot()

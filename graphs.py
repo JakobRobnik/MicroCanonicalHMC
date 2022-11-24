@@ -44,7 +44,7 @@ def bounce_frequency_full_bias():
     #mask_plot = len(length) * [True, ]
 
     X = np.load('Tests/data/full_bias.npy')
-    indexes = point_reduction(len(X[0]), 100)
+    steps = point_reduction(10**6, 100)
 
 
     ff, ff_title, ff_ticks = 26, 20, 26
@@ -60,14 +60,14 @@ def bounce_frequency_full_bias():
     #colors = ['tab:red', 'tab:orange', 'gold', 'limegreen', 'seagreen']
     dash_size = [1, 5, 15, 25, 40, 80]
     for n in range(len(length)):
-        plt.plot(indexes, X[n, indexes], lw = lw, linestyle='--', dashes=(dash_size[n], 2),  color = colors[n], label = r'$L = $' + length[n])
+        plt.plot(steps, X[n], lw = lw, linestyle='--', dashes=(dash_size[n], 2),  color = colors[n], label = r'$L = $' + length[n])
 
     # plt.plot([0, len(variance_bias)], [0.1, 0.1], ':', color='black', alpha = 0.5) #threshold for effective sample size 200
     plt.legend(fontsize = ff)
     plt.yscale('log')
     plt.xscale('log')
     plt.xlabel('# gradient evaluations', fontsize = ff)
-    plt.ylabel('bias', fontsize = ff)
+    plt.ylabel(r'$b$', fontsize = ff)
     plt.xlim(1, 1e6)
     ess_axis(ax, ff)
     plt.savefig('submission/FullBias.pdf')
@@ -163,11 +163,11 @@ def dimension_dependence_with_peaks():
 def dimension_dependence():
     """Figure 3"""
 
-    ff, ff_title, ff_ticks = 20, 22, 18
+    ff, ff_title, ff_ticks = 30, 22, 28
     plt.rcParams['xtick.labelsize'] = ff_ticks
     plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize= (21, 8))
-
+    plt.figure(figsize= (21, 10))
+    ms = 15
 
     dimensions = [100, 300, 1000, 3000, 10000]
     targets = ['Kappa1', 'Kappa100', 'Rosenbrock']
@@ -177,16 +177,19 @@ def dimension_dependence():
     method_name = ['bounces', 'generalized']
     DF= [[pd.read_csv('Tests/data/dimensions_dependence/'+tar+method+'.csv') for tar in targets] for method in ['', 'g']]
 
-    plt.subplot(1, 3, 1)
+    hmc_data = np.array([np.load('Tests/data/dimensions_dependence/HMC_' + tar + '.npy') for tar in targets])
+
+
+    plt.subplot(2, 2, 3)
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
     for j in range(len(method_name)):
         for i in range(len(targets)):
             df = DF[j][i]
-            plt.plot(dimensions, df['eps'], method_marker[j], color = colors[i])
+            plt.plot(dimensions, df['eps'], method_marker[j], color = colors[i], markersize =  ms)
             eps1 = np.dot(np.sqrt(dimensions), df['eps']) / np.sum(dimensions)
-            print(eps1)
+            #print(eps1)
             plt.plot(dimensions, eps1 * np.sqrt(dimensions), color = colors[i], alpha= 0.2)
 
     plt.xlabel('d', fontsize= ff)
@@ -196,7 +199,7 @@ def dimension_dependence():
     plt.ylim(0.8, 1.1e2)
 
 
-    plt.subplot(1, 3, 2)
+    plt.subplot(2, 2, 4)
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -204,11 +207,11 @@ def dimension_dependence():
     for j in range(len(method_name)):
         for i in range(len(targets)):
             df = DF[j][i]
-            plt.plot(dimensions, df['alpha'] *np.sqrt(dimensions), method_marker[j], color = colors[i])
+            plt.plot(dimensions, df['alpha'] *np.sqrt(dimensions), method_marker[j], color = colors[i], markersize =  ms)
             alpha = np.dot(np.sqrt(dimensions), df['alpha'] * np.sqrt(dimensions)) / np.sum(dimensions)
-            print(alpha)
+            #print(alpha)
             plt.plot(dimensions, alpha * np.sqrt(dimensions), color = colors[i], alpha= 0.2)
-            plt.plot(dimensions, df['eps'] / df['ESS'], ':', color = colors[i])
+            #plt.plot(dimensions, df['eps'] / df['ESS'], ':', color = colors[i])
 
     plt.xlabel('d', fontsize= ff)
     plt.ylabel('L', fontsize= ff)
@@ -216,7 +219,7 @@ def dimension_dependence():
     plt.yscale('log')
 
 
-    plt.subplot(2, 3, 3)
+    plt.subplot(2, 1, 1)
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -224,28 +227,31 @@ def dimension_dependence():
     for j in range(len(method_name)):
         for i in range(len(targets)):
             df = DF[j][i]
-            plt.plot(dimensions, df['ESS'] / df['ESS'][2], method_marker[j], color = colors[i])
+            plt.plot(dimensions, df['ESS'] / df['ESS'][0], method_marker[j], color = colors[i], markersize =  ms)
             print(df['ESS'][0])
             plt.plot(dimensions, np.ones(len(dimensions)), color = 'black')
 
+    for i in range(len(targets)):
+        plt.plot(dimensions, hmc_data[i, 0, :] / hmc_data[i, 0, 0], '*', color = colors[i], markersize =  ms, alpha = 0.5)
+
     plt.xlabel('d', fontsize= ff)
-    plt.ylabel('ESS / ESS(d = 1000)', fontsize= ff)
+    plt.ylabel('ESS / ESS(d = 100)', fontsize= ff)
     plt.xscale('log')
-    plt.ylim(0.8, 1.3)
+    #plt.ylim(0.7, 1.4)
 
-    plt.subplot(2, 3, 6)
-    plt.axis('off')
-    [plt.plot([], [], color=colors[i], label = names_targets[i]) for i in range(len(names_targets))]
+    #plt.axis('off')
+    [plt.plot([], [], color=colors[i], label = names_targets[i], lw = 5) for i in range(len(names_targets))]
     plt.legend(loc = 3, fontsize= ff)
 
-    [plt.plot([], [], method_marker[j], color = colors[0], label = method_name[j]) for j in range(len(method_name))]
-    plt.legend(loc = 3, fontsize= ff)
+    [plt.plot([], [], method_marker[j], color = colors[0], label = method_name[j], markersize = ms) for j in range(len(method_name))]
+    plt.plot([], [], '*', color = colors[0], alpha = 0.5, label = 'NUTS', markersize= ms)
+    plt.legend(fontsize= ff-3, ncol = 2)
 
     #plt.gca().add_artist(plt.legend(, names_targets, loc = 4))
     #plt.legend([plt.plot([], [], method_marker[j], color = 'black') for j in range(len(method_name))], method_name, loc = 3)
 
-
-    plt.savefig('submission/dimension_scaling2.png')
+    plt.tight_layout()
+    plt.savefig('submission/dimension_scaling.pdf')
 
     plt.show()
 
@@ -323,6 +329,9 @@ def esh_not_converging():
 
         plt.plot(data1[t, 0, :], data1[t, -1, :], '.', color= color1, markersize = 6 if t == 0 else 2)
         plt.plot(data2[t, 0, :], data2[t, -1, :], '.', color= color2, markersize = 3 if t == 0 else 2)
+
+        b = np.sqrt(np.average((np.average(np.square(data2[t]), axis = 1) - target.variance) / target.variance))
+        print(b)
 
         plt.xlim(-lim_x, lim_x)
         plt.ylim(-lim_y, lim_y)
@@ -958,15 +967,165 @@ def epsilon_scaling():
 
 
 
+def bias_eps_gauss():
+    from matplotlib import ticker
+    import ESH
+
+    plt.rcParams.update({'font.size': 35})
+
+
+    ff, ff_title, ff_ticks = 32, 26, 29
+    #plt.rcParams['xtick.labelsize'] = ff_ticks
+    #plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(3 * 9, 2 * 9-2))
+
+
+    bias = np.load('Tests/data/bias_variance/gaussian_bias.npy').T
+    b = np.load('Tests/data/bias_variance/gaussian_b.npy').T
+    variance = np.square(b) - np.square(bias)
+    epsilon = np.linspace(1, 15, 60)
+
+    #epsilon = np.linspace(0.05, 1.5, 10)
+    steps = ESH.point_reduction(1000000, 100) + 1
+
+
+    X, Y = np.meshgrid(epsilon, steps)
+
+    ax = plt.subplot2grid(shape=(2, 3), loc=(0, 0), colspan=2, rowspan=2)
+
+    plt.title(r'$b = (\mathrm{bias}^2 + \mathrm{variance})^{1/2}$', color= plt.cm.Greens(500))
+    #plt.contourf(X, Y, bias, cmap = 'coolwarm'), levels = [ -0.3, -0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1, 0.3])
+    plt.contourf(X, Y, b, locator=ticker.LogLocator(subs = [1., 3.]), cmap = 'Greens')
+
+
+    # bias variance equality
+    steps_equality = []
+    eps_equality = []
+    frac = np.square(bias) / np.square(b)
+
+    for i in range(len(epsilon)):
+        index = np.argmin(np.abs(frac[:, i] - 0.5))
+        print(frac[index, i])
+        if np.abs(frac[index, i] - 0.5) < 0.1:
+            steps_equality.append(steps[index])
+            eps_equality.append(epsilon[i])
+
+    plt.plot(eps_equality, steps_equality, color = 'black', lw = 4)
+
+    plt.text(9.5, 3e5, 'bias dominates', color = plt.cm.Reds(200))
+    plt.text(2, 20, 'variance dominates', color=plt.cm.Blues(500))
+
+    #optimal settings
+    steps_optimal = []
+    eps_optimal = []
+    b_required = [0.1, ]#np.logspace(0, -2, 10)
+    opt_steps = np.empty(len(epsilon))
+
+    for i in range(len(b_required)):
+
+        for j in range(len(epsilon)): #scan over all epsilon
+            if b[-1, j] > b_required[i]:
+                opt_steps[j] = steps[-1]
+            else:
+                for k in range(len(steps)):
+                    if b[k, j] < b_required[i]:
+                        opt_steps[j] = steps[k]
+                        break
+
+        #find the best epsilon
+        index_eps = np.argmax(-opt_steps)
+        steps_optimal.append(opt_steps[index_eps])
+        eps_optimal.append(epsilon[index_eps])
+
+    plt.plot(eps_optimal, steps_optimal, '*', color = 'gold', markersize = 40)
+
+    plt.yscale('log')
+    plt.xlabel('$\epsilon$')
+    plt.ylabel('steps')
+
+    cbar = plt.colorbar()
+    #cbar.ax.set_ylabel('b')
+
+    ax = plt.subplot2grid(shape=(2, 3), loc=(0, 2))
+
+    plt.title(r'$\vert \mathrm{bias} \vert$', color = plt.cm.Reds(200))
+    plt.contourf(X, Y, np.abs(bias) +1e-3, locator=ticker.LogLocator(subs = [1., 3.]), cmap = 'Reds')
+
+    plt.yscale('log')
+    #plt.xlabel('$\epsilon$')
+    #plt.ylabel('steps')
+
+    cbar = plt.colorbar()
+    #cbar.ax.set_ylabel('bias')
+
+    ax = plt.subplot2grid(shape=(2, 3), loc=(1, 2))
+    plt.title(r'$\mathrm{variance}^{1/2}$', color = plt.cm.Blues(500))
+    plt.contourf(X, Y, np.sqrt(variance), locator=ticker.LogLocator(subs = [1., 3.]), cmap = 'Blues')
+
+    plt.yscale('log')
+    plt.xlabel('$\epsilon$')
+    #plt.ylabel('steps')
+
+    cbar = plt.colorbar()
+    #cbar.ax.set_ylabel('variance')
+
+
+    plt.savefig('submission/BiasVariance.pdf')
+    plt.tight_layout()
+
+    plt.show()
+
+
+
+def bias_eps():
+    from matplotlib import ticker
+    import ESH
+
+    plt.rcParams.update({'font.size': 35})
+
+
+    ff, ff_title, ff_ticks = 32, 26, 29
+    #plt.rcParams['xtick.labelsize'] = ff_ticks
+    #plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(15, 10))
+
+
+    #bias = np.load('Tests/data/bias_variance/gaussian_bias.npy').T
+    b = np.load('Tests/data/bias_variance/rosenbrock_b.npy').T
+    #variance = np.square(b) - np.square(bias)
+    epsilon = np.logspace(np.log10(0.01), np.log10(1.5), 15)
+
+    #epsilon = np.linspace(0.05, 1.5, 10)
+    steps = ESH.point_reduction(1000000, 100) + 1
+
+
+    X, Y = np.meshgrid(epsilon, steps)
+
+    #ax = plt.subplot2grid(shape=(2, 3), loc=(0, 0), colspan=2, rowspan=2)
+
+    plt.title(r'$b = (\mathrm{bias}^2 + \mathrm{variance})^{1/2}$', color= plt.cm.Greens(500))
+    #plt.contourf(X, Y, bias, cmap = 'coolwarm'), levels = [ -0.3, -0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1, 0.3])
+    plt.contourf(X, Y, b, locator=ticker.LogLocator(subs = [1., 3.]), cmap = 'Greens')
+
+
+    plt.yscale('log')
+    plt.yscale('log')
+    plt.xlabel('$\epsilon$')
+    plt.ylabel('steps')
+
+    cbar = plt.colorbar()
+
+    plt.tight_layout()
+    plt.savefig('rosenbrock_Q=0.5_d=100.png')
+
+    plt.show()
+
+
+#bias_eps()
+bias_eps_gauss()
 #bounce_frequency_full_bias()
-ill_conditioned()
+#ill_conditioned()
 #epsilon_scaling()
 
-#dimension_dependence()
-
+#bounce_frequency_full_bias()
 #esh_not_converging()
-
-#BimodalMarginal()
-#funnel()
-#rosenbrock()
-#stohastic_volatility()

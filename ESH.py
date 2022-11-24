@@ -48,24 +48,63 @@ class Sampler:
 
 
     def leapfrog(self, x, g, u, r):
+        """leapfrog"""
+        #half step in momentum
         uu, rr = self.update_momentum(self.eps * 0.5, g, u, r)
+
+        #full step in x
         xx = x + self.eps * uu
         gg = self.Target.grad_nlogp(xx)
+
+        #half step in momentum
         uu, rr = self.update_momentum(self.eps * 0.5, gg, uu, rr)
         return xx, gg, uu, rr
 
+    #
+    # def leapfrog(self, x, g, u, r):
+    #     """adjoint leapfrog"""
+    #
+    #     #half step in x
+    #     xx = x + 0.5 * self.eps * u
+    #     gg = self.Target.grad_nlogp(xx)
+    #
+    #     #full step in momentum
+    #     uu, rr = self.update_momentum(self.eps, gg, u, r)
+    #
+    #     #half step in x
+    #     xx = x + 0.5 * self.eps * uu
+    #
+    #     return xx, gg, uu, rr
+
 
     def minimal_norm(self, x, g, u, r):
-        """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
-        uu, rr = self.update_momentum(self.eps * lambda_c, g, u, r)
-        xx = x + self.eps * 0.5 * uu
+        """Adjoint integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
+
+        xx = x + lambda_c * self.eps * u
         gg = self.Target.grad_nlogp(xx)
-        uu, rr = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg, uu, rr)
-        xx = xx + self.eps * 0.5 * uu
+
+        uu, rr = self.update_momentum(0.5*self.eps, gg, u, r)
+
+        xx = xx + (1 - 2*lambda_c) * self.eps* uu
         gg = self.Target.grad_nlogp(xx)
-        uu, rr = self.update_momentum(self.eps * lambda_c, gg, uu, rr)
+
+        uu, rr = self.update_momentum(0.5 * self.eps, gg, uu, rr)
+
+        xx = xx + lambda_c * self.eps* uu
 
         return xx, gg, uu, rr
+
+    # def minimal_norm(self, x, g, u, r):
+    #     """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
+    #     uu, rr = self.update_momentum(self.eps * lambda_c, g, u, r)
+    #     xx = x + self.eps * 0.5 * uu
+    #     gg = self.Target.grad_nlogp(xx)
+    #     uu, rr = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg, uu, rr)
+    #     xx = xx + self.eps * 0.5 * uu
+    #     gg = self.Target.grad_nlogp(xx)
+    #     uu, rr = self.update_momentum(self.eps * lambda_c, gg, uu, rr)
+    #
+    #     return xx, gg, uu, rr
 
 
 
@@ -157,16 +196,6 @@ class Sampler:
 
     def sample(self, x_initial, num_steps, L, random_key, generalized = True, integrator= 'MN', ess=False, monitor_energy= False):
 
-        if isinstance(x_initial, str):
-            if x_initial == 'prior':
-                key, prior_key = jax.random.split(random_key)
-                x0 = self.Target.prior_draw(prior_key)
-            else:
-                raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
-
-        else:
-            key = random_key
-            x0 = x_initial
 
         def step(state, useless):
             """Tracks transform(x) as a function of number of iterations"""
@@ -193,26 +222,37 @@ class Sampler:
             F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
             W += w
             bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
+            #bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
 
             return ((x, u, g, r, key, time), (W, F2)), bias
 
 
 
-        # initial conditions
-        x = x0
-        g = self.Target.grad_nlogp(x0)
-        r = 0.5 + np.log(self.Target.d) - self.Target.nlogp(x0) / self.Target.d # initialize r such that all the chains have the same energy = d (1 + log d) / 2. For a standard Gaussian the weights are then around one on the typical set.
+        ### initial conditions ###
+        if isinstance(x_initial, str):
+            if x_initial == 'prior':  # draw the initial x from the prior
+                key, prior_key = jax.random.split(random_key)
+                x = self.Target.prior_draw(prior_key)
+            else:  # if not 'prior' the x_initial should specify the initial condition
+                raise KeyError(
+                    'x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
+        else: #initial x is given
+            key = random_key
+            x = x_initial
+
+        g = self.Target.grad_nlogp(x)
+        r = 0.5 + np.log(self.Target.d) - self.Target.nlogp(x) / self.Target.d # initialize r such that all the chains have the same energy = d (1 + log d) / 2. For a standard Gaussian the weights are then around one on the typical set.
         w = jnp.exp(r) / self.Target.d
         # u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
         u, key = self.random_unit_vector(key)
 
-        #integrator
+        ### integrator ###
         integrator_step = self.leapfrog if (integrator=='LF') else self.minimal_norm
         grad_evals_per_step = 1.0 if integrator == 'LF' else 2.0
         if integrator != 'LF' and integrator != 'MN':
             print('integrator = ' + integrator + 'is not a valid option.')
 
-        #bounce mechanism
+        ### bounce mechanism ###
         dynamics = lambda state: self.dynamics_bounces_step(state, lambda eps, w: eps, L, integrator_step) #bounces equally spaced in distance
 
         if generalized: #do a continous momentum decoherence (generalized MCHMC)
@@ -220,13 +260,15 @@ class Sampler:
             dynamics = lambda state: self.generalized_dynamics_step(state, nu, integrator_step)
 
 
-        #do sampling
+        ### do sampling ###
 
         if ess:  # only track the bias
 
             _, bias = jax.lax.scan(bias_step, init=((x, u, g, r, key, 0.0), (w, jnp.square(x))), xs=None, length=num_steps)
 
-            return bias
+            steps = point_reduction(len(bias), 100)
+            return bias[steps]
+
             no_nans = 1-jnp.any(jnp.isnan(bias))
             cutoff_reached = bias[-1] < 0.1
 
@@ -349,3 +391,11 @@ def ess_cutoff_crossing(bias):
     crossing_index = jax.lax.scan(find_crossing, init= (0, 1), xs = bias, length=len(bias))[0][0]
 
     return 200.0 / np.sum(crossing_index)
+
+
+def point_reduction(num_points, reduction_factor):
+    """reduces the number of points for plotting purposes"""
+
+    indexes = np.concatenate((np.arange(1, 1 + num_points // reduction_factor, dtype=int),
+                              np.arange(1 + num_points // reduction_factor, num_points, reduction_factor, dtype=int)))
+    return indexes
