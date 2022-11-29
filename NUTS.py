@@ -225,7 +225,7 @@ def ill_conditioned(key_num, d = 100, condition_number = 100.0):
     R = special_ortho_group.rvs(d, random_state=0)
 
     nuts_setup = NUTS(targets.ill_conditioned_gaussian, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
-    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=1000, num_chains=1, progress_bar=False)
+    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=1000, num_chains=1, progress_bar=True)
 
     # prior
     key = random.PRNGKey(key_num)

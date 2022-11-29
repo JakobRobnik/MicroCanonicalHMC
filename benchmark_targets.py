@@ -289,14 +289,20 @@ class Rosenbrock():
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
-    def compute_variance(self):
+    def compute_moments(self):
         num = 100000000
         x = np.random.normal(loc=1.0, scale=1.0, size=num)
         y = np.random.normal(loc=np.square(x), scale=jnp.sqrt(self.Q), size=num)
 
-        var_x = jnp.sum(jnp.square(x)) / (num - 1)
-        var_y = jnp.sum(jnp.square(y)) / (num - 1)
-        print(var_x, var_y)
+        x2 = jnp.sum(jnp.square(x)) / (num - 1)
+        y2 = jnp.sum(jnp.square(y)) / (num - 1)
+
+        x1 = np.average(x)
+        y1 = np.average(y)
+
+        print(np.sqrt(0.5*(np.square(np.std(x)) + np.square(np.std(y)))))
+
+        print(x2, y2)
 
 
 class StochasticVolatility():
@@ -407,11 +413,9 @@ def check_gradient(target, x):
 
 if __name__ == '__main__':
 
-    target = StochasticVolatility()
+    target = Rosenbrock(d = 2)
 
-    key = jax.random.PRNGKey(0)
-
-    target.prior_draw(key)
+    target.compute_moments()
 
     #check_gradient(target, x)
     #target.compute_variance()
