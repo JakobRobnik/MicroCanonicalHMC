@@ -415,7 +415,7 @@ if __name__ == '__main__':
 
     target = Rosenbrock(d = 2)
 
-    target.compute_moments()
+    #target.compute_moments()
 
     #check_gradient(target, x)
     #target.compute_variance()

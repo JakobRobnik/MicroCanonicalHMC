@@ -59,8 +59,7 @@ def full_bias():
     bias = np.empty((len(length), len(reduced_steps)))
     for n in range(len(length)):
         print(n)
-        sampler = mchmc.Sampler(StandardNormal(d= d), 'LF', False)
-        sampler.set_hyperparameters(length[n], 1.0)
+        sampler = mchmc.Sampler(StandardNormal(d= d), length[n], 1.0, 'LF', False)
         bias[n, :] = sampler.sample(steps, ess= True)
 
     np.save('Tests/data/full_bias.npy', bias)
@@ -78,13 +77,11 @@ def ill_conditioned():
 
 
     def ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
-        sampler = mchmc.Sampler(Target=target, integrator, generalized)
-        sampler.set_hyperparameters(alpha* np.sqrt(target.d), eps)
+        sampler = mchmc.Sampler(target, alpha* np.sqrt(target.d), eps, integrator, generalized)
         return jnp.average(sampler.parallel_sample(10, num_samples, ess=True))
 
     def std_ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
-        sampler = mchmc.Sampler(Target=target, integrator, generalized)
-        sampler.set_hyperparameters(alpha * np.sqrt(target.d), eps)
+        sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized)
         return jnp.std(sampler.parallel_sample(10, num_samples, ess=True))
 
 
@@ -199,9 +196,8 @@ def table1():
     else:
 
         def ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
-            sampler = mchmc.Sampler(target, integrator, generalized)
-            sampler.set_hyperparameters(alpha * np.sqrt(target.d), eps)
-            return jnp.average(mchmc.Sampler(Target=target).parallel_sample(10, num_samples, ess=True))
+            sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized)
+            return jnp.average(sampler.parallel_sample(10, num_samples, ess=True))
 
 
 
@@ -255,8 +251,7 @@ def energy_fluctuations():
     for i in range(len(targets)):
         target = targets[i]
 
-        sampler = mchmc.Sampler(target, integrator= 'LF', generalized=True)
-        sampler.set_hyperparameters(alpha[i] * jnp.sqrt(target.d), eps[i])
+        sampler = mchmc.Sampler(target, alpha[i] * jnp.sqrt(target.d), eps[i], integrator= 'LF', generalized=True)
         x, w, E = sampler.sample(num_steps[i], monitor_energy=True)
 
         avgE = np.average(E, weights=w)
@@ -271,8 +266,7 @@ def stochastic_volatility():
 
     target = StochasticVolatility()
 
-    sampler = mchmc.Sampler(target, 'LF', True)
-    sampler.set_hyperparameters(1.61 * jnp.sqrt(target.d), 0.63)
+    sampler = mchmc.Sampler(target, 1.61 * jnp.sqrt(target.d), 0.63, 'LF', True)
 
 
     X, W = sampler.sample(300000)
@@ -348,9 +342,7 @@ def full_bias_eps():
     bias = np.empty((len(epsilon), num_saved_steps))
     Estd = np.empty(len(epsilon))
     importance_weight_factor = np.empty(len(epsilon))
-    sampler = mchmc.Sampler(target, 'LF', False)
-
-    sampler.set_hyperparameters(1.0 * jnp.sqrt(target.d) * np.sqrt(np.average(target.variance)), 1.0)
+    sampler = mchmc.Sampler(target, 1.0 * jnp.sqrt(target.d) * np.sqrt(np.average(target.variance)), 1.0, 'LF', False)
 
     for i in range(len(epsilon)):
         print(i)
@@ -365,12 +357,11 @@ def full_bias_eps():
 
 
 
-
 if __name__ == '__main__':
 
-    #table1()
+    table1()
     #energy_fluctuations()
-    dimension_dependence()
+    #dimension_dependence()
     #full_bias_eps()
 
 

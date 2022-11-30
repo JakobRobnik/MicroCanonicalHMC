@@ -19,7 +19,7 @@ tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 't
 
 
 
-def bounce_frequency_full_bias():
+def ess_definition():
     """ Figure 2 """
 
     def point_reduction(points, reduction_factor):
@@ -67,10 +67,10 @@ def bounce_frequency_full_bias():
     plt.yscale('log')
     plt.xscale('log')
     plt.xlabel('# gradient evaluations', fontsize = ff)
-    plt.ylabel(r'$b$', fontsize = ff)
+    plt.ylabel(r'$b_2$', fontsize = ff)
     plt.xlim(1, 1e6)
     ess_axis(ax, ff)
-    plt.savefig('submission/FullBias.pdf')
+    plt.savefig('submission/ESSdefinition.pdf')
     plt.show()
 
 
@@ -971,9 +971,9 @@ def epsilon_scaling():
 
 
 
-def bias_eps_gauss():
+def bias_variance():
     from matplotlib import ticker
-    import ESH
+    import mchmc
 
     plt.rcParams.update({'font.size': 35})
 
@@ -990,14 +990,14 @@ def bias_eps_gauss():
     epsilon = np.linspace(1, 15, 60)
 
     #epsilon = np.linspace(0.05, 1.5, 10)
-    steps = ESH.point_reduction(1000000, 100) + 1
+    steps = mchmc.point_reduction(1000000, 100) + 1
 
 
     X, Y = np.meshgrid(epsilon, steps)
 
     ax = plt.subplot2grid(shape=(2, 3), loc=(0, 0), colspan=2, rowspan=2)
 
-    plt.title(r'$b = (\mathrm{bias}^2 + \mathrm{variance})^{1/2}$', color= plt.cm.Greens(500))
+    plt.title(r'$b_2 = (b_1^2 + \sigma^2)^{1/2}$', color= plt.cm.Greens(500))
     #plt.contourf(X, Y, bias, cmap = 'coolwarm'), levels = [ -0.3, -0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1, 0.3])
     plt.contourf(X, Y, b, locator=ticker.LogLocator(subs = [1., 3.]), cmap = 'Greens')
 
@@ -1052,7 +1052,7 @@ def bias_eps_gauss():
 
     ax = plt.subplot2grid(shape=(2, 3), loc=(0, 2))
 
-    plt.title(r'$\vert \mathrm{bias} \vert$', color = plt.cm.Reds(200))
+    plt.title(r'$\vert b_1 \vert$', color = plt.cm.Reds(200))
     plt.contourf(X, Y, np.abs(bias) +1e-3, locator=ticker.LogLocator(subs = [1., 3.]), cmap = 'Reds')
 
     plt.yscale('log')
@@ -1063,7 +1063,7 @@ def bias_eps_gauss():
     #cbar.ax.set_ylabel('bias')
 
     ax = plt.subplot2grid(shape=(2, 3), loc=(1, 2))
-    plt.title(r'$\mathrm{variance}^{1/2}$', color = plt.cm.Blues(500))
+    plt.title(r'$\sigma$', color = plt.cm.Blues(500))
     plt.contourf(X, Y, np.sqrt(variance), locator=ticker.LogLocator(subs = [1., 3.]), cmap = 'Blues')
 
     plt.yscale('log')
@@ -1125,4 +1125,6 @@ def bias_eps():
     plt.show()
 
 
-esh_not_converging()
+ess_definition()
+#bias_variance()
+#esh_not_converging()

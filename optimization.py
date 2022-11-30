@@ -31,8 +31,7 @@ plt.figure(figsize=(15, 10))
 # plt.plot(np.insert(target.nlogp(X), 0, loss0) + 0.5*d *np.log(2*np.pi), '.', markersize= 20, color = 'tab:orange', label = 'HMC (hand-tuned)')
 
 #MCHMC
-sampler = mchmc.Sampler(target, 'LF', True)
-sampler.set_hyperparameters(np.inf, eps=0.9 * np.sqrt(d/50))
+sampler = mchmc.Sampler(target, np.inf, 0.9 * np.sqrt(d/50), 'LF', True)
 X, W = sampler.sample(100)
 plt.plot(np.insert(target.nlogp(X), 0, loss0) + 0.5*d *np.log(2*np.pi), '.', markersize= 20, color = 'tab:blue', label = 'MCHMC (no bounces)')
 plt.plot([0, len(X)], np.ones(2) * d * 0.5 * (1 + np.log(2 * np.pi)), '-', color = 'black', label = 'entropy')
