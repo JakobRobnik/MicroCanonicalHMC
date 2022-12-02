@@ -170,15 +170,14 @@ def dimension_dependence():
     ms = 15
 
     dimensions = [100, 300, 1000, 3000, 10000]
-    targets = ['Kappa1', 'Kappa100', 'Rosenbrock']
+    targets = ['kappa1', 'kappa100', 'Rosenbrock']
     colors= ['tab:blue', 'tab:orange', 'tab:red']
     names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.5$)']
     method_marker = ['s', 'o']
     method_name = ['bounces', 'generalized']
     DF= [[pd.read_csv('Tests/data/dimensions_dependence/'+tar+method+'.csv') for tar in targets] for method in ['', 'g']]
 
-    hmc_data = np.array([np.load('Tests/data/dimensions_dependence/HMC_' + tar + '.npy') for tar in targets])
-
+    hmc_data = [np.load('Tests/data/dimensions_dependence/HMC_' + tar + '.npy') for tar in targets]
 
     plt.subplot(2, 2, 3)
     ax = plt.gca()
@@ -234,7 +233,7 @@ def dimension_dependence():
             plt.plot(dimensions, np.ones(len(dimensions)), color = 'black')
 
     for i in range(len(targets)):
-        plt.plot(dimensions, hmc_data[i, 0, :] / hmc_data[i, 0, 0], '*', color = colors[i], markersize =  ms, alpha = 0.5)
+        plt.plot(dimensions[:len(hmc_data[i][0])], hmc_data[i][0] / hmc_data[i][0][0], '*', color = colors[i], markersize =  ms, alpha = 0.5)
 
     plt.xlabel('d', fontsize= ff)
     plt.ylabel('ESS(d) / ESS(100)', fontsize= ff)
@@ -1125,6 +1124,7 @@ def bias_eps():
     plt.show()
 
 
-ess_definition()
+dimension_dependence()
+#ess_definition()
 #bias_variance()
 #esh_not_converging()

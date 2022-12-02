@@ -490,7 +490,7 @@ def dimension_scaling():
 
     target = ill_conditioned
     #target = rosenbrock
-    dimensions = [100, 300, 1000, 3000, 10000]
+    dimensions = [100, 300, 1000, 3000]
     repeat = 3
 
     ess, ess_std = np.zeros(len(dimensions)), np.zeros(len(dimensions))
