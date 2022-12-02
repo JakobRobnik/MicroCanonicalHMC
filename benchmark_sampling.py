@@ -67,7 +67,6 @@ def full_bias():
 
 def ill_conditioned():
     condition_numbers = jnp.logspace(0, 5, 18)
-    key = jax.random.PRNGKey(0)
     integrator= 'LF'
     generalized = False
     name_sampler = integrator + ('_g' if generalized else '')
@@ -100,6 +99,28 @@ def ill_conditioned():
     df.to_csv('submission/Table_ICG_' + name_sampler + '.csv', index=False)
     print(df)
 
+
+
+def ill_conditioned_tuning_free():
+    condition_numbers = jnp.logspace(0, 5, 18)
+    integrator= 'LF'
+    generalized = True
+
+    targets = [IllConditionedGaussian(d= 100, condition_number= kappa) for kappa in condition_numbers]
+    num_samples = [5000 * (int)(np.power(kappa, 0.3)) for kappa in condition_numbers]
+
+    def ESS(target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
+        sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized)
+        sampler.tune_hyperparameters()
+        ess = sampler.parallel_sample(10, num_samples, ess=True)
+        return jnp.average(ess), jnp.std(ess)
+
+    results = np.array([ESS(targets[i], num_samples[i]) for i in range(len(targets))])
+
+    df = pd.DataFrame({'Condition number': condition_numbers, 'ESS': results[:, 0], 'err ESS': results[:, 1]})
+
+    df.to_csv('submission/Table_ICG_tuning_free_g.csv', index=False)
+    print(df)
 
 
 
@@ -149,8 +170,6 @@ def table1():
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
     targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), german_credit.Target(), StochasticVolatility()]
 
-    sigma= np.sqrt([np.average(target.variance) for target in targets])
-    sigma[1] = 1.0
 
     # dimensions = [100, 300, 1000, 3000, 10000]
     # names= [str(d) for d in dimensions]
@@ -199,6 +218,12 @@ def table1():
             sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized)
             return jnp.average(sampler.parallel_sample(10, num_samples, ess=True))
 
+        def ESS_tf(target, num_samples):  #tuning-free sequential mode. Only runs a handful of chains to average ESS over the initial conditions
+            sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized)
+            sampler.tune_hyperparameters()
+            ess= jnp.average(sampler.parallel_sample(10, num_samples, ess=True))
+            print(ess)
+            return ess, sampler.L / np.sqrt(target.d), sampler.eps
 
 
         #1.0 for Ross, 5.6 for kappa 1, 2.5 for kappa 100
@@ -218,10 +243,10 @@ def table1():
 
 
         else: #do a grid scan over epsilon
-            results = np.array([grid_search.search_wrapper_1d(lambda e: ESS(alpha * sigma[i], e, targets[i], num_samples[i]), borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
-            df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'eps': results[:, 1]})
 
-
+            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets))])
+            #results = np.array([grid_search.search_wrapper_1d(lambda e: ESS(alpha * sigma[i], e, targets[i], num_samples[i]), borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
+            df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 
     #df.to_csv('Tests/data/dimensions_dependence/Rossenbrockg.csv', index=False)
 
@@ -257,7 +282,7 @@ def energy_fluctuations():
         avgE = np.average(E, weights=w)
         stdE = np.sqrt(np.average(np.square(E - avgE), weights=w))
 
-        print(names[i] +': '+ str(stdE / target.d), sampler.eps, L)
+        print(names[i] +': '+ str(stdE / target.d), sampler.eps)
 
 
 
@@ -306,27 +331,14 @@ def stochastic_volatility():
 def esh_not_converging():
 
     target = IllConditionedESH()
-    bounces = False
-    L = np.sqrt(np.average(target.variance)) * np.sqrt(target.d) if bounces else 1e20
-    eps = 0.5 #if bounces else 0.1
-    num_chains = 500
-    num_steps = 10000
+    bounces= False
+    L = np.sqrt(np.average(target.variance)) * np.sqrt(target.d) if bounces else np.inf
 
-    sampler = mchmc.Sampler(target, eps)
+    sampler = mchmc.Sampler(target, L, 0.5, 'LF', False)
 
-    key = jax.random.PRNGKey(1)
-                    # time  coordinate   chain
-    results = np.empty((4, target.d, num_chains))
+    X, w = sampler.parallel_sample(500, 10000)
 
-    for i in range(num_chains):
-        key, key_prior, key_bounces = jax.random.split(key, 3)
-        x0 = target.prior_draw(key_prior)#jax.random.normal(key_prior, shape= (target.d, ), dtype = 'float64')
-        X, w = sampler.sample(x0, num_steps, L, key_bounces)
-
-        results[:, :, i] = X[[0, 100, 1000, 10000], :]
-        results[0, :, i] = x0
-
-    np.save('ESH_not_converging/data/ESHexample_eps1_'+('MCHMC' if bounces else 'ESH')+'.npy', results)
+    np.save('ESH_not_converging/data/ESHexample_'+('MCHMC' if bounces else 'ESH')+'.npy', X[:, [0, 100, 1000, 10000], :])
 
 
 
@@ -359,6 +371,8 @@ def full_bias_eps():
 
 if __name__ == '__main__':
 
+    #ill_conditioned_tuning_free()
+    #esh_not_converging()
     table1()
     #energy_fluctuations()
     #dimension_dependence()

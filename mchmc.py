@@ -197,7 +197,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, x_initial = 'prior', random_key= None, ess=False, monitor_energy= False):
+    def sample(self, num_steps, x_initial = 'prior', random_key= None, ess=False, monitor_energy= False, prerun= False):
 
 
         def step(state, useless):
@@ -205,21 +205,40 @@ class Sampler:
 
             x, u, g, r, key, time, w = self.dynamics(state)
 
-            return (x, u, g, r, key, time), (self.Target.transform(x), w)
+            return (x, u, g, r, key, time), (self.Target.transform(x), - self.Target.nlogp(x) / self.Target.d)
 
 
         def step_with_energy(state, useless):
             """Tracks transform(x) and the energy as a function of number of iterations"""
 
             x, u, g, r, key, time, w = self.dynamics(state)
+            LL = self.Target.nlogp(x)
+            energy = LL + 0.5 * self.Target.d * jnp.log(self.Target.d * jnp.square(W))
+            return (x, u, g, r, key, time), (self.Target.transform(x),  - LL / self.Target.d, energy)
 
-            return (x, u, g, r, key, time), (self.Target.transform(x), w, self.energy(x, w))
 
+
+        def prerun_step(state_track, useless):
+            """Only tracks b as a function of number of iterations."""
+
+            x, u, g, r, key, time, w = self.dynamics(state_track[0])
+
+            energy = self.energy(x, w)
+            W, F1, F2, E1, E2 = state_track[1]
+            F1 = (F1 * W + (w * x)) / (W + w)  # Update <f(x)> with a Kalman filter
+            F2 = (F2 * W + (w * jnp.square(x))) / (W + w)
+            E1 = (E1 * W + (w * energy)) / (W + w)
+            E2 = (E2 * W + (w * jnp.square(energy))) / (W + w)
+            W += w
+            #bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
+
+            return ((x, u, g, r, key, time), (W, F1, F2, E1, E2)), None
 
         def b_step(state_track, useless):
             """Only tracks b as a function of number of iterations."""
 
             x, u, g, r, key, time, w = self.dynamics(state_track[0])
+            w = jnp.exp(- self.Target.nlogp(x) / self.Target.d)
             W, F2 = state_track[1]
 
             F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
@@ -250,17 +269,28 @@ class Sampler:
 
             return ess_cutoff_crossing(b) * no_nans * cutoff_reached / self.grad_evals_per_step #return 0 if there are nans, or if the bias cutoff was not reached
 
+        elif prerun:  # only track the x moments and the energy moments
+            en = self.energy(x, w)
+            W, F1, F2, E1, E2 = jax.lax.scan(prerun_step, init=((x, u, g, r, key, 0.0), (w, x, jnp.square(x), en, jnp.square(en))), xs=None, length=num_steps)[0][1]
+
+            sigma = jnp.sqrt(jnp.average(F2 - jnp.square(F1)))
+            stdE = jnp.sqrt(jnp.average(E2 - jnp.square(E1))) / self.Target.d
+
+            return sigma, stdE
+
 
         else: # track the full transform(x)
 
             if monitor_energy:
-                X, W, E = jax.lax.scan(step_with_energy, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
-                return X, W, E
+                X, logw, E = jax.lax.scan(step_with_energy, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
+                logw -= jnp.median(logw)
+                return X, np.exp(logw), E
 
             else:
                 final_state, track = jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)
-                X, W = track[0], track[1]
-                return X, W
+                X, logw = track[0], track[1]
+                logw -= jnp.median(logw)
+                return X, jnp.exp(logw)
 
 
 
@@ -286,10 +316,22 @@ class Sampler:
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None):
 
         self.set_hyperparameters(np.inf, 0.1)
-        x, w, E = self.sample(1000, x_initial, random_key, monitor_energy= True)
+        stdE_wanted = 0.004#0.004
 
-        np.std()
+        def tuning_step():
 
+            # get a small number of samples
+            sigma, stdE = self.sample(1000, x_initial, random_key, prerun= True)
+
+            #update hyperparameters
+            L_new = sigma * np.sqrt(self.Target.d)
+            eps_new = self.eps * np.sqrt(stdE_wanted / stdE) #assume stdE ~ eps^2
+            self.set_hyperparameters(L_new, eps_new)
+            print(sigma, stdE / stdE_wanted, L_new / np.sqrt(self.Target.d), eps_new)
+
+        for i in range(5):
+            tuning_step()
+        print('-------------')
 
 
     def weigths_from_energy_conservation(self, X, W):

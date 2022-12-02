@@ -233,7 +233,7 @@ def dimension_dependence():
             plt.plot(dimensions, np.ones(len(dimensions)), color = 'black')
 
     for i in range(len(targets)):
-        plt.plot(dimensions[:len(hmc_data[i][0])], hmc_data[i][0] / hmc_data[i][0][0], '*', color = colors[i], markersize =  ms, alpha = 0.5)
+        plt.plot(dimensions, hmc_data[i][0] / hmc_data[i][0][0], '*', color = colors[i], markersize =  ms, alpha = 0.5)
 
     plt.xlabel('d', fontsize= ff)
     plt.ylabel('ESS(d) / ESS(100)', fontsize= ff)
@@ -269,10 +269,10 @@ def esh_not_converging():
     target = IllConditionedESH()#IllConditionedGaussian(d = 50, condition_number= 1)
     sigma1, sigmad = np.sqrt(target.variance[0]), np.sqrt(target.variance[-1])
 
-    #bias_esh= [5.4, 0.64, 0.64, 0.64]
-    #bias_mchmc = [5.4, 0.64, 0.48, 0.05]
+    bias_esh= ['5.4', '0.70', '0.70', '0.70']
+    bias_mchmc = ['5.4', '0.18', '0.04', '0.02']
 
-    exact_samples = np.array([target.draw(k) for k in jax.random.split(jax.random.PRNGKey(0), 5000)])
+    #exact_samples = np.array([target.draw(k) for k in jax.random.split(jax.random.PRNGKey(0), 5000)])
 
     plt.figure(figsize=(21, 7))
 
@@ -325,16 +325,16 @@ def esh_not_converging():
 
         # bias
         plt.text(1.4 + shift2[i], -3.0, 'bias = ', fontsize=ff_title, color='black')
-        #plt.text(3 + shift2[i], -3.0, bias_esh[t], fontsize=ff_title, color= color1)
-        #plt.text(3 + shift2[i], -3.5, bias_mchmc[t], fontsize=ff_title, color= color2)
+        plt.text(3 + shift2[i], -3.0, bias_esh[t], fontsize=ff_title, color= color1)
+        plt.text(3 + shift2[i], -3.5, bias_mchmc[t], fontsize=ff_title, color= color2)
 
-        plt.plot(data1[t, 0, :], data1[t, -1, :], '.', color= color1, markersize = 6 if t == 0 else 2)
-        plt.plot(data2[t, 0, :], data2[t, -1, :], '.', color= color2, markersize = 3 if t == 0 else 2)
+        plt.plot(data1[:, t, 0], data1[:, t, -1], '.', color= color1, markersize = 6 if t == 0 else 2)
+        plt.plot(data2[:, t, 0], data2[:, t, -1], '.', color= color2, markersize = 3 if t == 0 else 2)
 
-        b1 = np.sqrt(np.average((np.average(np.square(data1[t]), axis=1) - target.variance) / target.variance))
-        b2 = np.sqrt(np.average((np.average(np.square(data2[t]), axis = 1) - target.variance) / target.variance))
+        #b1 = np.sqrt(np.average((np.average(np.square(data1[t]), axis=1) - target.variance) / target.variance))
+        #b2 = np.sqrt(np.average((np.average(np.square(data2[t]), axis = 1) - target.variance) / target.variance))
 
-        print(b1, b2)
+        #print(b1, b2)
 
         plt.xlim(-lim_x, lim_x)
         plt.ylim(-lim_y, lim_y)
@@ -357,7 +357,7 @@ def esh_not_converging():
 
 
     plt.subplots_adjust(wspace=0, hspace=0)
-    plt.savefig('submission/particles.pdf')
+    plt.savefig('submission/ESHnotConverging.pdf')
     plt.show()
 
 
@@ -437,7 +437,7 @@ def ill_conditioned():
 
 
     ff, ff_title, ff_ticks = 34, 22, 34
-
+    ms = 10
     plt.rcParams['xtick.labelsize'] = ff_ticks
     plt.rcParams['ytick.labelsize'] = ff_ticks
     plt.figure(figsize= (20, 9))
@@ -453,32 +453,22 @@ def ill_conditioned():
 
     data = pd.read_csv('submission/Table_ICG_LF_g.csv')
     color = 'indigo'
-    plt.plot(data['Condition number'], data['ESS'], 'o-', color=color, label='generalized MCHMC')
+    plt.plot(data['Condition number'], data['ESS'], 'o-', markersize= ms, color=color, label='generalized MCHMC')
     plt.fill_between(data['Condition number'], data['ESS'] - data['err ESS'], data['ESS'] + data['err ESS'], color=color, alpha=0.07)
+
+    data = pd.read_csv('submission/Table_ICG_tuning_free_g.csv')
+    plt.plot(data['Condition number'], data['ESS'], 'v-', markersize = ms, color=color, label='tuning-free version')
 
     data = pd.read_csv('submission/Table_ICG_LF.csv')
     color = 'cornflowerblue'
-    plt.plot(data['Condition number'], data['ESS'], 'o-', color=color, label='MCHMC (fine tuning)')
+    plt.plot(data['Condition number'], data['ESS'], 'o-', color=color, markersize= ms, label='bounces MCHMC')
     plt.fill_between(data['Condition number'], data['ESS'] - data['err ESS'], data['ESS'] + data['err ESS'], color=color, alpha=0.07)
-
-    # ess_mchmc = np.load('Tests/data/kappa/fine_tuned.npy')
-    # plt.plot(kappa, ess_mchmc[:, 0], 'o:', color='tab:blue', label='MCHMC (bounces in distance)')
-    # plt.fill_between(kappa, ess_mchmc[:, 0] - ess_mchmc[:, 1], ess_mchmc[:, 0] + ess_mchmc[:, 1], color='tab:blue', alpha=0.07)
-
-    # ess_mchmc = np.load('Tests/data/kappa/L1.5.npy')[:, 0]
-    # plt.plot(kappa, ess_mchmc, 'o:', color = 'tab:blue', alpha = 0.5, label = 'MCHMC (tuning free)')
-    ess_mchmc = np.load('Tests/data/kappa/no_tuning_t.npy')
-    color = 'teal'
-    plt.plot(kappa, ess_mchmc[:, 0], 'o-', color = color, label = 'MCHMC (tuning free)')
-    plt.fill_between(kappa, ess_mchmc[:, 0] - ess_mchmc[:, 1], ess_mchmc[:, 0] + ess_mchmc[:, 1], color = color, alpha = 0.07)
 
 
     ess_nuts = np.load('Tests/data/kappa/NUTS.npy').T
     color = 'tab:orange'
-    plt.plot(kappa, ess_nuts[:, 0], 'o-', color=color, label='NUTS')
+    plt.plot(kappa, ess_nuts[:, 0], 'o-', color=color, markersize= ms, label='NUTS')
     plt.fill_between(kappa, ess_nuts[:, 0] - ess_nuts[:, 1], ess_nuts[:, 0] + ess_nuts[:, 1], color=color, alpha=0.07)
-
-
 
 
     plt.ylabel('ESS', fontsize= ff)
@@ -499,7 +489,7 @@ def ill_conditioned():
     plt.xlim(*xlims)
     plt.ylim(*ylims)
 
-    plt.savefig('submission/kappa.pdf')
+    plt.savefig('submission/ICG.pdf')
     plt.show()
 
 
@@ -1124,6 +1114,7 @@ def bias_eps():
     plt.show()
 
 
+#ill_conditioned()
 dimension_dependence()
 #ess_definition()
 #bias_variance()

@@ -490,7 +490,8 @@ def dimension_scaling():
 
     target = ill_conditioned
     #target = rosenbrock
-    dimensions = [100, 300, 1000, 3000]
+    #dimensions = [100, 300, 1000, 3000]
+    dimensions = [10000, ]
     repeat = 3
 
     ess, ess_std = np.zeros(len(dimensions)), np.zeros(len(dimensions))
@@ -499,22 +500,31 @@ def dimension_scaling():
     for i in range(len(dimensions)):
         d = dimensions[i]
         print(d)
-        ESS = np.array([target(key_num, d, 100.0) for key_num in range(repeat)])
-        ess[i], ess_std[i] = np.average(ESS[:, 0]), np.std(ESS[:, 0])
-        ess2[i], ess_std2[i] = np.average(ESS[:, 1]), np.std(ESS[:, 1])
-        print(ess[i])
+        for key_num in range(repeat):
+            es = target(key_num, d, 100.0)
+            print(es)
+        #ESS = np.array([target(key_num, d, 100.0) for key_num in range(repeat)])
 
-    np.save('Tests/data/dimensions_dependence/HMC_kappa100.npy', [ess, ess2])
-
-    print(ess)
+    #     ess[i], ess_std[i] = np.average(ESS[:, 0]), np.std(ESS[:, 0])
+    #     ess2[i], ess_std2[i] = np.average(ESS[:, 1]), np.std(ESS[:, 1])
+    #     print(ess[i])
+    #
+    # np.save('Tests/data/dimensions_dependence/HMC_kappa100.npy', [ess, ess2])
+    #
+    # print(ess)
 
 
 if __name__ == '__main__':
+    X = np.load('Tests/data/dimensions_dependence/HMC_kappa100.npy')
+    a = np.array([0.003069791714632162, 0.001534978318431252])
+
+    Y = np.concatenate((X, a[:, None]), axis = 1)
+    np.save('Tests/data/dimensions_dependence/HMC_kappa100.npy', Y)
 
     # ess, ess2 = np.load('Tests/data/dimensions_dependence/HMC_rosenbrock.npy')
     # print(ess)
 
-    dimension_scaling()
+    #dimension_scaling()
     #stochastic_volatility(0)
 
     # var = np.array([np.load('ground_truth'+str(i)+'.npy') for i in range(3)])
