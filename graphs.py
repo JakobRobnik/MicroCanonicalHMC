@@ -257,6 +257,50 @@ def dimension_dependence():
     plt.show()
 
 
+def energy_fluctuations():
+
+    ff, ff_title, ff_ticks = 30, 22, 28
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize= (21, 10))
+    ms = 15
+
+    targets = ['STN', 'kappa100', 'rosenbrock_Q=0.1']
+    colors= ['tab:blue', 'tab:orange', 'tab:red']
+    names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.1$)']
+    data = [np.load('Tests/data/energy_'+tar+'.npy') for tar in targets]
+
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    for i in range(len(targets)):
+        plt.plot(data[i][0], data[i][1], 'o-', markersize = 10, color = colors[i], alpha = 0.5)
+
+    plt.ylabel('STD[E] / d', fontsize= ff)
+    plt.xlabel(r'$\epsilon$', fontsize= ff)
+    plt.xscale('log')
+    plt.yscale('log')
+
+    target_names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
+    stde = [0.0026986675576273923, 0.001224812776628166, 0.00887076730549486, 0.0001840576977253037, 0.0020054838685436573]
+    eps = [2.428389768790094, 3.0, 0.3311311214825911, 0.2290867652767773, 0.2089296130854039]
+    plt.plot(eps, stde, 'o', markersize = 10, color = 'black', alpha = 0.5)
+    for i in range(len(eps)):
+        plt.text(eps[i], stde[i] * 1.2, target_names[i], horizontalalignment = 'center', fontsize = ff)
+
+    plt.plot([0.03, 15], [0.004, 0.004], ':', color = 'black', alpha = 0.5)
+    plt.xlim(0.03, 15)
+    plt.ylim(7e-5, 1)
+    [plt.plot([], [], color=colors[i], label = names_targets[i], lw = 5) for i in range(len(names_targets))]
+    plt.legend(fontsize= ff)
+
+    plt.tight_layout()
+    plt.savefig('submission/EnergyFluctuations.pdf')
+
+    plt.show()
+
+
 
 
 def esh_not_converging():
@@ -1114,8 +1158,9 @@ def bias_eps():
     plt.show()
 
 
+energy_fluctuations()
 #ill_conditioned()
-dimension_dependence()
+#dimension_dependence()
 #ess_definition()
 #bias_variance()
 #esh_not_converging()

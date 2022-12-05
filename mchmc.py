@@ -316,7 +316,7 @@ class Sampler:
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None):
 
         self.set_hyperparameters(np.inf, 0.1)
-        stdE_wanted = 0.004#0.004
+        stdE_wanted = 0.002#0.004
 
         def tuning_step():
 

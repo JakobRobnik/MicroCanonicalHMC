@@ -250,15 +250,16 @@ def table1():
 
     #df.to_csv('Tests/data/dimensions_dependence/Rossenbrockg.csv', index=False)
 
-    df.to_csv('submission/Table ' + name_sampler + '.csv', index=False)
+    df.to_csv('submission/Table ' + name_sampler + '_0.002.csv', index=False)
     print(df)
 
 
 def energy_fluctuations():
 
-    results = pd.read_csv('submission/Table generalized_LF_q=0_tuning-free.csv')
-    print(results)
-    num_steps= np.rint(400 / np.array(results['ESS']))
+    file = 'submission/TableESH_generalized.csv'
+    file2 = 'submission/Table generalized_LF_q=0_energy.csv'
+
+    results = pd.read_csv(file, sep= '\t')
     #alpha = np.array(results['alpha'])
     eps = np.array(results['eps'])
 
@@ -272,18 +273,21 @@ def energy_fluctuations():
     sigma[1] = 1.0
     alpha = 1.0 * sigma
     key = jax.random.PRNGKey(0)
+    stdE = np.empty(len(eps))
 
-    for i in range(len(targets)):
+    for i in range(5):
+        print(names[i])
         target = targets[i]
 
-        sampler = mchmc.Sampler(target, alpha[i] * jnp.sqrt(target.d), eps[i], integrator= 'LF', generalized=True)
-        x, w, E = sampler.sample(num_steps[i], monitor_energy=True)
+        sampler = mchmc.Sampler(target, np.inf, eps[i], integrator= 'LF', generalized=True)
+        sigma, stdE[i] = sampler.sample(1000, prerun= True)
 
-        avgE = np.average(E, weights=w)
-        stdE = np.sqrt(np.average(np.square(E - avgE), weights=w))
+    print(stdE.tolist(), eps.tolist())
+    #results['stdE/d'] = stdE
 
-        print(names[i] +': '+ str(stdE / target.d), sampler.eps)
+    #print(results)
 
+    #results.to_csv(file2, index= False)
 
 
 
