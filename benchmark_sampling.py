@@ -145,7 +145,7 @@ def table1():
 
     #version of the sampler
     q = 0 #choice of the Hamiltonian (q = 0 or q = 2)
-    generalized = False #choice of the momentum decoherence mechanism
+    generalized = True #choice of the momentum decoherence mechanism
     alpha = 1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
     integrator = 'LF' #integrator (Leapfrog (LF) or Minimum Norm (MN))
     HMC = False
@@ -233,7 +233,7 @@ def table1():
         borders_alpha = np.array([[0.3, 3], [0.3, 3], [10, 40], [0.3, 10], [0.3, 3], [0.3, 3]])
 
 
-        num_samples= [30000, 300000, 500000, 300000, 300000, 10000]
+        num_samples= [30000, 300000, 500000, 300000, 300000, 100000]
 
         if integrator == 'MN':
             borders_eps *= np.sqrt(10.9)
@@ -244,9 +244,10 @@ def table1():
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 
 
-        else: #do a grid scan over epsilon
+        else:
 
-            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets))])
+            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets)-1, len(targets))])
+            print(results)
             #results = np.array([grid_search.search_wrapper_1d(lambda e: ESS(alpha * sigma[i], e, targets[i], num_samples[i]), borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 

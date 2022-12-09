@@ -272,7 +272,7 @@ def energy_fluctuations2():
     plt.legend(fontsize=ff)
 
     plt.tight_layout()
-    plt.savefig('submission/EnergyFluctuationsDimension2.png')
+    #plt.savefig('submission/EnergyFluctuationsDimension2.png')
 
     plt.show()
 
@@ -966,7 +966,6 @@ def qspace():
 
 
 
-
 #dimension_dependence()
-energy_fluctuations()
+energy_fluctuations2()
 #ill_conditioned()

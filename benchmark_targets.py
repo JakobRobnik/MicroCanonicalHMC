@@ -285,6 +285,7 @@ class Rosenbrock():
     def transform(self, x):
         return x
 
+
     def prior_draw(self, key):
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
@@ -303,6 +304,7 @@ class Rosenbrock():
         print(np.sqrt(0.5*(np.square(np.std(x)) + np.square(np.std(y)))))
 
         print(x2, y2)
+
 
 
 class StochasticVolatility():
@@ -343,7 +345,6 @@ class StochasticVolatility():
         z = z.at[-1].set(jnp.exp(x[-1]) * self.typical_nu) # = nu
 
         return z
-
 
 
     def prior_draw(self, key):
