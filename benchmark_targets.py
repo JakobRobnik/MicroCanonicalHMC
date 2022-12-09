@@ -52,7 +52,7 @@ class IllConditionedGaussian():
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') #* jnp.sqrt(self.variance[-1])
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') #* jnp.sqrt(self.variance)#* jnp.sqrt(self.variance[-1])
 
 
 
@@ -256,8 +256,8 @@ class Rosenbrock():
     def __init__(self, d):
 
         self.d = d
-        self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #var_y is computed numerically (see compute_variance below)
-        #self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
+        #self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #var_y is computed numerically (see compute_variance below)
+        self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
         self.variance = jnp.concatenate((var_x * jnp.ones(d//2), var_y * jnp.ones(d//2)))
 
 
@@ -413,7 +413,8 @@ def check_gradient(target, x):
 
 if __name__ == '__main__':
 
-    target = Rosenbrock(d = 2)
+    target = Rosenbrock(d = 100)
+    print(np.sqrt(np.average(target.variance)))
 
     #target.compute_moments()
 

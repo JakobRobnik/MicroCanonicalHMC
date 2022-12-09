@@ -213,40 +213,50 @@ class Sampler:
 
             x, u, g, r, key, time, w = self.dynamics(state)
             LL = self.Target.nlogp(x)
-            energy = LL + 0.5 * self.Target.d * jnp.log(self.Target.d * jnp.square(W))
+            energy = LL + 0.5 * self.Target.d * jnp.log(self.Target.d * jnp.square(w))
             return (x, u, g, r, key, time), (self.Target.transform(x),  - LL / self.Target.d, energy)
-
 
 
         def prerun_step(state_track, useless):
             """Only tracks b as a function of number of iterations."""
 
-            x, u, g, r, key, time, w = self.dynamics(state_track[0])
+            x, u, g, r, key, time, w_integrated = self.dynamics(state_track[0])
 
-            energy = self.energy(x, w)
-            W, F1, F2, E1, E2 = state_track[1]
-            F1 = (F1 * W + (w * x)) / (W + w)  # Update <f(x)> with a Kalman filter
-            F2 = (F2 * W + (w * jnp.square(x))) / (W + w)
-            E1 = (E1 * W + (w * energy)) / (W + w)
-            E2 = (E2 * W + (w * jnp.square(energy))) / (W + w)
-            W += w
-            #bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
+            W, entropy, F1, F2, E1, E2 = state_track[1]
 
-            return ((x, u, g, r, key, time), (W, F1, F2, E1, E2)), None
+            #energy and the weight
+            l = self.Target.nlogp(x) / self.Target.d
+            energy = self.Target.d * (0.5 * jnp.log(self.Target.d * jnp.square(w_integrated)) + l)
+            w = jnp.exp(- (l - entropy))
+
+            #expectation values (with the Kalman filter)
+            F1 = (F1 * W + (w * x)) / (W + w)  # <x>
+            F2 = (F2 * W + (w * jnp.square(x))) / (W + w) # <x^2>
+            E1 = (E1 * W + (w * energy)) / (W + w) # <E>
+            E2 = (E2 * W + (w * jnp.square(energy))) / (W + w) # <E^2>
+
+            #update the total weights for the next step
+            entropy_new = (W * entropy + w * l) / (W + w) # <L(x)> / d
+            W = (W + w) * jnp.exp(entropy_new - entropy)
+
+            return ((x, u, g, r, key, time), (W, entropy_new, F1, F2, E1, E2)), None
+
 
         def b_step(state_track, useless):
             """Only tracks b as a function of number of iterations."""
 
             x, u, g, r, key, time, w = self.dynamics(state_track[0])
-            w = jnp.exp(- self.Target.nlogp(x) / self.Target.d)
-            W, F2 = state_track[1]
+            W, F2, entropy = state_track[1]
+            l = self.Target.nlogp(x) / self.Target.d
+            w = jnp.exp(- (l - entropy))
 
-            F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
-            W += w
+            F2 = (W * F2 + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
+            entropy_new = (W * entropy + w * l) / (W + w)  # Update entropy = <L(x)/d> with a Kalman filter
+            W = (W + w) * jnp.exp(entropy_new - entropy)
             bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
             #bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
 
-            return ((x, u, g, r, key, time), (W, F2)), bias
+            return ((x, u, g, r, key, time), (W, F2, entropy_new)), bias
 
 
         x, u, g, r, key, w = self.get_initial_conditions(x_initial, random_key)
@@ -256,7 +266,7 @@ class Sampler:
 
         if ess:  # only track the bias
 
-            _, b = jax.lax.scan(b_step, init=((x, u, g, r, key, 0.0), (w, jnp.square(x))), xs=None, length=num_steps)
+            _, b = jax.lax.scan(b_step, init=((x, u, g, r, key, 0.0), (1.0, jnp.square(x), self.Target.nlogp(x) / self.Target.d)), xs=None, length=num_steps)
 
 
             no_nans = 1-jnp.any(jnp.isnan(b))
@@ -269,14 +279,17 @@ class Sampler:
 
             return ess_cutoff_crossing(b) * no_nans * cutoff_reached / self.grad_evals_per_step #return 0 if there are nans, or if the bias cutoff was not reached
 
+
         elif prerun:  # only track the x moments and the energy moments
-            en = self.energy(x, w)
-            W, F1, F2, E1, E2 = jax.lax.scan(prerun_step, init=((x, u, g, r, key, 0.0), (w, x, jnp.square(x), en, jnp.square(en))), xs=None, length=num_steps)[0][1]
+            l = self.Target.nlogp(x) / self.Target.d
+            en = self.Target.d * (0.5 * jnp.log(self.Target.d * jnp.square(w)) + l)
+
+            W, entropy, F1, F2, E1, E2 = jax.lax.scan(prerun_step, init=((x, u, g, r, key, 0.0), (1.0, l, x, jnp.square(x), en, jnp.square(en))), xs=None, length=num_steps)[0][1]
 
             sigma = jnp.sqrt(jnp.average(F2 - jnp.square(F1)))
-            stdE = jnp.sqrt(jnp.average(E2 - jnp.square(E1))) / self.Target.d
+            varE = (E2 - jnp.square(E1)) / self.Target.d
 
-            return sigma, stdE
+            return sigma, varE
 
 
         else: # track the full transform(x)
@@ -284,14 +297,13 @@ class Sampler:
             if monitor_energy:
                 X, logw, E = jax.lax.scan(step_with_energy, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
                 logw -= jnp.median(logw)
-                return X, np.exp(logw), E
+                return X, jnp.exp(logw), E
 
             else:
                 final_state, track = jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)
                 X, logw = track[0], track[1]
                 logw -= jnp.median(logw)
                 return X, jnp.exp(logw)
-
 
 
 
@@ -315,22 +327,35 @@ class Sampler:
 
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None):
 
-        self.set_hyperparameters(np.inf, 0.1)
-        stdE_wanted = 0.002#0.004
+        ### random key ###
+        if random_key is None:
+            key = jax.random.PRNGKey(0)
+        else:
+            key = random_key
 
-        def tuning_step():
+
+        self.set_hyperparameters(np.inf, 0.1)
+        varE_wanted = 0.001
+
+        key, subkey = jax.random.split(key)
+        x = self.sample(1000, x_initial, subkey)[0][-1, :] #burn-in (exaggerated number of steps)
+
+        def tuning_step(key):
 
             # get a small number of samples
-            sigma, stdE = self.sample(1000, x_initial, random_key, prerun= True)
+            key_new, subkey = jax.random.split(key)
+            sigma, varE = self.sample(1000, x, subkey, prerun= True)
 
             #update hyperparameters
             L_new = sigma * np.sqrt(self.Target.d)
-            eps_new = self.eps * np.sqrt(stdE_wanted / stdE) #assume stdE ~ eps^2
+            eps_new = self.eps * np.power(varE_wanted / varE, 0.25) #assume stdE ~ eps^2
             self.set_hyperparameters(L_new, eps_new)
-            print(sigma, stdE / stdE_wanted, L_new / np.sqrt(self.Target.d), eps_new)
+            print('varE / varE wanted: {}, eps: {}, sigma = L / sqrt(d): {}'.format(varE / varE_wanted, L_new / np.sqrt(self.Target.d), eps_new, sigma))
+
+            return key_new
 
         for i in range(5):
-            tuning_step()
+            key = tuning_step(key)
         print('-------------')
 
 

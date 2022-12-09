@@ -145,7 +145,7 @@ def table1():
 
     #version of the sampler
     q = 0 #choice of the Hamiltonian (q = 0 or q = 2)
-    generalized = True #choice of the momentum decoherence mechanism
+    generalized = False #choice of the momentum decoherence mechanism
     alpha = 1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
     integrator = 'LF' #integrator (Leapfrog (LF) or Minimum Norm (MN))
     HMC = False
@@ -230,14 +230,16 @@ def table1():
         #borders_eps = 1.0* np.array([[0.5 * np.sqrt(d/100.0), 2 * np.sqrt(d/100.0)] for d in dimensions])
         #num_samples= [100000 for d in dimensions]
         borders_eps = np.array([[1.0, 4.0], [0.5, 10.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]])
+        borders_alpha = np.array([[0.3, 3], [0.3, 3], [10, 40], [0.3, 10], [0.3, 3], [0.3, 3]])
+
+
         num_samples= [30000, 300000, 500000, 300000, 300000, 10000]
 
         if integrator == 'MN':
             borders_eps *= np.sqrt(10.9)
 
         if alpha == -1: #do a grid scan over alpha and epsilon
-            alpha_min, alpha_max = 0.3, 20
-            results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), alpha_min, alpha_max, borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
+            results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), borders_alpha[i][0], borders_alpha[i][1], borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
 
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 
@@ -250,7 +252,7 @@ def table1():
 
     #df.to_csv('Tests/data/dimensions_dependence/Rossenbrockg.csv', index=False)
 
-    df.to_csv('submission/Table ' + name_sampler + '_0.002.csv', index=False)
+    df.to_csv('submission/Table ' + name_sampler + '.csv', index=False)
     print(df)
 
 
@@ -346,39 +348,11 @@ def esh_not_converging():
 
 
 
-def full_bias_eps():
-    #target = StandardNormal(d = 100)
-    #epsilon = np.logspace(np.log10(1), np.log10(15), 60)
-
-    target = Rosenbrock(d=36)
-    epsilon = np.logspace(np.log10(0.01), np.log10(1.2), 15) / np.sqrt(3)
-
-    num_steps = 10000
-    num_saved_steps = len(ESH.point_reduction(num_steps, 100))
-    bias = np.empty((len(epsilon), num_saved_steps))
-    Estd = np.empty(len(epsilon))
-    importance_weight_factor = np.empty(len(epsilon))
-    sampler = mchmc.Sampler(target, 1.0 * jnp.sqrt(target.d) * np.sqrt(np.average(target.variance)), 1.0, 'LF', False)
-
-    for i in range(len(epsilon)):
-        print(i)
-        sampler.eps = epsilon[i]
-        #bias[i, :] = sampler.sample('prior', num_steps, L, key, generalized= False, integrator= 'LF', ess= True)
-        X, W, E = sampler.sample(num_steps, monitor_energy=True)
-        Estd[i] = np.sqrt(np.average(np.square(E - np.average(E, weights= W)), weights=W)) / target.d
-        print(sampler.eps, L, Estd[i])
-        importance_weight_factor[i] = np.average(W)**2 / np.average(np.square(W))
-
-    np.save('Tests/data/bias_variance/Rosenbrock_energy_weights.npy', [Estd, importance_weight_factor])
-
-
-
 if __name__ == '__main__':
 
     #ill_conditioned_tuning_free()
     #esh_not_converging()
     table1()
-    #energy_fluctuations()
     #dimension_dependence()
     #full_bias_eps()
 
