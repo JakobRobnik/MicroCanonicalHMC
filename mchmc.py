@@ -334,7 +334,7 @@ class Sampler:
             key = random_key
 
 
-        self.set_hyperparameters(np.inf, 0.1)
+        self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
         varE_wanted = 0.001
 
         key, subkey = jax.random.split(key)
@@ -348,9 +348,9 @@ class Sampler:
 
             #update hyperparameters
             L_new = sigma * np.sqrt(self.Target.d)
-            eps_new = self.eps * np.power(varE_wanted / varE, 0.25) #assume stdE ~ eps^2
+            eps_new = self.eps * np.power(varE_wanted / varE, 0.25) #assume varE ~ eps^2
             self.set_hyperparameters(L_new, eps_new)
-            print('varE / varE wanted: {}, eps: {}, sigma = L / sqrt(d): {}'.format(varE / varE_wanted, L_new / np.sqrt(self.Target.d), eps_new, sigma))
+            print('varE / varE wanted: {}, eps: {}, sigma = L / sqrt(d): {}'.format(varE / varE_wanted, eps_new, sigma))
 
             return key_new
 

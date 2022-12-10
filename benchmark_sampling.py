@@ -104,7 +104,7 @@ def ill_conditioned():
 def ill_conditioned_tuning_free():
     condition_numbers = jnp.logspace(0, 5, 18)
     integrator= 'LF'
-    generalized = True
+    generalized = False
 
     targets = [IllConditionedGaussian(d= 100, condition_number= kappa) for kappa in condition_numbers]
     num_samples = [5000 * (int)(np.power(kappa, 0.3)) for kappa in condition_numbers]
@@ -119,7 +119,7 @@ def ill_conditioned_tuning_free():
 
     df = pd.DataFrame({'Condition number': condition_numbers, 'ESS': results[:, 0], 'err ESS': results[:, 1]})
 
-    df.to_csv('submission/Table_ICG_tuning_free_g.csv', index=False)
+    df.to_csv('submission/Table_ICG_tuning_free'+('_g' if generalized else '')+'.csv', index=False)
     print(df)
 
 
@@ -247,7 +247,6 @@ def table1():
         else:
 
             results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets)-1, len(targets))])
-            print(results)
             #results = np.array([grid_search.search_wrapper_1d(lambda e: ESS(alpha * sigma[i], e, targets[i], num_samples[i]), borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 

@@ -186,96 +186,6 @@ def plot_power_lines(power):
     plt.ylim(*ylims)
 
 
-def energy_fluctuations():
-
-    ff, ff_ticks = 34, 30
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize= (21, 8))
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-
-    ### scaling with epsilon ###
-
-    targets = ['STN', 'ICG', 'rosenbrock', 'funnel', 'german']
-    colors= ['tab:blue', 'tab:orange', 'tab:red', 'tab:green', 'tab:purple']
-    names_targets = ['Standard Gaussian', 'Ill-conditioned Gaussian', 'Rosenbrock function', "Neal's funnel", "German credit"]
-    data = [pd.read_csv('Tests/data/energy/'+tar+'.csv') for tar in targets]
-
-
-    for i in range(len(targets)):
-        plt.plot(data[i]['eps'], data[i]['varE'], '-', color = colors[i])
-        plt.fill_between(data[i]['eps'], data[i]['low err stdE'], data[i]['high err stdE'], color = colors[i], alpha = 0.2)
-
-    plt.ylabel('Var[E] / d', fontsize= ff)
-    plt.xlabel(r'$\epsilon$', fontsize= ff)
-    plt.xscale('log')
-    plt.yscale('log')
-
-    ### stdE \propto square(eps) lines
-    plot_power_lines(4.0)
-
-
-    ### optimal epsilon ###
-    eps = [7.3, 2.428389768790094, 0.3311311214825911, 0.2290867652767773, 0.2089296130854039]
-    for i in range(len(targets)):
-        j = 0
-        while data[i]['eps'][j] < eps[i]:
-            j+=1
-        j-=1
-        v1, v2 = np.log(data[i]['varE'][j]), np.log(data[i]['varE'][j+1])
-        e1, e2 = np.log(data[i]['eps'][j]), np.log(data[i]['eps'][j+1])
-        varE = np.exp(v1 + (v2 - v1) * (np.log(eps[i]) - e1) / (e2 - e1))
-        plt.plot([eps[i], ], [varE, ], 'o', markersize = 15, color = colors[i])
-
-
-    plt.plot([0.03, 15], [0.001, 0.001], color = 'black', alpha =  0.8) # tuning-free algorithm choice
-    plt.xlim(0.03, 15)
-    plt.ylim(1e-6, 1e1)
-    [plt.plot([], [], color=colors[i], label = names_targets[i], lw = 5) for i in range(len(names_targets))]
-    plt.legend(fontsize= ff, loc = 2, ncol = 2)
-
-    plt.tight_layout()
-    plt.savefig('submission/EnergyFluctuations.pdf')
-
-    plt.show()
-
-
-def energy_fluctuations2():
-    ff, ff_ticks = 34, 30
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize=(21, 8))
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    ### scaling with epsilon ###
-
-    colors = ['tab:blue', 'tab:orange', 'tab:red']
-    names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.5$)']
-
-    data = np.load('Tests/data/energy/dimension_scaling.npy')
-    dimensions = [100, 300, 1000, 3000, 10000]
-    for i in range(len(names_targets)):
-        plt.plot(dimensions, data[i, :, 0], '-', markersize=10, color=colors[i])
-        plt.fill_between(dimensions, data[i, :, 1], data[i, :, 2], color=colors[i], alpha=0.2)
-
-    plt.ylabel('Var[E] / d', fontsize=ff)
-    plt.xlabel(r'$d$', fontsize=ff)
-    plt.xscale('log')
-    plt.yscale('log')
-    #plt.ylim(0, 0.002)
-    [plt.plot([], [], color=colors[i], label=names_targets[i], lw=5) for i in range(len(names_targets))]
-    plt.legend(fontsize=ff)
-
-    plt.tight_layout()
-    #plt.savefig('submission/EnergyFluctuationsDimension2.png')
-
-    plt.show()
-
 
 def esh_not_converging():
     """Figure 4"""
@@ -380,403 +290,6 @@ def esh_not_converging():
 
 
 
-def ill_conditioned():
-    """Figure 5"""
-
-
-    ff, ff_title, ff_ticks = 34, 22, 34
-    ms = 10
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize= (20, 9))
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    kappa = np.logspace(0, 5, 18)
-
-
-    # ess= [np.max(np.load('Tests/data/kappa/' + str(i) + '.npy')[:, 0]) for i in range(18)]
-    # plt.plot(kappa, ess, 'o:', color = 'tab:purple',  label = 'MCHMC (fine tuned)')
-
-    data = pd.read_csv('submission/Table_ICG_LF_g.csv')
-    color = 'indigo'
-    plt.plot(data['Condition number'], data['ESS'], 'o-', markersize= ms, color=color, label='MCLMC')
-    plt.fill_between(data['Condition number'], data['ESS'] - data['err ESS'], data['ESS'] + data['err ESS'], color=color, alpha=0.07)
-
-    data = pd.read_csv('submission/Table_ICG_tuning_free_g.csv')
-    plt.plot(data['Condition number'], data['ESS'], 'v-', markersize = ms, color=color)
-
-    data = pd.read_csv('submission/Table_ICG_LF.csv')
-    color = 'cornflowerblue'
-    plt.plot(data['Condition number'], data['ESS'], 'o-', color=color, markersize= ms, label='MCHMC')
-    plt.fill_between(data['Condition number'], data['ESS'] - data['err ESS'], data['ESS'] + data['err ESS'], color=color, alpha=0.07)
-
-
-    ess_nuts = np.load('Tests/data/kappa/NUTS.npy').T
-    color = 'tab:orange'
-    plt.plot(kappa, ess_nuts[:, 0], 'v-', color=color, markersize= ms, label='NUTS')
-    plt.fill_between(kappa, ess_nuts[:, 0] - ess_nuts[:, 1], ess_nuts[:, 0] + ess_nuts[:, 1], color=color, alpha=0.07)
-
-    plt.plot([], [], 'o-', markersize= ms, color='grey', label='grid search')
-    plt.plot([], [], 'v-', markersize= ms, color='grey', label='tuning-free')
-
-
-    plt.ylabel('ESS', fontsize= ff)
-    plt.xlabel('condition number', fontsize= ff)
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.legend(fontsize= ff, ncol = 2)
-
-    plot_power_lines(-0.5)  # 1/sqrt(kappa) lines
-
-    plt.savefig('submission/ICG.pdf')
-    plt.show()
-
-
-
-
-def BimodalMarginal():
-    """Figure 6"""
-
-    #the problem parameters:
-    d = 50
-    mu1, sigma1= 0.0, 1.0 # the first Gaussian
-    mu2, sigma2, f = 8.0, 1.0, 0.2 #the second Gaussian
-
-    #plot parameters
-    ff, ff_title, ff_ticks = 40, 20, 37
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize=(15, 11))
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-
-    #NUTS
-    X = np.load('Tests/data/bimodal_marginal/NUTS_hard.npz')
-    x0, steps = np.array(X['x0']), np.array(X['steps'])
-
-    plt.hist(x0, density=True, bins = 30, alpha = 0.5, color = 'tab:orange', label = 'NUTS', zorder = 0)
-
-    #MCHMC
-
-    def my_hist(bins, count):
-        probability = count / np.sum(count)
-        print('probability outside of bins', probability[-1])
-
-        for i in range(len(bins)):
-            density = probability[i] / (bins[i][1] - bins[i][0])
-            plt.fill_between(bins[i], np.zeros(2), density * np.ones(2), alpha = 0.5, color='tab:blue', zorder = 1)
-
-        plt.fill_between([], [], [], alpha = 0.5, color = 'tab:blue', label = 'MCHMC')
-
-    xmax = 3.5 #how many sigma away from the mean of the gaussians do we want to have bins
-
-    def get_bins(mu, sigma, num_bins_per_mode):
-        bins_mode = np.array([[- xmax + i * 2 * xmax / num_bins_per_mode, - xmax + (i+1) * 2 * xmax / num_bins_per_mode] for i in range(num_bins_per_mode)])
-
-        bins = np.concatenate(( (bins_mode * sigma[0]) + mu[0], (bins_mode * sigma[1]) + mu[1]  ))
-
-        return bins
-
-    bins_per_mode = 20
-    bins = get_bins([mu1, mu2], [sigma1, sigma2], bins_per_mode)
-    P = np.load('Tests/data/bimodal_marginal/sep'+str(mu2)+'_f'+str(f)+'_sigma'+str(sigma2)+'.npy')
-
-    my_hist(bins, P)
-    f1, f2 = np.sum(P[:bins_per_mode]), np.sum(P[bins_per_mode : 2 * bins_per_mode])
-    print('f = ' + str(f2 / (f1 + f2)) + '  (true f = ' + str(f) + ')')
-
-
-    #exact
-    t = np.linspace(-xmax*sigma1+mu1-0.5, xmax*sigma2 + mu2 + 0.5, 1000)
-    plt.plot(t, (1- f)*norm.pdf(t, loc = mu1, scale = sigma1) + f * norm.pdf(t, loc = mu2, scale = sigma2), color = 'black', label = 'exact', zorder = 2)
-
-    plt.legend(fontsize = ff)
-    plt.xlim(t[0], t[-1])
-    plt.ylim(0, 0.4)
-    plt.yticks([0, 0.1, 0.2, 0.3, 0.4])
-    plt.xticks([-2, 0, 2, 4, 6, 8, 10])
-    plt.xlabel(r'$x_1$', fontsize = ff)
-    plt.ylabel(r'$p(x_1)$', fontsize = ff)
-    plt.savefig('submission/BimodalMarginal.pdf')
-    plt.show()
-
-
-
-def rosenbrock():
-    """Figure 6"""
-
-    xmin, xmax, ymin, ymax = -2.3, 3.9, -2, 16
-
-    ff_ticks, ff = 29, 35
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plot = sns.JointGrid(height= 11, xlim= (xmin, xmax), ylim= (ymin, ymax))
-
-
-    # MCHMC
-    d = 36
-    X = np.load('Tests/data/rosenbrock_funnel/rosenbrock.npz')
-    x, y = X['samples'][:, 0], X['samples'][:, d // 2]
-    w = X['w']
-    sns.histplot(x=x, y=y, weights=w, bins=200, ax=plot.ax_joint)
-
-    #sns.scatterplot(x=[], y=[], ax= plot.ax_joint, color = 'tab:blue')
-
-    # # marginals
-    sns.histplot(x= x, weights= w, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:blue', zorder = 2)
-    sns.histplot(y= y, weights= w, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_y, stat= 'density', color= 'tab:blue', label= 'MCHMC', zorder = 2)
-
-
-    # NUTS
-    X= np.load('Tests/data/rosenbrock_funnel/rosenbrock_HMC.npz')
-    x, y = X['x'][:, 0], X['y'][:, 0]
-
-    sns.scatterplot(x, y, s= 6, linewidth= 0, ax= plot.ax_joint, alpha = 0.7, color= 'tab:orange')
-
-    # marginals
-    sns.histplot(x=x, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:orange', zorder = 1)
-    sns.histplot(y=y, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_y, stat= 'density', color= 'tab:orange', label= 'NUTS', zorder = 1)
-
-
-    #exact
-    ros = Rosenbrock(d = 2)
-    X = ros.draw(1000)
-    x, y = X[:, 0], X[:, 1]
-
-    sns.scatterplot(x, y, s= 6, linewidth= 0, ax= plot.ax_joint, color= 'black', alpha = 0.5)
-
-    # marginals
-    sns.lineplot(x, np.exp(-0.5 * np.square(x - 1)) / np.sqrt(2 * np.pi), linewidth= 1, ax= plot.ax_marg_x, color= 'black', alpha = 0.5)
-    ros = Rosenbrock(d=2)
-    X = ros.draw(5000000)
-    x, y = X[:, 0], X[:, 1]
-    sns.histplot(y=y, bins= 2000, fill= False, element= 'step', linewidth= 1, ax= plot.ax_marg_y, stat= 'density', color= 'black', alpha = 0.5, label= 'exact')
-
-
-    #plot.ax_marg_y.legend(fontsize = ff)
-
-    plot.set_axis_labels(r'$x_1$', r'$y_1$', fontsize= ff)
-    plt.yticks([0, 5, 10, 15])
-    plt.tight_layout()
-    plt.savefig('submission/rosenbrock.pdf')
-    plt.show()
-
-
-
-def funnel():
-    """Figure 7"""
-
-    def gaussianize(z, theta):
-        return (z.T * np.exp(-0.5 * theta)).T, theta / 3.0
-
-    eps, free_time = 0.1, 6
-    data = np.load('Tests/data/rosenbrock_funnel/funnel_free'+str(free_time) + '_eps'+str(eps)+'.npz')
-    z, theta, w = data['z'], data['theta'], data['w']
-
-
-    data = np.load('Tests/data/rosenbrock_funnel/funnel_HMC.npz')
-    zHMC, thetaHMC = data['z'], data['theta']
-
-
-    ff, ff_title, ff_ticks = 35, 36, 34
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize=(24, 8))
-
-
-    ####   2d marginal in the original coordinates ####
-    plt.subplot(1, 3, 1)
-    plt.title('Original coordinates', fontsize = ff_title, y= 1.05)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    plt.plot(zHMC[:, 0], thetaHMC, '.', ms= 1, color = 'tab:orange', label = 'NUTS')
-
-    #plt.hist2d(z[:, 0], theta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-30, 30], [-8, 8]], label ='MCHMC')
-    plt.plot(z[::5000, 0], theta[::5000], '.', ms= 1, color = 'tab:blue', label = 'MCHMC')
-
-    #plt.hist2d(z[:, 0], theta, weights= w, bins = 100, density=True, label = 'MCHMC')
-    plt.xlim(-30, 30)
-    plt.ylim(-8, 8)
-    plt.xlabel(r'$z_1$', fontsize = ff)
-    plt.ylabel(r'$\theta$', fontsize = ff)
-
-    #### 2d marginal in the gaussianized coordinates ####
-    plt.subplot(1, 3, 2)
-    plt.title('Gaussianized coordinates', fontsize = ff_title, y= 1.05)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    Gz, Gtheta = gaussianize(z, theta)
-    plt.hexbin(Gz[:, 0], Gtheta, C= w, cmap='Blues', gridsize=50, label='MCHMC', reduce_C_function=np.sum)
-
-    GzHMC, GthetaHMC = gaussianize(zHMC, thetaHMC)
-    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 7, color = 'tab:orange', alpha = 0.5, label= 'NUTS')
-
-    #level sets
-    p_level = np.array([0.6827, 0.9545])
-    x_level = np.sqrt(-2 * np.log(1 - p_level))
-    phi = np.linspace(0, 2* np.pi, 100)
-    for i in range(2):
-        plt.plot(x_level[i] * np.cos(phi), x_level[i] * np.sin(phi), lw= 2, color = 'black', alpha= ([1, 0.5])[i])
-
-    plt.xlabel(r'$\widetilde{z}_1$', fontsize = ff)
-    plt.ylabel(r'$\widetilde{\theta}$', fontsize = ff)
-    plt.xlim(-3, 3)
-    plt.ylim(-3, 3)
-
-
-    #### 1d theta marginal####
-    plt.subplot(1, 3, 3)
-    plt.title(r'$\theta$-marginal', fontsize = ff_title, y= 1.05)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    plt.hist(thetaHMC, color='tab:orange', density=True, bins = 20, alpha = 0.5, label = 'NUTS')
-    plt.hist(theta, weights= w, color='tab:blue', density=True, bins = 20, alpha = 0.5,  label = 'MCHMC')
-
-    t= np.linspace(-10, 10, 100)
-    plt.plot(t, norm.pdf(t, scale= 3.0), lw = 3, color= 'black', label = 'exact')
-
-    #xmax = np.min([np.max(thetaHMC), np.max(theta)])
-    #plt.xlim(-xmax, xmax)
-    #plt.ylim(0, 1)
-    plt.yticks([0.00, 0.05, 0.10, 0.15])
-
-    plt.legend(fontsize = 24)
-    plt.xlabel(r'$\theta$', fontsize = ff)
-    plt.ylabel(r'$p(\theta)$', fontsize = ff)
-    plt.tight_layout()
-    plt.savefig('submission/funnel.pdf')
-
-    plt.show()
-
-
-
-
-def german_credit():
-    folder = 'Tests/data/german_credit/'
-
-    mchmc_data = np.load(folder + 'mchmc.npz')
-    X, W = mchmc_data['x'], mchmc_data['w']
-
-    hmc_data = az.from_netcdf(folder + 'inference_data_german_credit_mcmc.nc')
-    tuning_steps = np.loadtxt(folder + 'german_credit_warmup_n_steps.txt')
-
-    # hmc_steps = np.array(hmc_data['sample_stats']['n_steps'])
-    # print(np.shape(hmc_steps))
-
-
-    ff, ff_title, ff_ticks = 19, 20, 17
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize=(20, 8))
-
-    hmc_bins = 100
-    mchmc_bins = 100
-
-    plt.subplot(1, 3, 1)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    tau = np.concatenate(np.array(hmc_data['posterior']['tau']))
-    print(np.average(tau))
-    plt.hist(np.log(tau), bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
-
-    tau = X[:, 0]
-    plt.hist(np.log(tau), bins=mchmc_bins, weights= W, density=True, alpha=0.5, color='tab:blue', label='MCHMC')
-
-    plt.xlabel(r'$\log \tau$', fontsize= ff)
-    plt.ylabel('Density', fontsize= ff)
-
-
-    plt.subplot(1, 3, 2)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    lambda1 = np.concatenate(np.array(hmc_data['posterior']['lam'])[:, :, 0])
-    plt.hist(np.log(lambda1), bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
-
-    lambda1 = X[:, 1]
-    plt.hist(np.log(lambda1), bins=mchmc_bins, weights= W, density=True, alpha=0.5, color='tab:blue', label='MCHMC')
-
-    plt.xlabel(r'$\log \lambda_1$', fontsize= ff)
-
-
-    plt.subplot(1, 3, 3)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    beta1 = np.concatenate(np.array(hmc_data['posterior']['beta'])[:, :, 0])
-    plt.hist(beta1, bins = hmc_bins, density=True, alpha = 0.5, color= 'tab:orange', label = 'NUTS')
-
-    beta1 = X[:, 2]
-    plt.hist(beta1, bins=mchmc_bins, weights= W, density=True, alpha=0.5, color='tab:blue', label='MCHMC')
-
-    plt.xlabel(r'$\beta_1$', fontsize= ff)
-
-    plt.savefig('submission/german_credit_posterior.pdf')
-    plt.show()
-
-
-
-def stohastic_volatility():
-    """Figure 8"""
-
-    from numpyro.examples.datasets import SP500, load_dataset
-
-    _, fetch = load_dataset(SP500, shuffle=False)
-    SP500_dates, SP500_returns = fetch()
-
-
-
-    ff, ff_title, ff_ticks = 32, 26, 29
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize=(20, 8))
-
-
-    #time series
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    ax.xaxis.set_major_locator(mdates.YearLocator())
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
-    ax.xaxis.set_minor_locator(mdates.MonthLocator())
-
-    #data
-    dates = mdates.num2date(mdates.datestr2num(SP500_dates))
-    plt.plot(dates, SP500_returns, '.', color= 'black')
-    plt.plot([], [], 'o', markersize = 5, color = 'black', label= 'data')
-
-    name= ['MCHMC', 'NUTS']
-
-    for method_index in range(2):
-        band = np.load('Tests/data/stochastic_volatility/'+name[method_index]+'_posterior_band.npy')
-        plt.plot(dates, band[1], color=tab_colors[method_index])
-        plt.fill_between(dates, band[0], band[2], color= tab_colors[method_index], alpha=0.5)
-        plt.plot([], [], color = tab_colors[method_index], lw = 5, label = name[method_index]) #for the legend
-
-    plt.legend(fontsize = ff)
-    plt.xlabel('time', fontsize = ff)
-    plt.ylabel('returns', fontsize = ff)
-    plt.ylim(np.min(SP500_returns)-0.1, np.max(SP500_returns)+0.1)
-    plt.savefig('submission/StochasticVolatility.pdf')
-    plt.show()
-
-
-
 def first_nonzero_decimal(x):
     """works for x>0"""
     if np.abs(x) > 1:
@@ -786,6 +299,7 @@ def first_nonzero_decimal(x):
 
 
 def bias_variance():
+    """Figure 5"""
     from matplotlib import ticker
     import mchmc
 
@@ -894,6 +408,424 @@ def bias_variance():
     plt.show()
 
 
+
+
+def energy_fluctuations():
+    """Figure 6"""
+
+    ff, ff_ticks = 35, 33
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    fig = plt.figure(figsize= (21, 7))
+    ax = plt.subplot2grid(shape=(1, 3), loc= (0, 0), colspan=2, rowspan=1)
+
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+
+    ### scaling with epsilon ###
+
+    targets = ['STN', 'ICG', 'rosenbrock', 'funnel', 'german']
+    colors= ['tab:blue', 'tab:orange', 'tab:red', 'tab:green', 'tab:purple']
+    names_targets = ['Standard Gaussian', 'Ill-conditioned Gaussian', 'Rosenbrock function', "Neal's funnel", "German credit"]
+    data = [pd.read_csv('Tests/data/energy/'+tar+'.csv') for tar in targets]
+
+
+    for i in range(len(targets)):
+        plt.plot(data[i]['eps'], data[i]['varE'], '-', color = colors[i])
+        plt.fill_between(data[i]['eps'], data[i]['low err stdE'], data[i]['high err stdE'], color = colors[i], alpha = 0.2)
+
+    plt.ylabel('Var[E] / d', fontsize= ff)
+    plt.xlabel(r'$\epsilon$', fontsize= ff)
+    plt.xscale('log')
+    plt.yscale('log')
+
+    ### varE ~ eps^4 lines ###
+    plot_power_lines(4.0)
+
+
+    ### optimal epsilon ###
+    eps = [7.3, 2.428389768790094, 0.3311311214825911, 0.2290867652767773, 0.2089296130854039]
+    for i in range(len(targets)):
+        j = 0
+        while data[i]['eps'][j] < eps[i]:
+            j+=1
+        j-=1
+        v1, v2 = np.log(data[i]['varE'][j]), np.log(data[i]['varE'][j+1])
+        e1, e2 = np.log(data[i]['eps'][j]), np.log(data[i]['eps'][j+1])
+        varE = np.exp(v1 + (v2 - v1) * (np.log(eps[i]) - e1) / (e2 - e1))
+        plt.plot([eps[i], ], [varE, ], 'o', markersize = 15, color = colors[i])
+
+
+    plt.plot([0.03, 15], [0.001, 0.001], color = 'black', alpha =  0.8) # tuning-free algorithm choice
+    plt.xlim(0.03, 15)
+    plt.ylim(1e-6, 1e1)
+    [plt.plot([], [], color=colors[i], label = names_targets[i], lw = 5) for i in range(len(names_targets))]
+    plt.legend(fontsize= ff-6, loc = 2, ncol = 2)
+
+
+    ax = plt.subplot2grid(shape=(1, 3), loc= (0, 2))
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    ### scaling with epsilon ###
+
+    colors = ['tab:blue', 'tab:orange', 'tab:red']
+    names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.5$)']
+
+    data = np.load('Tests/data/energy/dimension_scaling.npy')
+    dimensions = [100, 300, 1000, 3000, 10000]
+    for i in range(len(names_targets)):
+        plt.plot(dimensions, data[i, :, 0], '-', markersize=10, color=colors[i])
+        plt.fill_between(dimensions, data[i, :, 1], data[i, :, 2], color=colors[i], alpha=0.2)
+
+    plt.ylabel(r'Var[$E$] / $d$', fontsize=ff)
+    plt.xlabel(r'$d$', fontsize=ff)
+    plt.xscale('log')
+    plt.yscale('log')
+    #plt.ylim(0, 0.002)
+    [plt.plot([], [], color=colors[i], label=names_targets[i], lw=5) for i in range(len(names_targets))]
+    #plt.legend(fontsize=ff-3)
+
+    plt.tight_layout()
+    plt.savefig('submission/EnergyFluctuations.pdf')
+
+    plt.show()
+
+
+
+
+def ill_conditioned():
+    """Figure 7"""
+
+
+    ff, ff_title, ff_ticks = 34, 22, 34
+    ms = 10
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize= (20, 9))
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    kappa = np.logspace(0, 5, 18)
+
+
+    # ess= [np.max(np.load('Tests/data/kappa/' + str(i) + '.npy')[:, 0]) for i in range(18)]
+    # plt.plot(kappa, ess, 'o:', color = 'tab:purple',  label = 'MCHMC (fine tuned)')
+
+    # langevin-like
+    data = pd.read_csv('submission/Table_ICG_LF_g.csv')
+    color = 'indigo'
+    plt.plot(data['Condition number'], data['ESS'], 'o-', markersize= ms, color=color, label='MCLMC')
+    plt.fill_between(data['Condition number'], data['ESS'] - data['err ESS'], data['ESS'] + data['err ESS'], color=color, alpha=0.07)
+
+    data = pd.read_csv('submission/Table_ICG_tuning_free_g.csv')
+    plt.plot(data['Condition number'], data['ESS'], 'v-', markersize = ms, color=color)
+
+    # bounces
+    data = pd.read_csv('submission/Table_ICG_LF.csv')
+    color = 'cornflowerblue'
+    plt.plot(data['Condition number'], data['ESS'], 'o-', color=color, markersize= ms, label='MCHMC')
+    plt.fill_between(data['Condition number'], data['ESS'] - data['err ESS'], data['ESS'] + data['err ESS'], color=color, alpha=0.07)
+
+    data = pd.read_csv('submission/Table_ICG_tuning_free_backup.csv')
+    plt.plot(data['Condition number'], data['ESS'], 'v-', markersize = ms, color=color)
+
+    # nuts
+    ess_nuts = np.load('Tests/data/kappa/NUTS.npy').T
+    color = 'tab:orange'
+    plt.plot(kappa, ess_nuts[:, 0], 'v-', color= color, markersize= ms, label='NUTS')
+    plt.fill_between(kappa, ess_nuts[:, 0] - ess_nuts[:, 1], ess_nuts[:, 0] + ess_nuts[:, 1], color=color, alpha=0.07)
+
+    plt.plot([], [], 'o-', markersize= ms, color='grey', label='grid search')
+    plt.plot([], [], 'v-', markersize= ms, color='grey', label='tuning-free')
+
+
+    plt.ylabel('ESS', fontsize= ff)
+    plt.xlabel('condition number', fontsize= ff)
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.legend(fontsize= ff, ncol = 2)
+
+    plot_power_lines(-0.5)  # 1/sqrt(kappa) lines
+
+    plt.savefig('submission/ICG.pdf')
+    plt.show()
+
+
+
+def BimodalMarginal():
+    """Figure 8"""
+
+    #the problem parameters:
+    d = 50
+    mu1, sigma1= 0.0, 1.0 # the first Gaussian
+    mu2, sigma2, f = 8.0, 1.0, 0.2 #the second Gaussian
+
+    #plot parameters
+    ff, ff_title, ff_ticks = 40, 20, 37
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(15, 11))
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+
+    #NUTS
+    X = np.load('Tests/data/bimodal_marginal/NUTS_hard.npz')
+    x0, steps = np.array(X['x0']), np.array(X['steps'])
+
+    plt.hist(x0, density=True, bins = 30, alpha = 0.5, color = 'tab:orange', label = 'NUTS', zorder = 0)
+
+    #MCHMC
+
+    def my_hist(bins, count):
+        probability = count / np.sum(count)
+        print('probability outside of bins', probability[-1])
+
+        for i in range(len(bins)):
+            density = probability[i] / (bins[i][1] - bins[i][0])
+            plt.fill_between(bins[i], np.zeros(2), density * np.ones(2), alpha = 0.5, color='tab:blue', zorder = 1)
+
+        plt.fill_between([], [], [], alpha = 0.5, color = 'tab:blue', label = 'MCHMC')
+
+    xmax = 3.5 #how many sigma away from the mean of the gaussians do we want to have bins
+
+    def get_bins(mu, sigma, num_bins_per_mode):
+        bins_mode = np.array([[- xmax + i * 2 * xmax / num_bins_per_mode, - xmax + (i+1) * 2 * xmax / num_bins_per_mode] for i in range(num_bins_per_mode)])
+
+        bins = np.concatenate(( (bins_mode * sigma[0]) + mu[0], (bins_mode * sigma[1]) + mu[1]  ))
+
+        return bins
+
+    bins_per_mode = 20
+    bins = get_bins([mu1, mu2], [sigma1, sigma2], bins_per_mode)
+    P = np.load('Tests/data/bimodal_marginal/sep'+str(mu2)+'_f'+str(f)+'_sigma'+str(sigma2)+'.npy')
+
+    my_hist(bins, P)
+    f1, f2 = np.sum(P[:bins_per_mode]), np.sum(P[bins_per_mode : 2 * bins_per_mode])
+    print('f = ' + str(f2 / (f1 + f2)) + '  (true f = ' + str(f) + ')')
+
+
+    #exact
+    t = np.linspace(-xmax*sigma1+mu1-0.5, xmax*sigma2 + mu2 + 0.5, 1000)
+    plt.plot(t, (1- f)*norm.pdf(t, loc = mu1, scale = sigma1) + f * norm.pdf(t, loc = mu2, scale = sigma2), color = 'black', label = 'exact', zorder = 2)
+
+    plt.legend(fontsize = ff)
+    plt.xlim(t[0], t[-1])
+    plt.ylim(0, 0.4)
+    plt.yticks([0, 0.1, 0.2, 0.3, 0.4])
+    plt.xticks([-2, 0, 2, 4, 6, 8, 10])
+    plt.xlabel(r'$x_1$', fontsize = ff)
+    plt.ylabel(r'$p(x_1)$', fontsize = ff)
+    plt.savefig('submission/BimodalMarginal.pdf')
+    plt.show()
+
+
+
+def rosenbrock():
+    """Figure 8"""
+
+    xmin, xmax, ymin, ymax = -2.3, 3.9, -2, 16
+
+    ff_ticks, ff = 29, 35
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plot = sns.JointGrid(height= 11, xlim= (xmin, xmax), ylim= (ymin, ymax))
+
+
+    # MCHMC
+    d = 36
+    X = np.load('Tests/data/rosenbrock_funnel/rosenbrock.npz')
+    x, y = X['samples'][:, 0], X['samples'][:, d // 2]
+    w = X['w']
+    sns.histplot(x=x, y=y, weights=w, bins=200, ax=plot.ax_joint)
+
+    #sns.scatterplot(x=[], y=[], ax= plot.ax_joint, color = 'tab:blue')
+
+    # # marginals
+    sns.histplot(x= x, weights= w, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:blue', zorder = 2)
+    sns.histplot(y= y, weights= w, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_y, stat= 'density', color= 'tab:blue', label= 'MCHMC', zorder = 2)
+
+
+    # NUTS
+    X= np.load('Tests/data/rosenbrock_funnel/rosenbrock_HMC.npz')
+    x, y = X['x'][:, 0], X['y'][:, 0]
+
+    sns.scatterplot(x, y, s= 6, linewidth= 0, ax= plot.ax_joint, alpha = 0.7, color= 'tab:orange')
+
+    # marginals
+    sns.histplot(x=x, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_x, stat= 'density', color= 'tab:orange', zorder = 1)
+    sns.histplot(y=y, bins= 40, fill= True, alpha = 0.5, linewidth= 0, ax= plot.ax_marg_y, stat= 'density', color= 'tab:orange', label= 'NUTS', zorder = 1)
+
+
+    #exact
+    ros = Rosenbrock(d = 2)
+    X = ros.draw(1000)
+    x, y = X[:, 0], X[:, 1]
+
+    sns.scatterplot(x, y, s= 6, linewidth= 0, ax= plot.ax_joint, color= 'black', alpha = 0.5)
+
+    # marginals
+    sns.lineplot(x, np.exp(-0.5 * np.square(x - 1)) / np.sqrt(2 * np.pi), linewidth= 1, ax= plot.ax_marg_x, color= 'black', alpha = 0.5)
+    ros = Rosenbrock(d=2)
+    X = ros.draw(5000000)
+    x, y = X[:, 0], X[:, 1]
+    sns.histplot(y=y, bins= 2000, fill= False, element= 'step', linewidth= 1, ax= plot.ax_marg_y, stat= 'density', color= 'black', alpha = 0.5, label= 'exact')
+
+
+    #plot.ax_marg_y.legend(fontsize = ff)
+
+    plot.set_axis_labels(r'$x_1$', r'$y_1$', fontsize= ff)
+    plt.yticks([0, 5, 10, 15])
+    plt.tight_layout()
+    plt.savefig('submission/rosenbrock.pdf')
+    plt.show()
+
+
+
+def funnel():
+    """Figure 9"""
+
+    def gaussianize(z, theta):
+        return (z.T * np.exp(-0.5 * theta)).T, theta / 3.0
+
+    eps, free_time = 0.1, 6
+    data = np.load('Tests/data/rosenbrock_funnel/funnel_free'+str(free_time) + '_eps'+str(eps)+'.npz')
+    z, theta, w = data['z'], data['theta'], data['w']
+
+
+    data = np.load('Tests/data/rosenbrock_funnel/funnel_HMC.npz')
+    zHMC, thetaHMC = data['z'], data['theta']
+
+
+    ff, ff_title, ff_ticks = 35, 36, 34
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(24, 8))
+
+
+    ####   2d marginal in the original coordinates ####
+    plt.subplot(1, 3, 1)
+    plt.title('Original coordinates', fontsize = ff_title, y= 1.05)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    plt.plot(zHMC[:, 0], thetaHMC, '.', ms= 1, color = 'tab:orange', label = 'NUTS')
+
+    #plt.hist2d(z[:, 0], theta, cmap = 'Blues', weights= w, bins = 70, density=True, range= [[-30, 30], [-8, 8]], label ='MCHMC')
+    plt.plot(z[::5000, 0], theta[::5000], '.', ms= 1, color = 'tab:blue', label = 'MCHMC')
+
+    #plt.hist2d(z[:, 0], theta, weights= w, bins = 100, density=True, label = 'MCHMC')
+    plt.xlim(-30, 30)
+    plt.ylim(-8, 8)
+    plt.xlabel(r'$z_1$', fontsize = ff)
+    plt.ylabel(r'$\theta$', fontsize = ff)
+
+    #### 2d marginal in the gaussianized coordinates ####
+    plt.subplot(1, 3, 2)
+    plt.title('Gaussianized coordinates', fontsize = ff_title, y= 1.05)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    Gz, Gtheta = gaussianize(z, theta)
+    plt.hexbin(Gz[:, 0], Gtheta, C= w, cmap='Blues', gridsize=50, label='MCHMC', reduce_C_function=np.sum)
+
+    GzHMC, GthetaHMC = gaussianize(zHMC, thetaHMC)
+    plt.plot(GzHMC[:, 0], GthetaHMC, '.', ms= 7, color = 'tab:orange', alpha = 0.5, label= 'NUTS')
+
+    #level sets
+    p_level = np.array([0.6827, 0.9545])
+    x_level = np.sqrt(-2 * np.log(1 - p_level))
+    phi = np.linspace(0, 2* np.pi, 100)
+    for i in range(2):
+        plt.plot(x_level[i] * np.cos(phi), x_level[i] * np.sin(phi), lw= 2, color = 'black', alpha= ([1, 0.5])[i])
+
+    plt.xlabel(r'$\widetilde{z}_1$', fontsize = ff)
+    plt.ylabel(r'$\widetilde{\theta}$', fontsize = ff)
+    plt.xlim(-3, 3)
+    plt.ylim(-3, 3)
+
+
+    #### 1d theta marginal####
+    plt.subplot(1, 3, 3)
+    plt.title(r'$\theta$-marginal', fontsize = ff_title, y= 1.05)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    plt.hist(thetaHMC, color='tab:orange', density=True, bins = 20, alpha = 0.5, label = 'NUTS')
+    plt.hist(theta, weights= w, color='tab:blue', density=True, bins = 20, alpha = 0.5,  label = 'MCHMC')
+
+    t= np.linspace(-10, 10, 100)
+    plt.plot(t, norm.pdf(t, scale= 3.0), lw = 3, color= 'black', label = 'exact')
+
+    #xmax = np.min([np.max(thetaHMC), np.max(theta)])
+    #plt.xlim(-xmax, xmax)
+    #plt.ylim(0, 1)
+    plt.yticks([0.00, 0.05, 0.10, 0.15])
+
+    plt.legend(fontsize = 24)
+    plt.xlabel(r'$\theta$', fontsize = ff)
+    plt.ylabel(r'$p(\theta)$', fontsize = ff)
+    plt.tight_layout()
+    plt.savefig('submission/funnel.pdf')
+
+    plt.show()
+
+
+
+
+def stohastic_volatility():
+    """Figure 10"""
+
+    from numpyro.examples.datasets import SP500, load_dataset
+
+    _, fetch = load_dataset(SP500, shuffle=False)
+    SP500_dates, SP500_returns = fetch()
+
+
+
+    ff, ff_title, ff_ticks = 32, 26, 29
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize=(20, 8))
+
+
+    #time series
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    ax.xaxis.set_major_locator(mdates.YearLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    ax.xaxis.set_minor_locator(mdates.MonthLocator())
+
+    #data
+    dates = mdates.num2date(mdates.datestr2num(SP500_dates))
+    plt.plot(dates, SP500_returns, '.', color= 'black')
+    plt.plot([], [], 'o', markersize = 5, color = 'black', label= 'data')
+
+    name= ['MCHMC', 'NUTS']
+
+    for method_index in range(2):
+        band = np.load('Tests/data/stochastic_volatility/'+name[method_index]+'_posterior_band.npy')
+        plt.plot(dates, band[1], color=tab_colors[method_index])
+        plt.fill_between(dates, band[0], band[2], color= tab_colors[method_index], alpha=0.5)
+        plt.plot([], [], color = tab_colors[method_index], lw = 5, label = name[method_index]) #for the legend
+
+    plt.legend(fontsize = ff)
+    plt.xlabel('time', fontsize = ff)
+    plt.ylabel('returns', fontsize = ff)
+    plt.ylim(np.min(SP500_returns)-0.1, np.max(SP500_returns)+0.1)
+    plt.savefig('submission/StochasticVolatility.pdf')
+    plt.show()
+
+
 def qspace():
     from scipy.stats import norm
     xmax = 4
@@ -966,6 +898,5 @@ def qspace():
 
 
 
-#dimension_dependence()
-energy_fluctuations2()
-#ill_conditioned()
+energy_fluctuations()
+
