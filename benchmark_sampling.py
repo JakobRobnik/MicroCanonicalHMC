@@ -246,7 +246,7 @@ def table1():
 
         else:
 
-            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets)-1, len(targets))])
+            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets))])
             #results = np.array([grid_search.search_wrapper_1d(lambda e: ESS(alpha * sigma[i], e, targets[i], num_samples[i]), borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 

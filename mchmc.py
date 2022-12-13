@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 jax.config.update('jax_enable_x64', True)
 
+
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
 
 
@@ -197,7 +198,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, x_initial = 'prior', random_key= None, ess=False, monitor_energy= False, prerun= False):
+    def sample(self, num_steps, x_initial = 'prior', random_key= None, ess=False, monitor_energy= False):
 
 
         def step(state, useless):
@@ -216,30 +217,29 @@ class Sampler:
             energy = LL + 0.5 * self.Target.d * jnp.log(self.Target.d * jnp.square(w))
             return (x, u, g, r, key, time), (self.Target.transform(x),  - LL / self.Target.d, energy)
 
-
-        def prerun_step(state_track, useless):
-            """Only tracks b as a function of number of iterations."""
-
-            x, u, g, r, key, time, w_integrated = self.dynamics(state_track[0])
-
-            W, entropy, F1, F2, E1, E2 = state_track[1]
-
-            #energy and the weight
-            l = self.Target.nlogp(x) / self.Target.d
-            energy = self.Target.d * (0.5 * jnp.log(self.Target.d * jnp.square(w_integrated)) + l)
-            w = jnp.exp(- (l - entropy))
-
-            #expectation values (with the Kalman filter)
-            F1 = (F1 * W + (w * x)) / (W + w)  # <x>
-            F2 = (F2 * W + (w * jnp.square(x))) / (W + w) # <x^2>
-            E1 = (E1 * W + (w * energy)) / (W + w) # <E>
-            E2 = (E2 * W + (w * jnp.square(energy))) / (W + w) # <E^2>
-
-            #update the total weights for the next step
-            entropy_new = (W * entropy + w * l) / (W + w) # <L(x)> / d
-            W = (W + w) * jnp.exp(entropy_new - entropy)
-
-            return ((x, u, g, r, key, time), (W, entropy_new, F1, F2, E1, E2)), None
+        # def prerun_step(state_track, useless):
+        #     """Only tracks b as a function of number of iterations."""
+        #
+        #     x, u, g, r, key, time, w_integrated = self.dynamics(state_track[0])
+        #
+        #     W, entropy, F1, F2, E1, E2 = state_track[1]
+        #
+        #     #energy and the weight
+        #     l = self.Target.nlogp(x) / self.Target.d
+        #     energy = self.Target.d * (0.5 * jnp.log(self.Target.d * jnp.square(w_integrated)) + l)
+        #     w = jnp.exp(- (l - entropy))
+        #
+        #     #expectation values (with the Kalman filter)
+        #     F1 = (F1 * W + (w * x)) / (W + w)  # <x>
+        #     F2 = (F2 * W + (w * jnp.square(x))) / (W + w) # <x^2>
+        #     E1 = (E1 * W + (w * energy)) / (W + w) # <E>
+        #     E2 = (E2 * W + (w * jnp.square(energy))) / (W + w) # <E^2>
+        #
+        #     #update the total weights for the next step
+        #     entropy_new = (W * entropy + w * l) / (W + w) # <L(x)> / d
+        #     W = (W + w) * jnp.exp(entropy_new - entropy)
+        #
+        #     return ((x, u, g, r, key, time), (W, entropy_new, F1, F2, E1, E2)), (w_integrated, w, energy, entropy, E1, E2)
 
 
         def b_step(state_track, useless):
@@ -278,18 +278,45 @@ class Sampler:
             # plt.show()
 
             return ess_cutoff_crossing(b) * no_nans * cutoff_reached / self.grad_evals_per_step #return 0 if there are nans, or if the bias cutoff was not reached
-
-
-        elif prerun:  # only track the x moments and the energy moments
-            l = self.Target.nlogp(x) / self.Target.d
-            en = self.Target.d * (0.5 * jnp.log(self.Target.d * jnp.square(w)) + l)
-
-            W, entropy, F1, F2, E1, E2 = jax.lax.scan(prerun_step, init=((x, u, g, r, key, 0.0), (1.0, l, x, jnp.square(x), en, jnp.square(en))), xs=None, length=num_steps)[0][1]
-
-            sigma = jnp.sqrt(jnp.average(F2 - jnp.square(F1)))
-            varE = (E2 - jnp.square(E1)) / self.Target.d
-
-            return sigma, varE
+        #
+        #
+        # elif prerun:  # only track the x moments and the energy moments
+        #     l = self.Target.nlogp(x) / self.Target.d
+        #     en = self.Target.d * (0.5 * jnp.log(self.Target.d * jnp.square(w)) + l)
+        #
+        #     state, history = jax.lax.scan(prerun_step, init= ((x, u, g, r, key, 0.0), (1.0, l, x, jnp.square(x), en, jnp.square(en))), xs=None, length=num_steps)
+        #
+        #     w_integrated, w, energy, entropy, E1, E2 = history
+        #
+        #     return w
+        #
+        #     # plt.title('energy')
+        #     # plt.plot(energy, '.')
+        #     # plt.show()
+        #
+        #     # plt.title('E1')
+        #     # plt.plot(E1)
+        #     # plt.show()
+        #     #
+        #     # plt.title('E2')
+        #     # plt.plot(E2)
+        #     # plt.show()
+        #     #
+        #     # plt.title('Var[E]/d')
+        #     # plt.plot((E2 - np.square(E1)) / self.Target.d)
+        #     # plt.show()
+        #     #
+        #     #
+        #     # plt.title('entropy')
+        #     # plt.plot(entropy)
+        #     # plt.show()
+        #
+        #     W, entropy, F1, F2, E1, E2 = state[1]
+        #
+        #     sigma = jnp.sqrt(jnp.average(F2 - jnp.square(F1)))
+        #     varE = (E2 - jnp.square(E1)) / self.Target.d
+        #
+        #     return sigma, varE
 
 
         else: # track the full transform(x)
@@ -307,7 +334,7 @@ class Sampler:
 
 
 
-    def parallel_sample(self, num_chains, num_steps, random_key= None, ess= False, monitor_energy= False):
+    def parallel_sample(self, num_chains, num_steps, random_key= None, ess= False, monitor_energy= False, num_cores= 1):
         """Run multiple chains. The initial conditions for each chain are drawn with self.Target.prior_draw"""
 
         if random_key is None:
@@ -315,17 +342,41 @@ class Sampler:
         else:
             key = random_key
 
+        keys = jax.random.split(key, num_chains)
 
-        def f(key, useless):
-            key, key_prior, key_bounces = jax.random.split(key[0], 3)
+        def f(key):
+            key_prior, key_bounces = jax.random.split(key)
             x0 = self.Target.prior_draw(key_prior)
-            return (key,), self.sample(num_steps, x_initial= x0, random_key = key_bounces, ess= ess, monitor_energy= monitor_energy)
+            return self.sample(num_steps, x_initial= x0, random_key = key_bounces, ess= ess, monitor_energy= monitor_energy)
 
 
-        return jax.lax.scan(f, init= (key, ), xs = None, length = num_chains)[1]
+        if num_cores != 1: #run the chains on parallel cores
+            parallel_function = jax.pmap(jax.vmap(f))
+            results = parallel_function(keys.reshape(num_cores, num_chains // num_cores, 2))
+
+            ### reshape results ###
+            if type(results) is tuple: #each chain returned a tuple
+                results_reshaped =[]
+                for i in range(len(results)):
+                    res = jnp.array(results[i])
+                    results_reshaped.append(res.reshape([num_chains, ] + [res.shape[j] for j in range(2, len(res.shape))]))
+                return results_reshaped
+
+            else:
+                return results.reshape([num_chains, ] + [results.shape[j] for j in range(2, len(results.shape))])
+
+
+        else: #run chains serially on a single core
+            parallel_function = jax.vmap(f)
+            return parallel_function(keys)
+
 
 
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None):
+
+        transform = self.Target.transform
+
+        self.Target.transform = lambda x: x
 
         ### random key ###
         if random_key is None:
@@ -336,15 +387,30 @@ class Sampler:
 
         self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
         varE_wanted = 0.001
+        num_batches, batch_size, burn_in = 20, 50, 1000
+        var = np.empty(num_batches)
 
         key, subkey = jax.random.split(key)
-        x = self.sample(1000, x_initial, subkey)[0][-1, :] #burn-in (exaggerated number of steps)
+        x0 = self.sample(burn_in, x_initial, subkey)[0][-1, :] #burn-in (exaggerated number of steps)
 
         def tuning_step(key):
 
             # get a small number of samples
             key_new, subkey = jax.random.split(key)
-            sigma, varE = self.sample(1000, x, subkey, prerun= True)
+            x, w, E = self.sample(num_batches *batch_size, x0, subkey, monitor_energy= True)
+            #energy variance
+            for k in range(num_batches):
+                imin, imax = k * batch_size, (k + 1) * batch_size
+                e1 = np.average(E[imin:imax], weights= w[imin:imax])
+                e2 = np.average(np.square(E[imin:imax]), weights=w[imin:imax])
+                var[k] = (e2 - np.square(e1)) / self.Target.d
+
+            varE = np.median(var)
+
+            # typical size of the posterior
+            x1 = jnp.average(x, weights=w, axis = 0)
+            x2 = jnp.average(jnp.square(x), weights=w, axis = 0)
+            sigma = jnp.sqrt(jnp.average(x2 - jnp.square(x1)))
 
             #update hyperparameters
             L_new = sigma * np.sqrt(self.Target.d)
@@ -357,6 +423,8 @@ class Sampler:
         for i in range(5):
             key = tuning_step(key)
         print('-------------')
+
+        self.Target.transform = transform
 
 
     def weigths_from_energy_conservation(self, X, W):

@@ -1,13 +1,13 @@
+import os
+num_cores = 6 #specific to my PC
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import os
 
 import mchmc
-import standardKinetic
 from benchmark_targets import *
-import grid_search
-import myHMC
 import german_credit
 
 import jax
@@ -34,17 +34,28 @@ def benchmarks():
     for i in range(len(names)):
         print(names[i])
         target = targets[i]
+        burn_in, samples = 1000, 1000
+        batch_size, num_batches = 50, 20
 
         sampler = mchmc.Sampler(target, L[i], eps[i], integrator= 'LF', generalized=True)
 
-        # x0 = sampler.sample(2000, random_key= jax.random.PRNGKey(42))[0][-1, :]
-        # sigma, varE[i] = sampler.sample(1000, x_initial = x0, prerun= True)
+        X, W, E = sampler.parallel_sample(6, burn_in + num_batches * batch_size, monitor_energy=True, num_cores= 6)
 
-        X, W, E = sampler.sample(5000, monitor_energy=True)
+        var = np.empty((6, num_batches))
+        for k in range(num_batches):
+            imin, imax= burn_in+ k * batch_size, burn_in + (k+1) * batch_size
+            e1 = np.average(E[:, imin:imax], weights=W[:, imin:imax], axis= 1)
+            e2 = np.average(np.square(E[:, imin:imax]), weights=W[:, imin:imax], axis= 1)
+            var[:, k] = (e2 - np.square(e1)) / target.d
 
-        e1 = np.average(E[1000:], weights=W[1000:])
-        e2 = np.average(np.square(E[1000:]), weights=W[1000:])
-        varE[i] = np.sqrt(e2 - np.square(e1)) / target.d
+        Var = np.median(var, axis = 1)
+        varE[i] = np.median(Var)
+
+        plt.title(names[i])
+        for i in range(len(E)):
+            plt.plot(np.arange(len(E[0]))[1000:], E[i, 1000:], '.')
+        plt.savefig(names[i] + '.png')
+        plt.show()
 
     results['energy variance'] = varE
 
