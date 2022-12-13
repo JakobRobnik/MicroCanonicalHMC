@@ -108,7 +108,7 @@ def ill_conditioned_scan():
 
         num_samples = n_crossing * 5
 
-    np.save('Tests/data/kappa/NUTS.npy', [ess_arr, ess_err_arr, kappa_arr])
+    np.save('data/kappa/NUTS.npy', [ess_arr, ess_err_arr, kappa_arr])
 
 
 
@@ -167,8 +167,8 @@ def dimension_dependence():
 
         num_samples = n_crossing * 5
 
-    np.save('Tests/data/dimensions/Kappa100_NUTS.npy', [ess_arr, dimensions])
-    #np.save('Tests/data/dimensions/Rosenbrock_NUTS.npy', [ess_arr, dimensions])
+    np.save('data/dimensions/Kappa100_NUTS.npy', [ess_arr, dimensions])
+    #np.save('data/dimensions/Rosenbrock_NUTS.npy', [ess_arr, dimensions])
 
 
 
@@ -216,7 +216,7 @@ def bimodal_mixing():
 
         num_samples = (int)(avg_num * 10 * 30)
 
-    np.save('Tests/data/mode_mixing_NUTS.npy', np.array([avg_steps_mode, mu_arr]))
+    np.save('data/mode_mixing_NUTS.npy', np.array([avg_steps_mode, mu_arr]))
 
 
 
@@ -322,7 +322,7 @@ def funnel(key_num):
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
 
-    #np.savez('Tests/data/funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
+    #np.savez('data/funnel_HMC', z= np.array(numpyro_samples['z']), theta= np.array(numpyro_samples['theta']), steps= steps)
 
 
 
@@ -365,7 +365,7 @@ def rosenbrock(key_num, d = 36):
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
 
-    #np.savez('Tests/data/rosenbrock_HMC', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
+    #np.savez('data/rosenbrock_HMC', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
 
 
 
@@ -408,9 +408,9 @@ def stochastic_volatility(key_num):
 
     if posterior_band:
         volatility = np.sort(np.exp(s), axis=0)
-        np.save('Tests/data/stochastic_volatility/NUTS_posterior_band.npy', [volatility[len(volatility) // 4, :], volatility[len(volatility) // 2, :], volatility[3 * len(volatility) // 4, :]])
+        np.save('data/stochastic_volatility/NUTS_posterior_band.npy', [volatility[len(volatility) // 4, :], volatility[len(volatility) // 2, :], volatility[3 * len(volatility) // 4, :]])
 
-    #np.savez('Tests/data/stochastic_volatility/NUTS_samples.npz', s= s, sigma = sigma, nu= nu)
+    #np.savez('data/stochastic_volatility/NUTS_samples.npz', s= s, sigma = sigma, nu= nu)
 
     if ground_truth:
         var = np.empty(len(s[0]) + 2)
@@ -418,7 +418,7 @@ def stochastic_volatility(key_num):
         var[-2] = np.average(np.square(sigma))
         var[-1] = np.average(np.square(nu))
 
-        np.save('Tests/data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', var)
+        np.save('data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', var)
 
         #np.savez('SVsamples.npz', s= s, sigma = sigma, nu= nu)
 
@@ -428,7 +428,7 @@ def stochastic_volatility(key_num):
         X[:, -2] = sigma
         X[:, -1] = nu
 
-        variance_true = np.load('Tests/data/stochastic_volatility/ground_truth_moments.npy')
+        variance_true = np.load('data/stochastic_volatility/ground_truth_moments.npy')
 
         B = bias(X, np.ones(len(X)), variance_true)
 
@@ -458,7 +458,7 @@ def bimodal_plot():
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
     print(len(steps))
-    np.savez('Tests/data/bimodal_marginal/NUTS_hard.npz', x0 = X[:, 0], steps= np.cumsum(steps) * thinning)
+    np.savez('data/bimodal_marginal/NUTS_hard.npz', x0 = X[:, 0], steps= np.cumsum(steps) * thinning)
     print(np.cumsum(steps))
     import matplotlib.pyplot as plt
     plt.hist(X[:, 0], bins = 30, density=True)
@@ -509,19 +509,19 @@ def dimension_scaling():
     #     ess2[i], ess_std2[i] = np.average(ESS[:, 1]), np.std(ESS[:, 1])
     #     print(ess[i])
     #
-    # np.save('Tests/data/dimensions_dependence/HMC_kappa100.npy', [ess, ess2])
+    # np.save('data/dimensions_dependence/HMC_kappa100.npy', [ess, ess2])
     #
     # print(ess)
 
 
 if __name__ == '__main__':
-    X = np.load('Tests/data/dimensions_dependence/HMC_kappa100.npy')
+    X = np.load('data/dimensions_dependence/HMC_kappa100.npy')
     a = np.array([0.003069791714632162, 0.001534978318431252])
 
     Y = np.concatenate((X, a[:, None]), axis = 1)
-    np.save('Tests/data/dimensions_dependence/HMC_kappa100.npy', Y)
+    np.save('data/dimensions_dependence/HMC_kappa100.npy', Y)
 
-    # ess, ess2 = np.load('Tests/data/dimensions_dependence/HMC_rosenbrock.npy')
+    # ess, ess2 = np.load('data/dimensions_dependence/HMC_rosenbrock.npy')
     # print(ess)
 
     #dimension_scaling()

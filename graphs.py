@@ -190,8 +190,8 @@ def plot_power_lines(power):
 def esh_not_converging():
     """Figure 4"""
 
-    data1 = np.load('ESH_not_converging/data/ESHexample_ESH.npy')
-    data2 = np.load('ESH_not_converging/data/ESHexample_MCHMC.npy')
+    data1 = np.load('data/ESH_not_converging/ESHexample_ESH.npy')
+    data2 = np.load('data/ESH_not_converging/ESHexample_MCHMC.npy')
     color1, color2, color_target = 'tab:red', 'tab:blue', 'binary'
 
     target = IllConditionedESH()#IllConditionedGaussian(d = 50, condition_number= 1)
@@ -312,8 +312,8 @@ def bias_variance():
     plt.figure(figsize=(3 * 9, 2 * 9-2))
 
 
-    bias = np.load('Tests/data/bias_variance/gaussian_bias.npy').T
-    b = np.load('Tests/data/bias_variance/gaussian_b.npy').T
+    bias = np.load('data/bias_variance/gaussian_bias.npy').T
+    b = np.load('data/bias_variance/gaussian_b.npy').T
     variance = np.square(b) - np.square(bias)
     epsilon = np.linspace(1, 15, 60)
 
@@ -428,7 +428,7 @@ def energy_fluctuations():
     targets = ['STN', 'ICG', 'rosenbrock', 'funnel', 'german']
     colors= ['tab:blue', 'tab:orange', 'tab:red', 'tab:green', 'tab:purple']
     names_targets = ['Standard Gaussian', 'Ill-conditioned Gaussian', 'Rosenbrock function', "Neal's funnel", "German credit"]
-    data = [pd.read_csv('Tests/data/energy/'+tar+'.csv') for tar in targets]
+    data = [pd.read_csv('data/energy/'+tar+'.csv') for tar in targets]
 
 
     for i in range(len(targets)):
@@ -473,7 +473,7 @@ def energy_fluctuations():
     colors = ['tab:blue', 'tab:orange', 'tab:red']
     names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.5$)']
 
-    data = np.load('Tests/data/energy/dimension_scaling.npy')
+    data = np.load('data/energy/dimension_scaling.npy')
     dimensions = [100, 300, 1000, 3000, 10000]
     for i in range(len(names_targets)):
         plt.plot(dimensions, data[i, :, 0], '-', markersize=10, color=colors[i])
@@ -511,7 +511,7 @@ def ill_conditioned():
     kappa = np.logspace(0, 5, 18)
 
 
-    # ess= [np.max(np.load('Tests/data/kappa/' + str(i) + '.npy')[:, 0]) for i in range(18)]
+    # ess= [np.max(np.load('data/kappa/' + str(i) + '.npy')[:, 0]) for i in range(18)]
     # plt.plot(kappa, ess, 'o:', color = 'tab:purple',  label = 'MCHMC (fine tuned)')
 
     # langevin-like
@@ -533,7 +533,7 @@ def ill_conditioned():
     plt.plot(data['Condition number'], data['ESS'], 'v-', markersize = ms, color=color)
 
     # nuts
-    ess_nuts = np.load('Tests/data/kappa/NUTS.npy').T
+    ess_nuts = np.load('data/kappa/NUTS.npy').T
     color = 'tab:orange'
     plt.plot(kappa, ess_nuts[:, 0], 'v-', color= color, markersize= ms, label='NUTS')
     plt.fill_between(kappa, ess_nuts[:, 0] - ess_nuts[:, 1], ess_nuts[:, 0] + ess_nuts[:, 1], color=color, alpha=0.07)
@@ -574,7 +574,7 @@ def BimodalMarginal():
 
 
     #NUTS
-    X = np.load('Tests/data/bimodal_marginal/NUTS_hard.npz')
+    X = np.load('data/bimodal_marginal/NUTS_hard.npz')
     x0, steps = np.array(X['x0']), np.array(X['steps'])
 
     plt.hist(x0, density=True, bins = 30, alpha = 0.5, color = 'tab:orange', label = 'NUTS', zorder = 0)
@@ -602,7 +602,7 @@ def BimodalMarginal():
 
     bins_per_mode = 20
     bins = get_bins([mu1, mu2], [sigma1, sigma2], bins_per_mode)
-    P = np.load('Tests/data/bimodal_marginal/sep'+str(mu2)+'_f'+str(f)+'_sigma'+str(sigma2)+'.npy')
+    P = np.load('data/bimodal_marginal/sep'+str(mu2)+'_f'+str(f)+'_sigma'+str(sigma2)+'.npy')
 
     my_hist(bins, P)
     f1, f2 = np.sum(P[:bins_per_mode]), np.sum(P[bins_per_mode : 2 * bins_per_mode])
@@ -638,7 +638,7 @@ def rosenbrock():
 
     # MCHMC
     d = 36
-    X = np.load('Tests/data/rosenbrock_funnel/rosenbrock.npz')
+    X = np.load('data/rosenbrock_funnel/rosenbrock.npz')
     x, y = X['samples'][:, 0], X['samples'][:, d // 2]
     w = X['w']
     sns.histplot(x=x, y=y, weights=w, bins=200, ax=plot.ax_joint)
@@ -651,7 +651,7 @@ def rosenbrock():
 
 
     # NUTS
-    X= np.load('Tests/data/rosenbrock_funnel/rosenbrock_HMC.npz')
+    X= np.load('data/rosenbrock_funnel/rosenbrock_HMC.npz')
     x, y = X['x'][:, 0], X['y'][:, 0]
 
     sns.scatterplot(x, y, s= 6, linewidth= 0, ax= plot.ax_joint, alpha = 0.7, color= 'tab:orange')
@@ -693,11 +693,11 @@ def funnel():
         return (z.T * np.exp(-0.5 * theta)).T, theta / 3.0
 
     eps, free_time = 0.1, 6
-    data = np.load('Tests/data/rosenbrock_funnel/funnel_free'+str(free_time) + '_eps'+str(eps)+'.npz')
+    data = np.load('data/rosenbrock_funnel/funnel_free'+str(free_time) + '_eps'+str(eps)+'.npz')
     z, theta, w = data['z'], data['theta'], data['w']
 
 
-    data = np.load('Tests/data/rosenbrock_funnel/funnel_HMC.npz')
+    data = np.load('data/rosenbrock_funnel/funnel_HMC.npz')
     zHMC, thetaHMC = data['z'], data['theta']
 
 
@@ -813,7 +813,7 @@ def stohastic_volatility():
     name= ['MCHMC', 'NUTS']
 
     for method_index in range(2):
-        band = np.load('Tests/data/stochastic_volatility/'+name[method_index]+'_posterior_band.npy')
+        band = np.load('data/stochastic_volatility/'+name[method_index]+'_posterior_band.npy')
         plt.plot(dates, band[1], color=tab_colors[method_index])
         plt.fill_between(dates, band[0], band[2], color= tab_colors[method_index], alpha=0.5)
         plt.plot([], [], color = tab_colors[method_index], lw = 5, label = name[method_index]) #for the legend

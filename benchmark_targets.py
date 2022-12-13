@@ -318,7 +318,7 @@ class StochasticVolatility():
 
         self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
 
-        self.variance = np.load('Tests/data/stochastic_volatility/ground_truth_moments.npy')
+        self.variance = np.load('data/stochastic_volatility/ground_truth_moments.npy')
         self.grad_nlogp = jax.grad(self.nlogp)
 
 

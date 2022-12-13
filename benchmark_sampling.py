@@ -62,7 +62,7 @@ def full_bias():
         sampler = mchmc.Sampler(StandardNormal(d= d), length[n], 1.0, 'LF', False)
         bias[n, :] = sampler.sample(steps, ess= True)
 
-    np.save('Tests/data/full_bias.npy', bias)
+    np.save('data/full_bias.npy', bias)
 
 
 def ill_conditioned():
@@ -136,7 +136,7 @@ def dimension_dependence():
         avg, std = bounce_frequency(d, alpha, generalized)
         dict.update({'ess (d='+str(d)+')': avg, 'err ess (d='+str(d)+')': std})
     df = pd.DataFrame.from_dict(dict)
-    df.to_csv('Tests/data/dimensions/StandardNormal'+('_g' if generalized else '')+'_eps4.csv', sep='\t', index=False)
+    df.to_csv('data/dimensions/StandardNormal'+('_g' if generalized else '')+'_eps4.csv', sep='\t', index=False)
 
 
 
@@ -246,11 +246,11 @@ def table1():
 
         else:
 
-            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets))])
+            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets)-1, len(targets))])
             #results = np.array([grid_search.search_wrapper_1d(lambda e: ESS(alpha * sigma[i], e, targets[i], num_samples[i]), borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 
-    #df.to_csv('Tests/data/dimensions_dependence/Rossenbrockg.csv', index=False)
+    #df.to_csv('data/dimensions_dependence/Rossenbrockg.csv', index=False)
 
     df.to_csv('submission/Table ' + name_sampler + '.csv', index=False)
     print(df)
@@ -327,10 +327,10 @@ def stochastic_volatility():
         return band
 
     band = posterior_band(np.exp(X[:, :-2]), W)
-    np.save('Tests/data/stochastic_volatility/MCHMC_posterior_band.npy', band)
+    np.save('data/stochastic_volatility/MCHMC_posterior_band.npy', band)
 
 
-    #np.savez('Tests/data/stochastic_volatility/MCHMC_samples.npz', s= X[:, :-2], sigma = X[:, :-2], nu= X[:, :-1], w = W)
+    #np.savez('data/stochastic_volatility/MCHMC_samples.npz', s= X[:, :-2], sigma = X[:, :-2], nu= X[:, :-1], w = W)
 
 
 
@@ -357,3 +357,5 @@ if __name__ == '__main__':
     #full_bias_eps()
 
 
+
+    #0.0037
