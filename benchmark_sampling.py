@@ -233,7 +233,18 @@ def table1():
         borders_alpha = np.array([[0.3, 3], [0.3, 3], [10, 40], [0.3, 10], [0.3, 3], [0.3, 3]])
 
 
-        num_samples= [30000, 300000, 500000, 300000, 300000, 100000]
+        num_samples= [30000, 300000, 500000, 300000, 300000, 30000]
+
+        # df = pd.read_csv('submission/Table generalized_LF_q=0.csv')
+        # df_tf = pd.read_csv('submission/Table generalized_LF_q=0_tuning-free3.csv')
+        # L = 0.4 * np.array(df_tf['eps'] / df_tf['ESS'])
+        # eps = np.array(df_tf['eps'])
+        # for i_target in range(5, 6):
+        #     print(names[i_target] + ': ' +str(ESS(L[i_target] / np.sqrt(targets[i_target].d), eps[i_target], targets[i_target], num_samples[i_target])))
+        #
+        # exit()
+        #print(ESS(0.19, 0.6, targets[-1], 30000))
+
 
         if integrator == 'MN':
             borders_eps *= np.sqrt(10.9)
@@ -246,7 +257,7 @@ def table1():
 
         else:
 
-            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets)-1, len(targets))])
+            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets))])
             #results = np.array([grid_search.search_wrapper_1d(lambda e: ESS(alpha * sigma[i], e, targets[i], num_samples[i]), borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 
@@ -355,7 +366,3 @@ if __name__ == '__main__':
     table1()
     #dimension_dependence()
     #full_bias_eps()
-
-
-
-    #0.0037

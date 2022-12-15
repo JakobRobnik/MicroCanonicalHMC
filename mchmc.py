@@ -209,6 +209,14 @@ class Sampler:
             return (x, u, g, r, key, time), (self.Target.transform(x), - self.Target.nlogp(x) / self.Target.d)
 
 
+        def step_full_return(state, useless):
+            """Tracks transform(x) as a function of number of iterations"""
+
+            x, u, g, r, key, time, w = self.dynamics(state)
+
+            return (x, u, g, r, key, time), (x, - self.Target.nlogp(x) / self.Target.d)
+
+
         def step_with_energy(state, useless):
             """Tracks transform(x) and the energy as a function of number of iterations"""
 
@@ -239,7 +247,7 @@ class Sampler:
             entropy_new = (W * entropy + w * l) / (W + w) # <L(x)> / d
             W = (W + w) * jnp.exp(entropy_new - entropy)
 
-            return ((x, u, g, r, key, time), (W, entropy_new, F1, F2, E1, E2)), None
+            return ((x, u, g, r, key, time), (W, entropy_new, F1, F2, E1, E2)), -l
 
 
         def b_step(state_track, useless):
@@ -284,12 +292,16 @@ class Sampler:
             l = self.Target.nlogp(x) / self.Target.d
             en = self.Target.d * (0.5 * jnp.log(self.Target.d * jnp.square(w)) + l)
 
-            W, entropy, F1, F2, E1, E2 = jax.lax.scan(prerun_step, init= ((x, u, g, r, key, 0.0), (1.0, l, x, jnp.square(x), en, jnp.square(en))), xs=None, length=num_steps)[0][1]
+            state, logw = jax.lax.scan(prerun_step, init= ((x, u, g, r, key, 0.0), (1.0, l, x, jnp.square(x), en, jnp.square(en))), xs=None, length=num_steps)
 
+            W, entropy, F1, F2, E1, E2 = state[1]
             sigma = jnp.sqrt(jnp.average(F2 - jnp.square(F1)))
             varE = (E2 - jnp.square(E1)) / self.Target.d
 
-            return sigma, varE
+            w = jnp.exp(logw - jnp.median(logw))
+            iw = jnp.square(jnp.average(w)) / jnp.average(jnp.square(w))
+
+            return sigma, varE, iw, np.isfinite(E2)
 
 
         else: # track the full transform(x)
@@ -368,47 +380,45 @@ class Sampler:
 
 
         self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
-        varE_wanted = 0.001 * 0.3
+        varE_wanted = 0.001
         burn_in, samples = 2000, 1000
 
         key, subkey = jax.random.split(key)
         x0 = self.sample(burn_in, x_initial, random_key= subkey, final_state= True)
-        factor = [0.8, 0.4, 0.1, 0.1, 0.1]
-        still_inf = 0
+        props = (key, np.inf)
 
-        def tuning_step(key, still_inf):
+        def tuning_step(props):
 
+            key, eps_inappropriate = props
             # get a small number of samples
             key_new, subkey = jax.random.split(key)
-            x, w, E = self.sample(samples, x0, subkey, monitor_energy= True)
-            if np.isinf(E[-1]):
-                self.eps = self.eps * factor[still_inf]
-                still_inf_new = still_inf + 1
-                print('eps too large, large (divergences observed)')
+            sigma, varE, iw, success = self.sample(samples, x0, subkey, prerun= True)
 
-            else:
-                still_inf_new = 0
+            if success:
+                L_new = sigma * np.sqrt(self.Target.d)
+                eps_new = self.eps * np.power(varE_wanted / varE, 0.25) #assume varE ~ eps^2
 
-            #energy variance
-            e1 = np.average(E, weights= w)
-            e2 = np.average(np.square(E), weights=w)
-            varE = (e2 - np.square(e1)) / self.Target.d
+            else: #there were divergences
+                L_new = self.L
 
-            # typical size of the posterior
-            x1 = jnp.average(x, weights=w, axis = 0)
-            x2 = jnp.average(jnp.square(x), weights=w, axis = 0)
-            sigma = jnp.sqrt(jnp.average(x2 - jnp.square(x1)))
+                if self.eps < eps_inappropriate:
+                    eps_inappropriate = self.eps
 
-            #update hyperparameters
-            L_new = sigma * np.sqrt(self.Target.d)
-            eps_new = self.eps * np.power(varE_wanted / varE, 0.25) #assume varE ~ eps^2
+                eps_new = self.eps * 0.9
+
+            if iw < 0.9 and self.eps < eps_inappropriate: #importance weights are too low
+                eps_inappropriate = self.eps
+
+            eps_new = min(0.9 * eps_inappropriate, eps_new) #if suggested new eps is larger than what was previously found to be too large we try to lower the upper range of acceptable eps
             self.set_hyperparameters(L_new, eps_new)
-            print('varE / varE wanted: {}, eps: {}, sigma = L / sqrt(d): {}'.format(varE / varE_wanted, eps_new, sigma))
 
-            return key_new, still_inf_new
+            word =  'lower' if (eps_new > (0.9 - 1e-5) * eps_inappropriate) else 'update'
+            print('varE / varE wanted: {} ---'.format(varE / varE_wanted) + word + '---> eps: {}, sigma = L / sqrt(d): {}'.format(eps_new, L_new / np.sqrt(self.Target.d)))
 
-        for i in range(5):
-            key, still_inf = tuning_step(key, still_inf)
+            return key_new, eps_inappropriate
+
+        for i in range(10):
+            props = tuning_step(props)
         print('-------------')
 
         self.Target.transform = transform
