@@ -9,7 +9,7 @@ import arviz as az
 import matplotlib.dates as mdates
 from numpyro.examples.datasets import SP500, load_dataset
 
-from old import MMD
+from old_code import MMD
 from benchmark_targets import *
 
 tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
@@ -43,7 +43,7 @@ def ess_definition():
     #mask_plot = [True, True, False, True, False, False, False, True, True, False, False, False]
     #mask_plot = len(length) * [True, ]
 
-    X = np.load('Tests/data/full_bias.npy')
+    X = np.load('data/full_bias.npy')
     steps = point_reduction(10**6, 100)
 
 
@@ -75,103 +75,6 @@ def ess_definition():
 
 
 
-def dimension_dependence():
-    """Figure 3"""
-
-    ff, ff_title, ff_ticks = 30, 22, 28
-    plt.rcParams['xtick.labelsize'] = ff_ticks
-    plt.rcParams['ytick.labelsize'] = ff_ticks
-    plt.figure(figsize= (21, 10))
-    ms = 15
-
-    dimensions = [100, 300, 1000, 3000, 10000]
-    targets = ['kappa1', 'kappa100', 'Rosenbrock']
-    colors= ['tab:blue', 'tab:orange', 'tab:red']
-    names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.5$)']
-    sigma = [1.0, 1.4761922, 2.4998958]
-    method_marker = ['s', 'o']
-    method_name = ['MCHMC', 'MCLMC']
-    DF= [[pd.read_csv('Tests/data/dimensions_dependence/'+tar+method+'.csv') for tar in targets] for method in ['', 'g']]
-
-    hmc_data = [np.load('Tests/data/dimensions_dependence/HMC_' + tar + '.npy') for tar in targets]
-
-    plt.subplot(2, 2, 3)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    print('epsilon(d = 1)')
-    for j in range(len(method_name)):
-        for i in range(len(targets)):
-            df = DF[j][i]
-            plt.plot(dimensions, df['eps'] / sigma[i], method_marker[j], color = colors[i], markersize =  ms)
-            eps1 = np.dot(np.sqrt(dimensions), df['eps'] /sigma[i]) / np.sum(dimensions)
-            print(method_name[j] +' '+ names_targets[i] + ': ' + str(eps1))
-            plt.plot(dimensions, eps1 * np.sqrt(dimensions), color = colors[i], alpha= 0.2)
-
-    print('--------')
-    plt.xlabel('d', fontsize= ff)
-    plt.ylabel(r'$\epsilon$', fontsize= ff)
-    plt.xscale('log')
-    plt.yscale('log')
-    #plt.ylim(0.8, 1.1e2)
-
-
-    plt.subplot(2, 2, 4)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    print('alpha')
-    for j in range(len(method_name)):
-        for i in range(len(targets)):
-            df = DF[j][i]
-            plt.plot(dimensions, df['alpha'] *np.sqrt(dimensions) / sigma[i], method_marker[j], color = colors[i], markersize =  ms)
-            alpha = np.dot(np.sqrt(dimensions), df['alpha'] * np.sqrt(dimensions) / sigma[i]) / np.sum(dimensions)
-            print(method_name[j] + ' ' + names_targets[i] + ': ' + str(alpha))
-            plt.plot(dimensions, alpha * np.sqrt(dimensions), color = colors[i], alpha= 0.2)
-            #plt.plot(dimensions, df['eps'] / df['ESS'], ':', color = colors[i])
-
-    plt.xlabel('d', fontsize= ff)
-    plt.ylabel('L', fontsize= ff)
-    plt.xscale('log')
-    plt.yscale('log')
-
-
-    plt.subplot(2, 1, 1)
-    ax = plt.gca()
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-
-    for j in range(len(method_name)):
-        for i in range(len(targets)):
-            df = DF[j][i]
-            plt.plot(dimensions, df['ESS'] / df['ESS'][0], method_marker[j], color = colors[i], markersize =  ms)
-            plt.plot(dimensions, np.ones(len(dimensions)), color = 'black')
-
-    for i in range(len(targets)):
-        plt.plot(dimensions, hmc_data[i][0] / hmc_data[i][0][0], '*', color = colors[i], markersize =  ms, alpha = 0.5)
-
-    plt.xlabel('d', fontsize= ff)
-    plt.ylabel('ESS(d) / ESS(100)', fontsize= ff)
-    plt.xscale('log')
-    plt.ylim(0, 1.1)
-
-    #plt.axis('off')
-    [plt.plot([], [], color=colors[i], label = names_targets[i], lw = 5) for i in range(len(names_targets))]
-    plt.legend(loc = 3, fontsize= ff)
-
-    [plt.plot([], [], method_marker[j], color = colors[0], label = method_name[j], markersize = ms) for j in range(len(method_name))]
-    plt.plot([], [], '*', color = colors[0], alpha = 0.5, label = 'NUTS', markersize= ms)
-    plt.legend(fontsize= ff-3, ncol = 2)
-
-    #plt.gca().add_artist(plt.legend(, names_targets, loc = 4))
-    #plt.legend([plt.plot([], [], method_marker[j], color = 'black') for j in range(len(method_name))], method_name, loc = 3)
-
-    plt.tight_layout()
-    plt.savefig('submission/DimensionScaling.pdf')
-
-    plt.show()
-
-
 def plot_power_lines(power):
 
     xlims = plt.gca().get_xlim()
@@ -188,7 +91,7 @@ def plot_power_lines(power):
 
 
 def esh_not_converging():
-    """Figure 4"""
+    """Figure 3"""
 
     data1 = np.load('data/ESH_not_converging/ESHexample_ESH.npy')
     data2 = np.load('data/ESH_not_converging/ESHexample_MCHMC.npy')
@@ -299,7 +202,7 @@ def first_nonzero_decimal(x):
 
 
 def bias_variance():
-    """Figure 5"""
+    """Figure 4"""
     from matplotlib import ticker
     import mchmc
 
@@ -411,7 +314,7 @@ def bias_variance():
 
 
 def energy_fluctuations():
-    """Figure 6"""
+    """Figure 5"""
 
     ff, ff_ticks = 35, 33
     plt.rcParams['xtick.labelsize'] = ff_ticks
@@ -425,15 +328,18 @@ def energy_fluctuations():
 
     ### scaling with epsilon ###
 
-    targets = ['STN', 'ICG', 'rosenbrock', 'funnel', 'german']
-    colors= ['tab:blue', 'tab:orange', 'tab:red', 'tab:green', 'tab:purple']
-    names_targets = ['Standard Gaussian', 'Ill-conditioned Gaussian', 'Rosenbrock function', "Neal's funnel", "German credit"]
+    targets = ['STN', 'STN1000', 'ICG', 'rosenbrock', 'funnel', 'german', 'stochastic volatility']
+    colors= ['tab:blue', 'darkblue', 'tab:orange', 'tab:red', 'tab:green', 'purple', 'saddlebrown']
+    names_targets = ['Gaussian (d = 100)', 'Gaussian (d = 1000)', 'Ill-conditioned Gaussian', 'Rosenbrock', "Neal's funnel", 'German credit', 'Stochastic Volatility']
     data = [pd.read_csv('data/energy/'+tar+'.csv') for tar in targets]
 
 
     for i in range(len(targets)):
-        plt.plot(data[i]['eps'], data[i]['varE'], '-', color = colors[i])
-        plt.fill_between(data[i]['eps'], data[i]['low err stdE'], data[i]['high err stdE'], color = colors[i], alpha = 0.2)
+        mask = data[i]['varE'] > 0
+        if i == 2:
+            mask[-5:] = False
+        plt.plot(data[i]['eps'][mask], data[i]['varE'][mask], '-', color = colors[i])
+        plt.fill_between(data[i]['eps'][mask], data[i]['low err varE'][mask], data[i]['high err varE'][mask], color = colors[i], alpha = 0.2)
 
     plt.ylabel('Var[E] / d', fontsize= ff)
     plt.xlabel(r'$\epsilon$', fontsize= ff)
@@ -443,9 +349,9 @@ def energy_fluctuations():
     ### varE ~ eps^4 lines ###
     plot_power_lines(4.0)
 
-
     ### optimal epsilon ###
-    eps = [7.3, 2.428389768790094, 0.3311311214825911, 0.2290867652767773, 0.2089296130854039]
+    eps = [6.799491, 24.023774, 2.428389768790094, 0.36307805, 1.207824843648695, 0.3, 0.6918309709189366]
+
     for i in range(len(targets)):
         j = 0
         while data[i]['eps'][j] < eps[i]:
@@ -457,11 +363,16 @@ def energy_fluctuations():
         plt.plot([eps[i], ], [varE, ], 'o', markersize = 15, color = colors[i])
 
 
-    plt.plot([0.03, 15], [0.001, 0.001], color = 'black', alpha =  0.8) # tuning-free algorithm choice
-    plt.xlim(0.03, 15)
+    plt.plot([0.04, 40], [0.001, 0.001], color = 'black', alpha = 1) # tuning-free algorithm choice
+    plt.plot([0.04, 40], [0.0005, 0.0005], '--', color='black', alpha= 1)  # tuning-free algorithm choice
+    plt.xlim(0.04, 40)
     plt.ylim(1e-6, 1e1)
-    [plt.plot([], [], color=colors[i], label = names_targets[i], lw = 5) for i in range(len(names_targets))]
-    plt.legend(fontsize= ff-6, loc = 2, ncol = 2)
+    #[plt.plot([], [], color=colors[i], label = names_targets[i], lw = 5) for i in range(len(names_targets))]
+    xloc = [2.5,   8,   0.8, 0.095, 0.3, 0.043, 0.34]
+    yloc = [3e-6, 3e-6, 3e-6, 3e-6, 1e-4, 4e-6, 3e-6]
+    for i in range(7):
+        plt.text(xloc[i], yloc[i], names_targets[i], rotation = 39, color = colors[i], fontsize = ff-12, alpha = 0.6)
+    #plt.legend(fontsize= ff-10, loc = 2, ncol = 2)
 
 
     ax = plt.subplot2grid(shape=(1, 3), loc= (0, 2))
@@ -474,6 +385,7 @@ def energy_fluctuations():
     names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.5$)']
 
     data = np.load('data/energy/dimension_scaling.npy')
+    data[2, :, :] = np.load('data/energy/dimension_scaling_0.95.npy')[2, :, :]
     dimensions = [100, 300, 1000, 3000, 10000]
     for i in range(len(names_targets)):
         plt.plot(dimensions, data[i, :, 0], '-', markersize=10, color=colors[i])
@@ -483,12 +395,113 @@ def energy_fluctuations():
     plt.xlabel(r'$d$', fontsize=ff)
     plt.xscale('log')
     plt.yscale('log')
-    #plt.ylim(0, 0.002)
+    plt.ylim(1e-6, 1e1)
+    plt.plot([100, 10000], [0.001, 0.001], color = 'black') # tuning-free algorithm choice
+
     [plt.plot([], [], color=colors[i], label=names_targets[i], lw=5) for i in range(len(names_targets))]
-    #plt.legend(fontsize=ff-3)
+    plt.legend(fontsize=ff-12)
 
     plt.tight_layout()
     plt.savefig('submission/EnergyFluctuations.pdf')
+
+    plt.show()
+
+
+def dimension_dependence():
+    """Figure 6"""
+
+    ff, ff_title, ff_ticks = 30, 22, 28
+    plt.rcParams['xtick.labelsize'] = ff_ticks
+    plt.rcParams['ytick.labelsize'] = ff_ticks
+    plt.figure(figsize= (21, 10))
+    ms = 15
+
+    dimensions = [100, 300, 1000, 3000, 10000]
+    targets = ['kappa1', 'kappa100', 'Rosenbrock']
+    colors= ['tab:blue', 'tab:orange', 'tab:red']
+    names_targets = ['Standard Gaussian', r'Gaussian ($\kappa = 100$)', r'Rosenbrock ($Q = 0.5$)']
+    sigma = [1.0, 1.4761922, 2.4998958]
+    method_marker = ['s', 'o']
+    method_name = ['MCHMC', 'MCLMC']
+    DF= [[pd.read_csv('data/dimensions_dependence/'+tar+method+'.csv') for tar in targets] for method in ['', 'g']]
+
+    print(DF[1][0])
+    exit()
+    hmc_data = [np.load('data/dimensions_dependence/HMC_' + tar + '.npy') for tar in targets]
+
+    plt.subplot(2, 2, 3)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    print('epsilon(d = 1)')
+    for j in range(len(method_name)):
+        for i in range(len(targets)):
+            df = DF[j][i]
+            plt.plot(dimensions, df['eps'] / sigma[i], method_marker[j], color = colors[i], markersize =  ms)
+            eps1 = np.dot(np.sqrt(dimensions), df['eps'] /sigma[i]) / np.sum(dimensions)
+            print(method_name[j] +' '+ names_targets[i] + ': ' + str(eps1))
+            plt.plot(dimensions, eps1 * np.sqrt(dimensions), color = colors[i], alpha= 0.2)
+
+    print('--------')
+    plt.xlabel('d', fontsize= ff)
+    plt.ylabel(r'$\epsilon$', fontsize= ff)
+    plt.xscale('log')
+    plt.yscale('log')
+    #plt.ylim(0.8, 1.1e2)
+
+
+    plt.subplot(2, 2, 4)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    print('alpha')
+    for j in range(len(method_name)):
+        for i in range(len(targets)):
+            df = DF[j][i]
+            plt.plot(dimensions, df['alpha'] *np.sqrt(dimensions) / sigma[i], method_marker[j], color = colors[i], markersize =  ms)
+            alpha = np.dot(np.sqrt(dimensions), df['alpha'] * np.sqrt(dimensions) / sigma[i]) / np.sum(dimensions)
+            print(method_name[j] + ' ' + names_targets[i] + ': ' + str(alpha))
+            plt.plot(dimensions, alpha * np.sqrt(dimensions), color = colors[i], alpha= 0.2)
+            #plt.plot(dimensions, df['eps'] / df['ESS'], ':', color = colors[i])
+
+    plt.xlabel('d', fontsize= ff)
+    plt.ylabel('L', fontsize= ff)
+    plt.xscale('log')
+    plt.yscale('log')
+
+
+    plt.subplot(2, 1, 1)
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    for j in range(len(method_name)):
+        for i in range(len(targets)):
+            df = DF[j][i]
+            plt.plot(dimensions, df['ESS'] / df['ESS'][0], method_marker[j], color = colors[i], markersize =  ms)
+            plt.plot(dimensions, np.ones(len(dimensions)), color = 'black')
+
+    for i in range(len(targets)):
+        plt.plot(dimensions, hmc_data[i][0] / hmc_data[i][0][0], '*', color = colors[i], markersize =  ms, alpha = 0.5)
+
+    plt.xlabel('d', fontsize= ff)
+    plt.ylabel('ESS(d) / ESS(100)', fontsize= ff)
+    plt.xscale('log')
+    plt.ylim(0, 1.1)
+
+    #plt.axis('off')
+    [plt.plot([], [], color=colors[i], label = names_targets[i], lw = 5) for i in range(len(names_targets))]
+    plt.legend(loc = 3, fontsize= ff)
+
+    [plt.plot([], [], method_marker[j], color = colors[0], label = method_name[j], markersize = ms) for j in range(len(method_name))]
+    plt.plot([], [], '*', color = colors[0], alpha = 0.5, label = 'NUTS', markersize= ms)
+    plt.legend(fontsize= ff-3, ncol = 2)
+
+    #plt.gca().add_artist(plt.legend(, names_targets, loc = 4))
+    #plt.legend([plt.plot([], [], method_marker[j], color = 'black') for j in range(len(method_name))], method_name, loc = 3)
+
+    plt.tight_layout()
+    plt.savefig('submission/DimensionScaling.pdf')
 
     plt.show()
 
@@ -898,5 +911,6 @@ def qspace():
 
 
 
+#dimension_dependence()
 energy_fluctuations()
 

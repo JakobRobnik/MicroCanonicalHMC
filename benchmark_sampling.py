@@ -65,6 +65,7 @@ def full_bias():
     np.save('data/full_bias.npy', bias)
 
 
+
 def ill_conditioned():
     condition_numbers = jnp.logspace(0, 5, 18)
     integrator= 'LF'
@@ -271,43 +272,6 @@ def table1():
 
     df.to_csv('submission/Table ' + name_sampler + '5.csv', index=False)
     print(df)
-
-
-
-def energy_fluctuations():
-
-    file = 'submission/TableESH_generalized.csv'
-    file2 = 'submission/Table generalized_LF_q=0_energy.csv'
-
-    results = pd.read_csv(file, sep= '\t')
-    #alpha = np.array(results['alpha'])
-    eps = np.array(results['eps'])
-
-    # targets
-    import german_credit
-    names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2),
-               Rosenbrock(), Funnel(d=20), german_credit.Target(), StochasticVolatility()]
-
-    sigma= np.sqrt([np.average(target.variance) for target in targets])
-    sigma[1] = 1.0
-    alpha = 1.0 * sigma
-    key = jax.random.PRNGKey(0)
-    stdE = np.empty(len(eps))
-
-    for i in range(5):
-        print(names[i])
-        target = targets[i]
-
-        sampler = mchmc.Sampler(target, np.inf, eps[i], integrator= 'LF', generalized=True)
-        sigma, stdE[i] = sampler.sample(1000, prerun= True)
-
-    print(stdE.tolist(), eps.tolist())
-    #results['stdE/d'] = stdE
-
-    #print(results)
-
-    #results.to_csv(file2, index= False)
 
 
 

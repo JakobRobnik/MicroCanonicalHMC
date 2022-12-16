@@ -264,41 +264,73 @@ def power_spectrum():
 
 
 
+def get_var(E_all, W_all):
+    num_infs = 0
+    chains = len(E_all)
+    var = []
+    for chain in range(chains):
+        if not np.all(np.isfinite(E_all[chain])):
+            num_infs += 1
+        else:
+            E, W = remove_jumps(E_all[chain], W_all[chain])
+            var.append(np.average(np.square(E - np.average(E, weights= W)), weights=W))
 
-def epsilon_dependence():
-    num_target = 0
-    name = (['STN', 'STN1000', 'ICG', 'rosenbrock', 'funnel', 'german'])[num_target]
-    target = ([StandardNormal(d = 100), StandardNormal(d = 1000), IllConditionedGaussian(100, 100.0), Rosenbrock(), Funnel(), german_credit.Target()])[num_target]
-    epsilon = ([np.logspace(np.log10(1), np.log10(15), 15),
-                np.logspace(np.log10(1), np.log10(15), 15) * np.sqrt(10),
-                np.logspace(np.log10(0.1), np.log10(5), 15),
-                np.logspace(np.log10(0.01), np.log10(1.2), 15) / np.sqrt(3),
-                np.logspace(np.log10(0.01), np.log10(3), 15),
-                np.logspace(np.log10(0.01), np.log10(1.2), 15)])[num_target]
+    if chains - num_infs < 3:
+        return np.array([-1, -1, -1])
 
-
-    num_steps, burn_in = 3000, 2000
-    Evar = np.empty((len(epsilon), 3))
-    L = 1.0 * jnp.sqrt(target.d) * np.sqrt(np.average(target.variance))
-    #L = np.inf
-    sampler = mchmc.Sampler(target, L, 1.0, 'LF', True)
-
-    for i in range(len(epsilon)):
-        print(i)
-        sampler.eps = epsilon[i]
-        #bias[i, :] = sampler.sample('prior', num_steps, L, key, generalized= False, integrator= 'LF', ess= True)
-        X, W, E = sampler.parallel_sample(10, num_steps, monitor_energy=True)
-        E = E[:, burn_in:]
-        W = W[:, burn_in:]
-
-        var = np.average(np.square(E - np.average(E, weights= W, axis = 1)[:, None]), weights=W, axis = 1) / target.d
+    else:
+        var = np.array(var)
         med = np.median(var)
         lower_quart, upper_quart = np.median(var[var < med]), np.median(var[var > med])
-        Evar[i] = [med, lower_quart, upper_quart]
+        return np.array([med, lower_quart, upper_quart])
 
-    df = pd.DataFrame({'eps': epsilon, 'varE': Evar[:, 0], 'low err varE': Evar[:, 1], 'high err varE': Evar[:, 2]})
-    df.to_csv('data/energy/'+name+'.csv', index= False)
 
+
+def epsilon_dependence():
+
+    burn_in, samples = 2000, 1000
+    chains = num_cores * 2
+
+    names = ['STN', 'STN1000', 'ICG', 'rosenbrock', 'funnel', 'german', 'stochastic volatility']
+    targets = [StandardNormal(d=100), StandardNormal(d=1000), IllConditionedGaussian(100, 100.0), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
+    num_eps = [20, 20, 20, 10, 10, 10, 10]
+
+    file = 'submission/Table generalized_LF_q=0.csv'
+    results = pd.read_csv(file)
+    eps_all = np.array(results['eps'])[[0, 2, 3, 4, 5]]
+    alpha_all = np.array(results['alpha'])[[0, 2, 3, 4, 5]]
+    eps_all = np.insert(eps_all, [0, 0], [6.799491, 24.023774])
+    alpha_all = np.insert(alpha_all, [0, 0], [0.775923, 0.847204])
+
+
+    for num_target in range(3):
+
+        Evar = np.empty((num_eps[num_target], 3))
+        name, target = names[num_target], targets[num_target]
+        eps_opt, L_opt = eps_all[num_target], np.sqrt(target.d) * alpha_all[num_target]
+        print(name)
+
+        if num_target<3:
+            epsilon = eps_opt * np.logspace(-1, np.log10(10), len(Evar))
+        else:
+            epsilon = eps_opt * np.logspace(-1, np.log10(2), len(Evar))
+
+
+        sampler = mchmc.Sampler(target, L_opt, eps_opt, 'LF', True)
+
+        # burn-in
+        x_init = sampler.parallel_sample(chains, burn_in, random_key= jax.random.PRNGKey(42), final_state=True, num_cores=num_cores)
+
+        for i in range(len(epsilon)):
+            print(i)
+            sampler.eps = epsilon[i]
+            #bias[i, :] = sampler.sample('prior', num_steps, L, key, generalized= False, integrator= 'LF', ess= True)
+            _, W_all, E_all = sampler.parallel_sample(chains, samples, x_initial= x_init, monitor_energy=True, num_cores= num_cores)
+
+            Evar[i] = get_var(E_all, W_all) / target.d
+
+        df = pd.DataFrame({'eps': epsilon, 'varE': Evar[:, 0], 'low err varE': Evar[:, 1], 'high err varE': Evar[:, 2]})
+        df.to_csv('data/energy/'+name+'.csv', index= False)
 
 
 
@@ -307,30 +339,25 @@ def dimension_dependence():
     dimensions = [100, 300, 1000, 3000, 10000]
     name = ['kappa1', 'kappa100', 'Rosenbrock']
     targets = [lambda d: StandardNormal(d), lambda d: IllConditionedGaussian(d, 100.0), lambda d: Rosenbrock(d, 0.5)]
-    DF = [pd.read_csv('/data/dimensions_dependence/'+nam+'g.csv') for nam in name]
+    DF = [pd.read_csv('data/dimensions_dependence/'+nam+'g.csv') for nam in name]
     L = np.array([np.array(df['alpha']) * np.sqrt(dimensions) for df in DF])
     eps = np.array([np.array(df['eps']) for df in DF])
 
-    num_steps, burn_in = 3000, 2000
+    burn_in, samples = 2000, 1000
     Evar = np.empty((len(targets), len(dimensions), 3))
 
 
-    for num in range(len(targets)):
+    for num in range(2, len(targets)):
         print(name[num])
 
         for i in range(len(dimensions)):
-            sampler = mchmc.Sampler(targets[num](dimensions[i]), L[num, i], eps[num, i], 'LF', True)
+            sampler = mchmc.Sampler(targets[num](dimensions[i]), L[num, i], eps[num, i] * 0.95, 'LF', True)
 
-            X, w, E = sampler.parallel_sample(10, num_steps, monitor_energy=True)
-            E = E[:, burn_in:]
-            w = w[:, burn_in:]
+            _, W, E = sampler.parallel_sample(10, samples + burn_in, monitor_energy=True)
 
-            var = np.average(np.square(E - np.average(E, weights=w, axis=1)[:, None]), weights=w, axis=1) / dimensions[i]
-            med = np.median(var)
-            lower_quart, upper_quart = np.median(var[var < med]), np.median(var[var > med])
-            Evar[num, i] = [med, lower_quart, upper_quart]
+            Evar[num, i] = get_var(E[:, burn_in:], W[:, burn_in:]) / dimensions[i]
 
-    np.save('data/energy/dimension_scaling.npy', Evar)
+    np.save('data/energy/dimension_scaling_0.95.npy', Evar)
 
     #for d in df['d']df['eps']
 
@@ -339,7 +366,9 @@ def dimension_dependence():
 if __name__ == '__main__':
 
     #power_spectrum()
-    benchmarks()
+    dimension_dependence()
+    #epsilon_dependence()
+    #benchmarks()
     #benchmark_weights()
     #dimension_dependence()
     #epsilon_dependence()
