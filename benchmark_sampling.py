@@ -145,8 +145,8 @@ def table1():
 
     #version of the sampler
     q = 0 #choice of the Hamiltonian (q = 0 or q = 2)
-    generalized = True #choice of the momentum decoherence mechanism
-    alpha = 1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
+    generalized = False #choice of the momentum decoherence mechanism
+    alpha = -1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
     integrator = 'LF' #integrator (Leapfrog (LF) or Minimum Norm (MN))
     HMC = False
 
@@ -168,7 +168,7 @@ def table1():
     #targets
     import german_credit
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d= 36), Funnel(d= 20), german_credit.Target(), StochasticVolatility()]
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
 
     # dimensions = [100, 300, 1000, 3000, 10000]
@@ -226,14 +226,20 @@ def table1():
             return ess, sampler.L / np.sqrt(target.d), sampler.eps
 
 
+
         #1.0 for Ross, 5.6 for kappa 1, 2.5 for kappa 100
         #borders_eps = 1.0* np.array([[0.5 * np.sqrt(d/100.0), 2 * np.sqrt(d/100.0)] for d in dimensions])
         #num_samples= [100000 for d in dimensions]
-        borders_eps = np.array([[1.0, 4.0], [0.5, 10.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0], [0.1, 1.0]])
+        borders_eps = np.array([[1.0, 4.0], [0.5, 10.0], [0.1, 1.0], [0.1, 1.5], [0.1, 1.0], [0.1, 1.0]])
         borders_alpha = np.array([[0.3, 3], [0.3, 3], [10, 40], [0.3, 10], [0.3, 3], [0.3, 3]])
 
 
-        num_samples= [30000, 300000, 500000, 300000, 300000, 30000]
+        num_samples= [30000, 100000, 300000, 100000, 300000, 10000]
+
+        #
+        # print(ESS(0.7, 0.23, targets[-3], num_samples[-3]))
+        # print(ESS(0.7, 0.15, targets[-3], num_samples[-3]))
+        # exit()
 
         # df = pd.read_csv('submission/Table generalized_LF_q=0.csv')
         # df_tf = pd.read_csv('submission/Table generalized_LF_q=0_tuning-free3.csv')
@@ -249,9 +255,9 @@ def table1():
         if integrator == 'MN':
             borders_eps *= np.sqrt(10.9)
 
-        if alpha == -1: #do a grid scan over alpha and epsilon
+        if alpha < 0: #do a grid scan over alpha and epsilon
             results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), borders_alpha[i][0], borders_alpha[i][1], borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
-
+            print(results)
             df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 
 
@@ -263,8 +269,9 @@ def table1():
 
     #df.to_csv('data/dimensions_dependence/Rossenbrockg.csv', index=False)
 
-    df.to_csv('submission/Table ' + name_sampler + '.csv', index=False)
+    df.to_csv('submission/Table ' + name_sampler + '5.csv', index=False)
     print(df)
+
 
 
 def energy_fluctuations():
@@ -280,7 +287,7 @@ def energy_fluctuations():
     import german_credit
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
     targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2),
-               Rosenbrock(d=36), Funnel(d=20), german_credit.Target(), StochasticVolatility()]
+               Rosenbrock(), Funnel(d=20), german_credit.Target(), StochasticVolatility()]
 
     sigma= np.sqrt([np.average(target.variance) for target in targets])
     sigma[1] = 1.0

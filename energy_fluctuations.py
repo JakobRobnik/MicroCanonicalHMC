@@ -127,7 +127,7 @@ def benchmarks():
 
     # targets
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d=36), Funnel(d=20), german_credit.Target(), StochasticVolatility()]
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
     #optimal settings
     file = 'submission/Table generalized_LF_q=0.csv'
@@ -168,7 +168,7 @@ def benchmark_weights():
 
     # targets
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d=36), Funnel(d=20), german_credit.Target(), StochasticVolatility()]
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
     #optimal settings
     file = 'submission/Table generalized_LF_q=0.csv'
@@ -208,7 +208,7 @@ def power_spectrum():
 
     # targets
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
-    targets = [IllConditionedGaussian(100, 100.0), BiModal(d=50, mu1=0.0, mu2=8.0, sigma1=1.0, sigma2=1.0, f=0.2), Rosenbrock(d=36), Funnel(d=20), german_credit.Target(), StochasticVolatility()]
+    targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
     #optimal settings
     file = 'submission/Table generalized_LF_q=0.csv'
@@ -266,15 +266,16 @@ def power_spectrum():
 
 
 def epsilon_dependence():
-    num_target = 5
+    num_target = 0
     name = (['STN', 'STN1000', 'ICG', 'rosenbrock', 'funnel', 'german'])[num_target]
-    target = ([StandardNormal(d = 100), StandardNormal(d = 1000), IllConditionedGaussian(100, 100.0), Rosenbrock(d = 36), Funnel(d=20), german_credit.Target()])[num_target]
+    target = ([StandardNormal(d = 100), StandardNormal(d = 1000), IllConditionedGaussian(100, 100.0), Rosenbrock(), Funnel(), german_credit.Target()])[num_target]
     epsilon = ([np.logspace(np.log10(1), np.log10(15), 15),
                 np.logspace(np.log10(1), np.log10(15), 15) * np.sqrt(10),
                 np.logspace(np.log10(0.1), np.log10(5), 15),
                 np.logspace(np.log10(0.01), np.log10(1.2), 15) / np.sqrt(3),
                 np.logspace(np.log10(0.01), np.log10(3), 15),
                 np.logspace(np.log10(0.01), np.log10(1.2), 15)])[num_target]
+
 
     num_steps, burn_in = 3000, 2000
     Evar = np.empty((len(epsilon), 3))
@@ -305,7 +306,7 @@ def dimension_dependence():
 
     dimensions = [100, 300, 1000, 3000, 10000]
     name = ['kappa1', 'kappa100', 'Rosenbrock']
-    targets = [lambda d: StandardNormal(d), lambda d: IllConditionedGaussian(d, 100.0), lambda d: Rosenbrock(d)]
+    targets = [lambda d: StandardNormal(d), lambda d: IllConditionedGaussian(d, 100.0), lambda d: Rosenbrock(d, 0.5)]
     DF = [pd.read_csv('/data/dimensions_dependence/'+nam+'g.csv') for nam in name]
     L = np.array([np.array(df['alpha']) * np.sqrt(dimensions) for df in DF])
     eps = np.array([np.array(df['eps']) for df in DF])

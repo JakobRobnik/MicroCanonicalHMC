@@ -119,7 +119,7 @@ class IllConditionedGaussianGamma():
 class BiModal():
     """A Gaussian mixture p(x) = f N(x | mu1, sigma1) + (1-f) N(x | mu2, sigma2)."""
 
-    def __init__(self, d, mu1, mu2, sigma1, sigma2, f):
+    def __init__(self, d = 50, mu1 = 0.0, mu2 = 8.0, sigma1 = 1.0, sigma2 = 1.0, f = 0.2):
 
         self.d = d
 
@@ -203,7 +203,7 @@ class BiModalEqual():
 class Funnel():
     """Noise-less funnel"""
 
-    def __init__(self, d):
+    def __init__(self, d = 20):
 
         self.d = d
         self.sigma_theta= 3.0
@@ -253,11 +253,22 @@ class Funnel():
 class Rosenbrock():
     """Mixture of two Gaussians, one centered at x = [mu/2, 0, 0, ...], the other at x = [-mu/2, 0, 0, ...]"""
 
-    def __init__(self, d):
+    def __init__(self, d = 36, Q = 0.1):
 
         self.d = d
-        #self.Q, var_x, var_y = 0.1, 2.0, 10.098433122783046 #var_y is computed numerically (see compute_variance below)
-        self.Q, var_x, var_y = 0.5, 2.0, 10.498957879911487
+        self.Q = Q
+
+        #ground truth moments
+        var_x = 2.0
+
+        #these two options were precomputed:
+        if Q == 0.1:
+            var_y = 10.098433122783046 # var_y is computed numerically (see class function compute_variance)
+        elif Q == 0.5:
+            var_y = 10.498957879911487
+        else:
+            raise ValueError('Ground truth moments for Q = ' + str(Q) + ' were not precomputed. Use Q = 0.1 or 0.5.')
+
         self.variance = jnp.concatenate((var_x * jnp.ones(d//2), var_y * jnp.ones(d//2)))
 
 
@@ -414,7 +425,7 @@ def check_gradient(target, x):
 
 if __name__ == '__main__':
 
-    target = Rosenbrock(d = 100)
+    target = Rosenbrock(d = 100, Q= 5.0)
     print(np.sqrt(np.average(target.variance)))
 
     #target.compute_moments()

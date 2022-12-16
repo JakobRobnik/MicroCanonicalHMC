@@ -10,7 +10,7 @@ plt.rcParams.update({'font.size': 30})
 
 key = jax.random.PRNGKey(0)
 d = 10000
-target = Rosenbrock(d= 10000)
+target = Rosenbrock(d= 10000, Q= 0.5)
 
 key, subkey = jax.random.split(key)
 x0 = 3.0*jax.random.normal(subkey, shape=(d, ), dtype='float64')

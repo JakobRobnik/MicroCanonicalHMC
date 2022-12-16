@@ -662,7 +662,7 @@ def rosenbrock():
 
 
     #exact
-    ros = Rosenbrock(d = 2)
+    ros = Rosenbrock(d = 2, Q= 0.1)
     X = ros.draw(1000)
     x, y = X[:, 0], X[:, 1]
 
@@ -670,7 +670,7 @@ def rosenbrock():
 
     # marginals
     sns.lineplot(x, np.exp(-0.5 * np.square(x - 1)) / np.sqrt(2 * np.pi), linewidth= 1, ax= plot.ax_marg_x, color= 'black', alpha = 0.5)
-    ros = Rosenbrock(d=2)
+    ros = Rosenbrock(d=2, Q= 0.1)
     X = ros.draw(5000000)
     x, y = X[:, 0], X[:, 1]
     sns.histplot(y=y, bins= 2000, fill= False, element= 'step', linewidth= 1, ax= plot.ax_marg_y, stat= 'density', color= 'black', alpha = 0.5, label= 'exact')
