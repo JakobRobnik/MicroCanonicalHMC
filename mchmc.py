@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from jump_identification import remove_jumps
 import torch
 from pyro.ops.stats import effective_sample_size
+from correlation_length import ess_corr
 
 jax.config.update('jax_enable_x64', True)
 
@@ -325,8 +326,9 @@ class Sampler:
 
         varE_wanted = 0.0005             # targeted energy variance per dimension
         iw_minimal = 0.9                    # minimal required importance weight factor = (sum w)^2 / sum w^2
-        burn_in, samples = 2000, 300
+        burn_in, samples = 2000, 1000
 
+        dialog = True
 
         ### random key ###
         if random_key is None:
@@ -340,7 +342,8 @@ class Sampler:
         key, subkey = jax.random.split(key)
         x0 = self.sample(burn_in, x_initial, random_key= subkey, final_state= True)
         props = (key, np.inf, 0.0, False)
-
+        if dialog:
+            print('Hyperparameter tuning (first stage)')
 
         def tuning_step(props):
 
@@ -374,9 +377,9 @@ class Sampler:
             ### update the hyperparameters ###
 
             if no_divergences:
-                L_new = sigma * np.sqrt(self.Target.d)
-                eps_new = self.eps * np.power(varE_wanted / varE, 0.25) #assume var[E] ~ eps^4
-                success = np.abs(1.0 - varE / varE_wanted) < 0.2 #we are done
+                L_new = sigma * jnp.sqrt(self.Target.d)
+                eps_new = self.eps * jnp.power(varE_wanted / varE, 0.25) #assume var[E] ~ eps^4
+                success = jnp.abs(1.0 - varE / varE_wanted) < 0.2 #we are done
 
             else:
                 L_new = self.L
@@ -384,7 +387,7 @@ class Sampler:
                 if self.eps < eps_inappropriate:
                     eps_inappropriate = self.eps
 
-                eps_new = np.inf #will be lowered later
+                eps_new = jnp.inf #will be lowered later
 
 
             #update the known region of appropriate eps
@@ -402,31 +405,36 @@ class Sampler:
                 eps_new = 0.5 * (eps_inappropriate + eps_appropriate)
             self.set_hyperparameters(L_new, eps_new)
 
-            # print the dialog
-            word = 'bisection' if (not no_divergences or iw < iw_minimal) else 'update'
-            print('varE / varE wanted: {} ---'.format(np.round(varE / varE_wanted, 4)) + word + '---> eps: {}, sigma = L / sqrt(d): {}'.format(np.round(eps_new, 3), np.round(L_new / np.sqrt(self.Target.d), 3)))
+            if dialog:
+                word = 'bisection' if (not no_divergences or iw < iw_minimal) else 'update'
+                print('varE / varE wanted: {} ---'.format(np.round(varE / varE_wanted, 4)) + word + '---> eps: {}, sigma = L / sqrt(d): {}'.format(np.round(eps_new, 3), np.round(L_new / np.sqrt(self.Target.d), 3)))
 
             return key_new, eps_inappropriate, eps_appropriate, success
 
 
         ### first stage: L = sigma sqrt(d)  ###
-        for i in range(10):
+        for i in range(10): # = maxiter
             props = tuning_step(props)
-            if props[-1]:
+            if props[-1]: # success == True
                 break
 
         ### second stage: L = epsilon(best) / ESS(correlations)  ###
+        if dialog:
+            print('Hyperparameter tuning (second stage)')
 
-        samples = 2000
-        X = self.sample(samples, x_initial= x0, random_key= props[0], monitor_energy=True)[0]
-        max_dim = 500
-        if self.Target.d > max_dim:
-            indices= np.random.choice(self.Target.d, max_dim, replace= False)
-            X = X[:, indices]
+        n = np.logspace(2, np.log10(2500), 6).astype(int) # = [100, 190, 362, 689, 1313, 2499]
+        n = np.insert(n, [0, ], [1, ])
+        X = np.empty((n[-1] + 1, self.Target.d))
+        X[0] = x0
+        for i in range(1, len(n)):
+            key, subkey = jax.random.split(key)
+            X[n[i-1]:n[i]] = self.sample(n[i] - n[i-1], x_initial= X[n[i-1]-1], random_key= subkey, monitor_energy=True)[0]
+            ESS = ess_corr(X[:n[i]])
+            if dialog:
+                print('n = {0}, ESS = {1}'.format(n[i], ESS))
+            if n[i] > 10.0 / ESS:
+                break
 
-        ess = np.array(effective_sample_size(torch.from_numpy(np.array(X)[None, :, :])) / samples) #ess for each coordinate
-        ESS = 1.0 / np.average(1.0 / ess)
-        #ESS =
         L = 0.4 * self.eps / ESS # = 0.4 * correlation length
         self.set_hyperparameters(L, self.eps)
 

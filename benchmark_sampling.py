@@ -146,8 +146,8 @@ def table1():
 
     #version of the sampler
     q = 0 #choice of the Hamiltonian (q = 0 or q = 2)
-    generalized = False #choice of the momentum decoherence mechanism
-    alpha = -1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
+    generalized = True #choice of the momentum decoherence mechanism
+    alpha = 1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
     integrator = 'LF' #integrator (Leapfrog (LF) or Minimum Norm (MN))
     HMC = False
 
