@@ -911,6 +911,5 @@ def qspace():
 
 
 
-#dimension_dependence()
 energy_fluctuations()
 

@@ -426,6 +426,7 @@ class Sampler:
 
         ess = np.array(effective_sample_size(torch.from_numpy(np.array(X)[None, :, :])) / samples) #ess for each coordinate
         ESS = 1.0 / np.average(1.0 / ess)
+        #ESS =
         L = 0.4 * self.eps / ESS # = 0.4 * correlation length
         self.set_hyperparameters(L, self.eps)
 
