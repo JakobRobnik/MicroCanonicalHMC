@@ -4,4 +4,5 @@ MCHMC is is a constant energy sampler from an arbitrary distribution with an ava
 
 The accompanying paper is available [here](https://arxiv.org/abs/2212.08549).
 You can check out the [getting started tutorial](simple_tutorial.ipynb) (sampling from a standard Gaussian target). 
+
 If you have any questions do not hesitate to contact me at jakob_robnik@berkeley.edu
