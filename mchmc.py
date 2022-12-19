@@ -451,8 +451,9 @@ class Sampler:
         L = 0.4 * self.eps / ESS # = 0.4 * correlation length
         self.set_hyperparameters(L, self.eps)
 
-        print('L / sqrt(d) = {}, ESS(correlations) = {}'.format(L / np.sqrt(self.Target.d), ESS))
-        print('-------------')
+        if dialog:
+            print('L / sqrt(d) = {}, ESS(correlations) = {}'.format(L / np.sqrt(self.Target.d), ESS))
+            print('-------------')
 
 
 
