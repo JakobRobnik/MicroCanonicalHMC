@@ -328,7 +328,7 @@ class Sampler:
         iw_minimal = 0.9                    # minimal required importance weight factor = (sum w)^2 / sum w^2
         burn_in, samples = 2000, 1000
 
-        dialog = True
+        dialog = False
 
         ### random key ###
         if random_key is None:
