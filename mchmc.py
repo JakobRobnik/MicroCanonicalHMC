@@ -3,8 +3,6 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 from jump_identification import remove_jumps
-import torch
-from pyro.ops.stats import effective_sample_size
 from correlation_length import ess_corr
 
 jax.config.update('jax_enable_x64', True)
@@ -14,13 +12,15 @@ lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the mi
 
 
 class Sampler:
-    """the mchmc (q = 0 Hamiltonian) sampler"""
+    """the MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, L = None, eps = None, integrator = 'MN', generalized= True):
         """Args:
                 Target: the target distribution class
-                integrator: 'LF' (leapfrog) or 'MN' (minimal norm)
-                generalized: True (generalized momentum decoherence) or False (bounces).
+                L: momentum decoherence scale (can be tuned automatically)
+                eps: integration step-size (can be tuned automatically)
+                integrator: 'LF' (leapfrog) or 'MN' (minimal norm). Typically MN performs better.
+                generalized: True (Langevin-like momentum decoherence) or False (bounces).
         """
 
         self.Target = Target
@@ -203,7 +203,20 @@ class Sampler:
 
 
     def sample(self, num_steps, x_initial = 'prior', random_key= None, ess=False, monitor_energy= False, final_state = False):
+        """Args:
+               num_steps: number of integration steps to take.
+               x_initial: initial condition for x (an array of shape (target dimension, )). It can also be 'prior' in which case it is drawn from the prior distribution (self.Target.prior_draw).
+               eps: jax radnom seed, e.g. jax.random.PRNGKey(42).
+               ess: if True, it only ouputs the Effective Sample Size. In this case self.Target.variance = <x_i^2>_true should be defined.
+               monitor_energy: also tracks the energy error (energy should be conserved but there are numerical errors). Outputs samples, weights and energy (at each step).
+               final_state: only returns the final x of the chain (not self.Target.transform(x)!)
 
+            Returns:
+                samples (shape = (num_steps, self.Target.d))
+                weights (shape = (num_steps))
+
+                Except if ess == True, monitor_energy == True or final_state == True.
+        """
 
         def step(state, useless):
             """Tracks transform(x) as a function of number of iterations"""
