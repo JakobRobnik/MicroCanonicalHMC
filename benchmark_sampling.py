@@ -3,11 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-from MCHMC import mchmc
-from MCHMC import standardKinetic
-from MCHMC.benchmark_targets import *
-from MCHMC import grid_search
+import sampling.sampler as mchmc
+from sampling import standardKinetic
+from sampling.benchmark_targets import *
+from sampling import grid_search
 from HMC import myHMC
+from sampling import german_credit
 
 import jax
 import jax.numpy as jnp
@@ -167,7 +168,6 @@ def table1():
     print(name_sampler)
 
     #targets
-    import german_credit
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
     targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
