@@ -2,8 +2,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from jump_identification import remove_jumps
-from correlation_length import ess_corr
+from MCHMC.jump_identification import remove_jumps
+from MCHMC.correlation_length import ess_corr
 
 jax.config.update('jax_enable_x64', True)
 
