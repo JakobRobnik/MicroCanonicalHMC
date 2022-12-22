@@ -3,11 +3,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-import mchmc
-import standardKinetic
-from benchmark_targets import *
-import grid_search
-import myHMC
+from MCHMC import mchmc
+from MCHMC import standardKinetic
+from MCHMC.benchmark_targets import *
+from MCHMC import grid_search
+from HMC import myHMC
 
 import jax
 import jax.numpy as jnp

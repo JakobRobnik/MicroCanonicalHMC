@@ -9,8 +9,7 @@ import arviz as az
 import matplotlib.dates as mdates
 from numpyro.examples.datasets import SP500, load_dataset
 
-from old_code import MMD
-from benchmark_targets import *
+from MCHMC.benchmark_targets import *
 
 tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
 
