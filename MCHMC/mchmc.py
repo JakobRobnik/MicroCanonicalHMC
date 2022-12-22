@@ -459,6 +459,7 @@ class Sampler:
 
     def full_b(self, x_arr, w_arr):
 
+
         def step(moments, index):
             F2, W = moments
             x, w = x_arr[index, :], w_arr[index]
@@ -468,7 +469,22 @@ class Sampler:
 
             return (F2, W), b
 
-        return jax.lax.scan(step, (jnp.zeros(self.Target.d, ), 0.0), xs= jnp.arange(len(w_arr)))[1]
+        def step_parallel(moments, index):
+            F2, W = moments
+            x, w = x_arr[:, index, :], w_arr[:, index]
+            F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
+            W += w
+            b = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance, axis = -1)))
+
+            return (F2, W), b
+
+
+        if len(w_arr.shape) == 1: #single chain
+            return jax.lax.scan(step, (jnp.zeros(self.Target.d), 0.0), xs= jnp.arange(len(w_arr)))[1]
+
+        else:
+            num_chains = x_arr.shape[0]
+            return jax.lax.scan(step_parallel, (jnp.zeros((num_chains, self.Target.d)), jnp.zeros(num_chains)), xs=jnp.arange(len(w_arr)))[1]
 
 
 def ess_cutoff_crossing(bias):
@@ -489,3 +505,5 @@ def point_reduction(num_points, reduction_factor):
     indexes = np.concatenate((np.arange(1, 1 + num_points // reduction_factor, dtype=int),
                               np.arange(1 + num_points // reduction_factor, num_points, reduction_factor, dtype=int)))
     return indexes
+
+
