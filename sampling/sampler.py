@@ -14,7 +14,7 @@ lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the mi
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, L = None, eps = None, integrator = 'MN', generalized= True):
+    def __init__(self, Target, L = None, eps = None, integrator = 'MN', generalized= True, K = 1):
         """Args:
                 Target: the target distribution class
                 L: momentum decoherence scale (can be tuned automatically)
@@ -26,13 +26,31 @@ class Sampler:
         self.Target = Target
 
         ### integrator ###
-        self.hamiltonian_dynamics = self.leapfrog if (integrator=='LF') else self.minimal_norm
-        self.grad_evals_per_step = 1.0 if integrator == 'LF' else 2.0
-        if integrator != 'LF' and integrator != 'MN':
+        if integrator == "LF": #leapfrog (first updates the velocity)
+            self.hamiltonian_dynamics = self.leapfrog
+            self.grad_evals_per_step = 1.0
+        elif integrator == 'LFp': #position leapfrog (first updates the position)
+            self.hamiltonian_dynamics = self.position_leapfrog
+            self.grad_evals_per_step = 1.0
+        elif integrator== 'MN': #minimal norm integrator (velocity)
+            self.hamiltonian_dynamics = self.minimal_norm
+            self.grad_evals_per_step = 2.0
+        elif integrator == 'MNp': #minimal norm (position)
+            self.hamiltonian_dynamics = self.position_minimal_norm
+            self.grad_evals_per_step = 2.0
+        elif integrator == 'RM':
+            self.hamiltonian_dynamics = self.randomized_midpoint
+            self.grad_evals_per_step = 1.0
+            print('Assumed RM takes 1 grad eval / step')
+        else:
             print('integrator = ' + integrator + 'is not a valid option.')
+
 
         ### decoherence mechanism ###
         self.dynamics = self.dynamics_generalized if generalized else self.dynamics_bounces
+        if K != 1:
+            self.dynamics = self.dynamicsK
+        self.K= K
 
         if (not (L is None)) and (not (eps is None)):
             self.set_hyperparameters(L, eps)
@@ -42,7 +60,7 @@ class Sampler:
     def set_hyperparameters(self, L, eps):
         self.L = L
         self.eps= eps
-        self.nu = jnp.sqrt((jnp.exp(2 * self.eps / L) - 1.0) / self.Target.d)
+        self.nu = jnp.sqrt((jnp.exp(2 * self.eps * self.K / L) - 1.0) / self.Target.d)
 
 
     def energy(self, X, W):
@@ -74,11 +92,13 @@ class Sampler:
         ch = jnp.cosh(eps * g_norm / self.Target.d)
         th = jnp.tanh(eps * g_norm / self.Target.d)
         delta_r = jnp.log(ch) + jnp.log1p(ue * th)
+
         return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), r + delta_r
 
 
-    def leapfrog(self, x, g, u, r):
+    def leapfrog(self, x, g, u, r, key):
         """leapfrog"""
+
         #half step in momentum
         uu, rr = self.update_momentum(self.eps * 0.5, g, u, r)
 
@@ -88,27 +108,49 @@ class Sampler:
 
         #half step in momentum
         uu, rr = self.update_momentum(self.eps * 0.5, gg, uu, rr)
-        return xx, gg, uu, rr
 
-    #
-    # def leapfrog(self, x, g, u, r):
-    #     """adjoint leapfrog"""
-    #
-    #     #half step in x
-    #     xx = x + 0.5 * self.eps * u
-    #     gg = self.Target.grad_nlogp(xx)
-    #
-    #     #full step in momentum
-    #     uu, rr = self.update_momentum(self.eps, gg, u, r)
-    #
-    #     #half step in x
-    #     xx = x + 0.5 * self.eps * uu
-    #
-    #     return xx, gg, uu, rr
+        return xx, gg, uu, rr, key
 
 
-    def minimal_norm(self, x, g, u, r):
-        """Adjoint integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
+    def position_leapfrog(self, x, g, u, r, key):
+        """position leapfrog"""
+
+        #half step in x
+        xx = x + 0.5 * self.eps * u
+        gg = self.Target.grad_nlogp(xx)
+
+        #full step in momentum
+        uu, rr = self.update_momentum(self.eps, gg, u, r)
+
+        #half step in x
+        xx = xx + 0.5 * self.eps * uu
+
+        return xx, gg, uu, rr, key
+
+
+    def minimal_norm(self, x, g, u, r, key):
+        """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
+
+        # V T V T V
+
+        uu, rr = self.update_momentum(self.eps * lambda_c, g, u, r)
+
+        xx = x + self.eps * 0.5 * uu
+        gg = self.Target.grad_nlogp(xx)
+
+        uu, rr = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg, uu, rr)
+
+        xx = xx + self.eps * 0.5 * uu
+        gg = self.Target.grad_nlogp(xx)
+
+        uu, rr = self.update_momentum(self.eps * lambda_c, gg, uu, rr)
+
+        return xx, gg, uu, rr, key
+
+
+    def position_minimal_norm(self, x, g, u, r, key):
+
+        # T V T V T
 
         xx = x + lambda_c * self.eps * u
         gg = self.Target.grad_nlogp(xx)
@@ -122,19 +164,24 @@ class Sampler:
 
         xx = xx + lambda_c * self.eps* uu
 
-        return xx, gg, uu, rr
+        return xx, gg, uu, rr, key
 
-    # def minimal_norm(self, x, g, u, r):
-    #     """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
-    #     uu, rr = self.update_momentum(self.eps * lambda_c, g, u, r)
-    #     xx = x + self.eps * 0.5 * uu
-    #     gg = self.Target.grad_nlogp(xx)
-    #     uu, rr = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg, uu, rr)
-    #     xx = xx + self.eps * 0.5 * uu
-    #     gg = self.Target.grad_nlogp(xx)
-    #     uu, rr = self.update_momentum(self.eps * lambda_c, gg, uu, rr)
-    #
-    #     return xx, gg, uu, rr
+
+    def randomized_midpoint(self, x, g, u, r, key):
+
+        key1, key2 = jax.random.split(key)
+
+        xx = x + jax.random.uniform(key2) * self.eps * u
+
+        gg = self.Target.grad_nlogp(xx)
+
+        uu, rr = self.update_momentum(self.eps, gg, u, r)
+
+        xx = self.update_position_RM(xx, )
+
+
+        return xx, gg, uu, rr, key1
+
 
 
 
@@ -143,7 +190,7 @@ class Sampler:
         x, u, g, r, key, time = state
 
         # Hamiltonian step
-        xx, gg, uu, rr = self.hamiltonian_dynamics(x, g, u, r)
+        xx, gg, uu, rr, key = self.hamiltonian_dynamics(x, g, u, r, key)
 
         w = jnp.exp(rr) / self.Target.d
 
@@ -151,6 +198,25 @@ class Sampler:
         u_bounce, key = self.random_unit_vector(key)
         time += self.eps
         do_bounce = time > self.L
+        time = time * (1 - do_bounce)  # reset time if the bounce is done
+        u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
+
+        return xx, u_return, gg, rr, key, time, w
+
+    def dynamicsK(self, state):
+        """One step of the dynamics (with K > 1 langevin)"""
+        x, u, g, r, key, time = state
+
+        # Hamiltonian step
+        xx, gg, uu, rr = self.hamiltonian_dynamics(x, g, u, r)
+
+        w = jnp.exp(rr) / self.Target.d
+
+        # bounce
+        u_bounce, key = self.partially_refresh_momentum(uu, key)
+
+        time += self.eps
+        do_bounce = time > self.K
         time = time * (1 - do_bounce)  # reset time if the bounce is done
         u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
@@ -170,6 +236,7 @@ class Sampler:
         uu, key = self.partially_refresh_momentum(uu, key)
 
         return xx, uu, gg, rr, key, 0.0, w
+
 
 
     def get_initial_conditions(self, x_initial, random_key):
@@ -459,7 +526,6 @@ class Sampler:
 
     def full_b(self, x_arr, w_arr):
 
-
         def step(moments, index):
             F2, W = moments
             x, w = x_arr[index, :], w_arr[index]
@@ -472,9 +538,9 @@ class Sampler:
         def step_parallel(moments, index):
             F2, W = moments
             x, w = x_arr[:, index, :], w_arr[:, index]
-            F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
+            F2 = (F2 * W[:, None] + (w[:, None] * jnp.square(self.Target.transform(x)))) / (W + w)[:, None] # Update <f(x)> with a Kalman filter
             W += w
-            b = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance, axis = -1)))
+            b = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance), axis = 1))
 
             return (F2, W), b
 
@@ -484,7 +550,8 @@ class Sampler:
 
         else:
             num_chains = x_arr.shape[0]
-            return jax.lax.scan(step_parallel, (jnp.zeros((num_chains, self.Target.d)), jnp.zeros(num_chains)), xs=jnp.arange(len(w_arr)))[1]
+            return jax.lax.scan(step_parallel, (jnp.zeros((num_chains, self.Target.d)), jnp.zeros(num_chains)), xs=jnp.arange(x_arr.shape[1]))[1]
+
 
 
 def ess_cutoff_crossing(bias):

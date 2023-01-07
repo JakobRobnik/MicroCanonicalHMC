@@ -909,6 +909,6 @@ def qspace():
     plt.show()
 
 
-
-energy_fluctuations()
+dimension_dependence()
+#energy_fluctuations()
 
