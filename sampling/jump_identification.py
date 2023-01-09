@@ -59,7 +59,7 @@ def best_division(x, w, c, minn):
     return X, W, score[index], index
 
 
-def remove_jumps(x_given, w_given):
+def remove_jumps(x_given):
     """finds significant jumps in x and removes eliminates them"""
 
     c = 10             # transition region width which will be removed
@@ -69,7 +69,7 @@ def remove_jumps(x_given, w_given):
 
 
     x = jnp.copy(x_given)
-    w = jnp.copy(w_given)
+    w = jnp.ones(len(x))
 
     to_do = [(0, len(x))]
     num_iter = 0
@@ -95,5 +95,5 @@ def remove_jumps(x_given, w_given):
     if num_iter != 0:
         print('Removed ' + str(num_iter) + ' jumps.')
 
-    return x[w > -0.5], w[w > -0.5]
+    return x[w > -0.5]
 
