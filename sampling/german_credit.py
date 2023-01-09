@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-import mchmc
+from sampling import sampler
 
 #to get ground truth, run the following from the source directory of inference-gym:
 #python -m inference_gym.tools.get_ground_truth --target= GermanCreditNumericSparseLogisticRegression

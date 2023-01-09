@@ -14,10 +14,9 @@ import jax
 import jax.numpy as jnp
 
 num_cores = 6 #specific to my PC
-os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+#os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 ### Runs the bencmark problems. """
-
 
 def parallel_run(function, values):
     parallel_function= jax.pmap(jax.vmap(function))
@@ -148,7 +147,7 @@ def table1():
     #version of the sampler
     q = 0 #choice of the Hamiltonian (q = 0 or q = 2)
     generalized = True #choice of the momentum decoherence mechanism
-    alpha = 1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
+    alpha = -1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
     integrator = 'LF' #integrator (Leapfrog (LF) or Minimum Norm (MN))
     HMC = False
 
@@ -253,7 +252,8 @@ def table1():
         #print(ESS(0.19, 0.6, targets[-1], 30000))
 
 
-        if integrator == 'MN':
+        if integrator[:2] == 'MN':
+            print('is minimal norm')
             borders_eps *= np.sqrt(10.9)
 
         if alpha < 0: #do a grid scan over alpha and epsilon

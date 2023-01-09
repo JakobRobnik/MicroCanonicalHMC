@@ -63,8 +63,8 @@ class Sampler:
         self.nu = jnp.sqrt((jnp.exp(2 * self.eps * self.K / L) - 1.0) / self.Target.d)
 
 
-    def energy(self, X, W):
-        return 0.5* self.Target.d * jnp.log(self.Target.d * jnp.square(W)) + self.Target.nlogp(X)
+    def energy(self, x, r):
+        return self.Target.d * r + self.Target.nlogp(x)
 
 
     def random_unit_vector(self, key):
@@ -201,12 +201,13 @@ class Sampler:
 
         return xx, u_return, gg, rr, key, time
 
+
     def dynamicsK(self, state):
         """One step of the dynamics (with K > 1 langevin)"""
         x, u, g, r, key, time = state
 
         # Hamiltonian step
-        xx, gg, uu, rr = self.hamiltonian_dynamics(x, g, u, r)
+        xx, gg, uu, rr, key = self.hamiltonian_dynamics(x, g, u, r, key)
 
         # bounce
         u_bounce, key = self.partially_refresh_momentum(uu, key)
@@ -225,7 +226,7 @@ class Sampler:
         x, u, g, r, key, time = state
 
         # Hamiltonian step
-        xx, gg, uu, rr = self.hamiltonian_dynamics(x, g, u, r)
+        xx, gg, uu, rr, key = self.hamiltonian_dynamics(x, g, u, r, key)
 
         # bounce
         uu, key = self.partially_refresh_momentum(uu, key)
@@ -254,7 +255,7 @@ class Sampler:
             x = x_initial
 
         g = self.Target.grad_nlogp(x)
-        r = 0.5 + np.log(self.Target.d) - self.Target.nlogp(x) / (self.Target.d-1) # initialize r such that all the chains have the same energy = d (1 + log d) / 2. For a standard Gaussian the weights are then around one on the typical set.
+        r = 0.5 * self.Target.d - self.Target.nlogp(x) / (self.Target.d-1) # initialize r such that all the chains have the same energy = d / 2
 
         u, key = self.random_unit_vector(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
@@ -291,9 +292,8 @@ class Sampler:
             """Tracks transform(x) and the energy as a function of number of iterations"""
 
             x, u, g, r, key, time = self.dynamics(state)
-            LL = self.Target.nlogp(x)
-            energy = LL + 0.5 * self.Target.d * jnp.log(self.Target.d * jnp.square(w))
-            return (x, u, g, r, key, time), x, energy
+
+            return (x, u, g, r, key, time), x, self.energy(x, r)
 
 
         def b_step(state_track, useless):
@@ -392,7 +392,6 @@ class Sampler:
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None):
 
         varE_wanted = 0.0005             # targeted energy variance per dimension
-        iw_minimal = 0.9                    # minimal required importance weight factor = (sum w)^2 / sum w^2
         burn_in, samples = 2000, 1000
 
         dialog = False
