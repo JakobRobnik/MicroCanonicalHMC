@@ -88,9 +88,9 @@ class Sampler:
         g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
         e = - g / g_norm
         ue = jnp.dot(u, e)
-        sh = jnp.sinh(eps * g_norm / self.Target.d)
-        ch = jnp.cosh(eps * g_norm / self.Target.d)
-        th = jnp.tanh(eps * g_norm / self.Target.d)
+        sh = jnp.sinh(eps * g_norm / (self.Target.d-1))
+        ch = jnp.cosh(eps * g_norm / (self.Target.d-1))
+        th = jnp.tanh(eps * g_norm / (self.Target.d-1))
         delta_r = jnp.log(ch) + jnp.log1p(ue * th)
 
         return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), r + delta_r
@@ -192,8 +192,6 @@ class Sampler:
         # Hamiltonian step
         xx, gg, uu, rr, key = self.hamiltonian_dynamics(x, g, u, r, key)
 
-        w = jnp.exp(rr) / self.Target.d
-
         # bounce
         u_bounce, key = self.random_unit_vector(key)
         time += self.eps
@@ -201,7 +199,7 @@ class Sampler:
         time = time * (1 - do_bounce)  # reset time if the bounce is done
         u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
-        return xx, u_return, gg, rr, key, time, w
+        return xx, u_return, gg, rr, key, time
 
     def dynamicsK(self, state):
         """One step of the dynamics (with K > 1 langevin)"""
@@ -209,8 +207,6 @@ class Sampler:
 
         # Hamiltonian step
         xx, gg, uu, rr = self.hamiltonian_dynamics(x, g, u, r)
-
-        w = jnp.exp(rr) / self.Target.d
 
         # bounce
         u_bounce, key = self.partially_refresh_momentum(uu, key)
@@ -220,7 +216,7 @@ class Sampler:
         time = time * (1 - do_bounce)  # reset time if the bounce is done
         u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
-        return xx, u_return, gg, rr, key, time, w
+        return xx, u_return, gg, rr, key, time
 
 
     def dynamics_generalized(self, state):
@@ -230,12 +226,11 @@ class Sampler:
 
         # Hamiltonian step
         xx, gg, uu, rr = self.hamiltonian_dynamics(x, g, u, r)
-        w = jnp.exp(rr) / self.Target.d
 
         # bounce
         uu, key = self.partially_refresh_momentum(uu, key)
 
-        return xx, uu, gg, rr, key, 0.0, w
+        return xx, uu, gg, rr, key, 0.0
 
 
 
@@ -259,13 +254,12 @@ class Sampler:
             x = x_initial
 
         g = self.Target.grad_nlogp(x)
-        r = 0.5 + np.log(self.Target.d) - self.Target.nlogp(x) / self.Target.d # initialize r such that all the chains have the same energy = d (1 + log d) / 2. For a standard Gaussian the weights are then around one on the typical set.
-        w = jnp.exp(r) / self.Target.d
+        r = 0.5 + np.log(self.Target.d) - self.Target.nlogp(x) / (self.Target.d-1) # initialize r such that all the chains have the same energy = d (1 + log d) / 2. For a standard Gaussian the weights are then around one on the typical set.
 
         u, key = self.random_unit_vector(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
 
-        return x, u, g, r, key, w
+        return x, u, g, r, key
 
 
 
@@ -288,45 +282,42 @@ class Sampler:
         def step(state, useless):
             """Tracks transform(x) as a function of number of iterations"""
 
-            x, u, g, r, key, time, w = self.dynamics(state)
+            x, u, g, r, key, time = self.dynamics(state)
 
-            return (x, u, g, r, key, time), (self.Target.transform(x), - self.Target.nlogp(x) / self.Target.d)
+            return (x, u, g, r, key, time), self.Target.transform(x)
 
 
         def step_with_energy(state, useless):
             """Tracks transform(x) and the energy as a function of number of iterations"""
 
-            x, u, g, r, key, time, w = self.dynamics(state)
+            x, u, g, r, key, time = self.dynamics(state)
             LL = self.Target.nlogp(x)
             energy = LL + 0.5 * self.Target.d * jnp.log(self.Target.d * jnp.square(w))
-            return (x, u, g, r, key, time), (x,  - LL / self.Target.d, energy)
+            return (x, u, g, r, key, time), x, energy
 
 
         def b_step(state_track, useless):
             """Only tracks b as a function of number of iterations."""
 
-            x, u, g, r, key, time, w = self.dynamics(state_track[0])
-            W, F2, entropy = state_track[1]
-            l = self.Target.nlogp(x) / self.Target.d
-            w = jnp.exp(- (l - entropy))
+            x, u, g, r, key, time = self.dynamics(state_track[0])
+            W, F2 = state_track[1]
 
-            F2 = (W * F2 + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
-            entropy_new = (W * entropy + w * l) / (W + w)  # Update entropy = <L(x)/d> with a Kalman filter
-            W = (W + w) * jnp.exp(entropy_new - entropy)
+            F2 = (W * F2 + jnp.square(self.Target.transform(x)))/ (W + 1)  # Update <f(x)> with a Kalman filter
+            W += 1
             bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
             #bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
 
-            return ((x, u, g, r, key, time), (W, F2, entropy_new)), bias
+            return ((x, u, g, r, key, time), (W, F2)), bias
 
 
-        x, u, g, r, key, w = self.get_initial_conditions(x_initial, random_key)
+        x, u, g, r, key = self.get_initial_conditions(x_initial, random_key)
 
 
         ### do sampling ###
 
         if ess:  # only track the bias
 
-            _, b = jax.lax.scan(b_step, init=((x, u, g, r, key, 0.0), (1.0, jnp.square(x), self.Target.nlogp(x) / self.Target.d)), xs=None, length=num_steps)
+            _, b = jax.lax.scan(b_step, init=((x, u, g, r, key, 0.0), (1.0, jnp.square(x))), xs=None, length=num_steps)
 
 
             no_nans = 1-jnp.any(jnp.isnan(b))
@@ -343,17 +334,13 @@ class Sampler:
         else: # track the full transform(x)
 
             if monitor_energy:
-                X, logw, E = jax.lax.scan(step_with_energy, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
-                logw -= jnp.median(logw)
-                return X, jnp.exp(logw), E
+                return jax.lax.scan(step_with_energy, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
 
             elif final_state:
                 return jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[0][0]
 
             else:
-                X, logw = jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
-                logw -= jnp.median(logw)
-                return X, jnp.exp(logw)
+                return jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
 
 
 
@@ -431,28 +418,22 @@ class Sampler:
 
             # get a small number of samples
             key_new, subkey = jax.random.split(key)
-            X, W, E = self.sample(samples, x0, subkey, monitor_energy= True)
+            X, E = self.sample(samples, x0, subkey, monitor_energy= True)
 
             # remove large jumps in the energy
-            E -= jnp.average(E, weights= W)
-            E, W2 = remove_jumps(E, W)
+            E -= jnp.average(E)
+            E = remove_jumps(E)
 
             ### compute quantities of interest ###
 
             # typical size of the posterior
-            x1 = jnp.average(X, weights = W, axis= 0)
-            x2 = jnp.average(jnp.square(X), weights=W, axis=0)
-            sigma = jnp.sqrt(jnp.average(x2 - jnp.square(x1)))
+            x1 = jnp.average(X, axis= 0)
+            x2 = jnp.average(jnp.square(X), axis=0)
+            sigma = jnp.std(jnp.average(x2 - jnp.square(x1)))
 
             # energy fluctuations
-            E1 = jnp.average(E, weights = W2, axis= 0)
-            E2 = jnp.average(jnp.square(E), weights=W2, axis=0)
-            varE = (E2 - jnp.square(E1)) / self.Target.d
-            no_divergences = np.isfinite(E2)
-
-            # importance weights
-            iw = jnp.square(jnp.average(W)) / jnp.average(jnp.square(W))
-
+            varE = jnp.std(E) / self.Target.d
+            no_divergences = np.isfinite(varE)
 
             ### update the hyperparameters ###
 
@@ -472,7 +453,7 @@ class Sampler:
 
             #update the known region of appropriate eps
 
-            if iw < iw_minimal or not no_divergences: # inappropriate epsilon
+            if not no_divergences: # inappropriate epsilon
                 if self.eps < eps_inappropriate: #it is the smallest found so far
                     eps_inappropriate = self.eps
 
@@ -486,7 +467,7 @@ class Sampler:
             self.set_hyperparameters(L_new, eps_new)
 
             if dialog:
-                word = 'bisection' if (not no_divergences or iw < iw_minimal) else 'update'
+                word = 'bisection' if (not no_divergences) else 'update'
                 print('varE / varE wanted: {} ---'.format(np.round(varE / varE_wanted, 4)) + word + '---> eps: {}, sigma = L / sqrt(d): {}'.format(np.round(eps_new, 3), np.round(L_new / np.sqrt(self.Target.d), 3)))
 
             return key_new, eps_inappropriate, eps_appropriate, success
@@ -524,33 +505,33 @@ class Sampler:
 
 
 
-    def full_b(self, x_arr, w_arr):
+    def full_b(self, x_arr):
 
         def step(moments, index):
             F2, W = moments
-            x, w = x_arr[index, :], w_arr[index]
-            F2 = (F2 * W + (w * jnp.square(self.Target.transform(x)))) / (W + w)  # Update <f(x)> with a Kalman filter
-            W += w
+            x = x_arr[index, :]
+            F2 = (F2 * index + jnp.square(self.Target.transform(x)))/ (index + 1)  # Update <f(x)> with a Kalman filter
             b = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
 
-            return (F2, W), b
+            return (F2, ), b
 
         def step_parallel(moments, index):
             F2, W = moments
-            x, w = x_arr[:, index, :], w_arr[:, index]
-            F2 = (F2 * W[:, None] + (w[:, None] * jnp.square(self.Target.transform(x)))) / (W + w)[:, None] # Update <f(x)> with a Kalman filter
-            W += w
+            F2, W = moments
+            x = x_arr[:, index, :]
+            F2 = (F2 * index + jnp.square(self.Target.transform(x))) / index # Update <f(x)> with a Kalman filter
+            W += 1
             b = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance), axis = 1))
 
             return (F2, W), b
 
 
-        if len(w_arr.shape) == 1: #single chain
-            return jax.lax.scan(step, (jnp.zeros(self.Target.d), 0.0), xs= jnp.arange(len(w_arr)))[1]
+        if len(x_arr.shape) == 2: #single chain
+            return jax.lax.scan(step, (jnp.zeros(self.Target.d), ), xs= jnp.arange(len(x_arr)))[1]
 
         else:
             num_chains = x_arr.shape[0]
-            return jax.lax.scan(step_parallel, (jnp.zeros((num_chains, self.Target.d)), jnp.zeros(num_chains)), xs=jnp.arange(x_arr.shape[1]))[1]
+            return jax.lax.scan(step_parallel, (jnp.zeros((num_chains, self.Target.d)), ), xs=jnp.arange(x_arr.shape[1]))[1]
 
 
 
