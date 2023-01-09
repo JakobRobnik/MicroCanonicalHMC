@@ -426,12 +426,12 @@ class Sampler:
             ### compute quantities of interest ###
 
             # typical size of the posterior
-            x1 = jnp.average(X, axis= 0)
-            x2 = jnp.average(jnp.square(X), axis=0)
-            sigma = jnp.std(jnp.average(x2 - jnp.square(x1)))
+            x1 = jnp.average(X, axis= 0) #first moments
+            x2 = jnp.average(jnp.square(X), axis=0) #second moments
+            sigma = jnp.sqrt(jnp.average(x2 - jnp.square(x1))) #average variance over the dimensions
 
             # energy fluctuations
-            varE = jnp.std(E) / self.Target.d
+            varE = jnp.std(E)**2 / self.Target.d #variance per dimension
             no_divergences = np.isfinite(varE)
 
             ### update the hyperparameters ###
