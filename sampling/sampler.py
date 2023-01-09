@@ -293,7 +293,7 @@ class Sampler:
 
             x, u, g, r, key, time = self.dynamics(state)
 
-            return (x, u, g, r, key, time), x, self.energy(x, r)
+            return (x, u, g, r, key, time), (x, self.energy(x, r))
 
 
         def b_step(state_track, useless):
@@ -515,7 +515,6 @@ class Sampler:
             return (F2, ), b
 
         def step_parallel(moments, index):
-            F2, W = moments
             F2, W = moments
             x = x_arr[:, index, :]
             F2 = (F2 * index + jnp.square(self.Target.transform(x))) / index # Update <f(x)> with a Kalman filter

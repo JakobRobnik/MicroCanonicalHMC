@@ -8,7 +8,7 @@ import os
 
 
 def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
-    show= True
+    show= False
 
     A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
 

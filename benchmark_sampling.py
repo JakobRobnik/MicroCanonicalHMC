@@ -167,6 +167,9 @@ def table1():
     print(name_sampler)
 
     #targets
+    long = False
+    name_targets = '' if long else '_short'
+    indexes = [0, 1, 2, 3, 4, 5] if long else [0, 2, 5]
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
     targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
@@ -234,7 +237,7 @@ def table1():
         borders_alpha = np.array([[0.3, 3], [0.3, 3], [10, 40], [0.3, 10], [0.3, 3], [0.3, 3]])
 
 
-        num_samples= [30000, 100000, 300000, 100000, 300000, 10000]
+        num_samples= [30000, 100000, 300000, 100000, 100000, 10000]
 
         #
         # print(ESS(0.7, 0.23, targets[-3], num_samples[-3]))
@@ -257,20 +260,20 @@ def table1():
             borders_eps *= np.sqrt(10.9)
 
         if alpha < 0: #do a grid scan over alpha and epsilon
-            results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), borders_alpha[i][0], borders_alpha[i][1], borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
+            results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), borders_alpha[i][0], borders_alpha[i][1], borders_eps[i][0], borders_eps[i][1]) for i in indexes])
             print(results)
-            df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
+            df = pd.DataFrame({'Target ': [names[i] for i in indexes], 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 
 
         else:
 
-            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in range(len(targets))])
+            results = np.array([ESS_tf(targets[i], num_samples[i]) for i in indexes])
             #results = np.array([grid_search.search_wrapper_1d(lambda e: ESS(alpha * sigma[i], e, targets[i], num_samples[i]), borders_eps[i][0], borders_eps[i][1]) for i in range(len(targets))])
-            df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
+            df = pd.DataFrame({'Target ': [names[i] for i in indexes], 'ESS': results[:, 0], 'alpha': results[:, 1], 'eps': results[:, 2]})
 
     #df.to_csv('data/dimensions_dependence/Rossenbrockg.csv', index=False)
 
-    df.to_csv('submission/Table ' + name_sampler + '5.csv', index=False)
+    df.to_csv('submission/Table ' + name_sampler + name_targets + '.csv', index=False)
     print(df)
 
 
