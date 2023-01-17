@@ -5,7 +5,7 @@ MCHMC is a sampler from an arbitrary distribution with an available gradient of 
 The accompanying paper is available [here](https://arxiv.org/abs/2212.08549).
 
 You can check out the tutorials:
-- [getting started](simple_tutorial.ipynb): sampling from a standard Gaussian.
+- [getting started](intro_tutorial.ipynb): sampling from a standard Gaussian.
 - [advanced](advanced_tutorial.ipynb): posterior for the Stochastic Volatility model to the S&P500 returns. 
 
 If you have any questions do not hesitate to contact me at jakob_robnik@berkeley.edu
