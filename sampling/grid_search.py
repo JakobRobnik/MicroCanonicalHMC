@@ -42,6 +42,25 @@ def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
     return ess, A[i], epsilon[j]
 
 
+def direct_compare(ess_function1, ess_function2, amin, amax, epsmin, epsmax):
+
+
+        A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
+
+        epsilon = jnp.logspace(np.log10(epsmin), np.log10(epsmax), 6)
+
+        results1 = search_step(ess_function1, A, epsilon)
+        results2 = search_step(ess_function2, A, epsilon)
+
+        plt.figure(figsize=(15, 10))
+        plt.subplot(1, 2, 1)
+        visualize(results1, A, epsilon, show= True)
+
+        plt.subplot(1, 2, 2)
+        visualize(results1 / results2, A, epsilon, show=True)
+
+        plt.show()
+
 
 def search_step(ess_function, A, epsilon):
     return jax.vmap(lambda a: jax.pmap(lambda e: ess_function(a, e))(epsilon))(A)

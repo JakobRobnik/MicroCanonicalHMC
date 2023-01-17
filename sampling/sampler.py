@@ -204,7 +204,7 @@ class Sampler:
 
     def dynamicsK(self, state):
         """One step of the dynamics (with K > 1 langevin)"""
-        x, u, g, r, key, time = state
+        x, u, g, r, key, counter = state
 
         # Hamiltonian step
         xx, gg, uu, rr, key = self.hamiltonian_dynamics(x, g, u, r, key)
@@ -212,12 +212,12 @@ class Sampler:
         # bounce
         u_bounce, key = self.partially_refresh_momentum(uu, key)
 
-        time += self.eps
-        do_bounce = time > self.K
-        time = time * (1 - do_bounce)  # reset time if the bounce is done
+        counter += 1.0
+        do_bounce = counter > self.K
+        counter = counter * (1 - do_bounce) + do_bounce * (1e-5) # reset time if the bounce is done
         u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
-        return xx, u_return, gg, rr, key, time
+        return xx, u_return, gg, rr, key, counter
 
 
     def dynamics_generalized(self, state):

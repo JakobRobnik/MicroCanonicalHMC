@@ -172,54 +172,6 @@ def dimension_dependence():
 
 
 
-def bimodal_mixing():
-
-    def avg_mode_mixing_steps(signs, steps):
-        L = []
-        current_sign = signs[0]
-        island_size = steps[0]
-        for n in range(1, len(signs)):
-            sign = signs[n]
-            if sign != current_sign:
-                L.append(island_size)
-                island_size = 1
-                current_sign = sign
-            else:
-                island_size += steps[n]
-
-            if len(L) == 10:
-                return np.average(L)
-
-        print('Maximum number of steps exceeded, num_islands = ' + str(len(L)))
-        return len(signs)
-
-
-
-    def f(mu, num_samples):
-        d = 50
-        X, steps = sample_nuts(targets.bimodal, [d, mu], num_samples)
-
-        return avg_mode_mixing_steps(np.sign(X[:, 0] - mu*0.5), steps)
-
-
-    mu_arr = np.arange(1, 10)
-
-    avg_steps_mode = np.zeros(len(mu_arr))
-    num_samples= 10000
-
-    for i in range(len(avg_steps_mode)):
-        print(i, num_samples)
-
-        avg_num = f(mu_arr[i], num_samples)
-
-        avg_steps_mode[i] = avg_num
-
-        num_samples = (int)(avg_num * 10 * 30)
-
-    np.save('data/mode_mixing_NUTS.npy', np.array([avg_steps_mode, mu_arr]))
-
-
-
 def ill_conditioned(key_num, d = 100, condition_number = 100.0):
 
     R = special_ortho_group.rvs(d, random_state=0)
@@ -246,6 +198,7 @@ def ill_conditioned(key_num, d = 100, condition_number = 100.0):
     ess, n_crossing = ess_cutoff_crossing(bias((R @ X.T).T, np.ones(len(X)), variance_true), steps)
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
+
 
 
 def bimodal(key_num):

@@ -148,8 +148,9 @@ def table1():
     q = 0 #choice of the Hamiltonian (q = 0 or q = 2)
     generalized = True #choice of the momentum decoherence mechanism
     alpha = -1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
-    integrator = 'LFp' #integrator (Leapfrog (LF) or Minimum Norm (MN))
+    integrator = 'LF' #integrator (Leapfrog (LF) or Minimum Norm (MN))
     HMC = False
+    K = 5
 
     #name of the version
     if alpha > 1e10:
@@ -158,11 +159,12 @@ def table1():
     else:
         generalized_string = 'generalized_' if generalized else 'bounces_'
         alpha_string = '_tuning-free' if (alpha > 0) else ''
+    K_string = '' if K == 1 else '_K'+str(K)
     #parallel_string = '_parallel' if parallel else ''
-    name_sampler = generalized_string + integrator + '_q=' + str(q) + alpha_string #+ parallel_string
+    name_sampler = generalized_string + integrator + '_q=' + str(q) + alpha_string + K_string #parallel_string
     
     if HMC:
-        name_sampler = 'HMC'
+        name_sampler = 'HMC' + '_' + integrator
     
     print(name_sampler)
 
@@ -170,6 +172,7 @@ def table1():
     long = False
     name_targets = '' if long else '_short'
     indexes = [0, 1, 2, 3, 4, 5] if long else [0, 2, 5]
+    indexes = [2, ]
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
     targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
@@ -185,16 +188,17 @@ def table1():
     if HMC:
         
         def ESS(length, eps, target, num_samples): #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
-            return jnp.average(myHMC.Sampler(Target=target, eps=eps).parallel_sample(3, num_samples, length, key, generalized= generalized, integrator= integrator, ess=True))
+            return jnp.average(myHMC.Sampler(Target=target, L = length, eps=eps, integrator= integrator).parallel_sample(10, num_samples, random_key= key, ess=True))
 
-        eps = np.array([[0.01, 1], [0.01, 1.0], [0.01, 1.0], [0.01, 1.0], [0.01, 1.0], [0.002, 0.05]])
-        L = np.array([[0.05, 5], [0.5, 3.0], [3, 25.0], [0.1, 5.0], [0.1, 5.0], [0.1, 3]])
+        eps = np.array([[0.02, 0.6], [0.01, 1.0], [0.01, 1.0], [0.01, 1.0], [0.01, 1.0], [0.002, 0.05]])
+        L = np.array([[0.3, 2], [0.5, 3.0], [3, 25.0], [0.1, 5.0], [0.1, 5.0], [0.1, 3]])
 
-        num_samples= [30000, 300000, 500000, 300000, 300000, 100000]
+        num_samples= [100000, 300000, 500000, 300000, 300000, 100000]
 
-        results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), L[i][0], L[i][1], eps[i][0], eps[i][1]) for i in range(5, len(targets))])
 
-        df = pd.DataFrame({'Target ': names, 'ESS': results[:, 0], 'L': results[:, 1], 'eps': results[:, 2]})
+        results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), L[i][0], L[i][1], eps[i][0], eps[i][1]) for i in indexes])
+
+        df = pd.DataFrame({'Target ': [names[i] for i in indexes], 'ESS': results[:, 0], 'L': results[:, 1], 'eps': results[:, 2]})
 
 
     elif q == 2:
@@ -218,11 +222,11 @@ def table1():
     else:
 
         def ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
-            sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized)
+            sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized, K = K)
             return jnp.average(sampler.parallel_sample(10, num_samples, ess=True))
 
         def ESS_tf(target, num_samples):  #tuning-free sequential mode. Only runs a handful of chains to average ESS over the initial conditions
-            sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized)
+            sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized, K = K)
             sampler.tune_hyperparameters()
             ess= jnp.average(sampler.parallel_sample(10, num_samples, ess=True))
             print(ess)
@@ -340,3 +344,7 @@ if __name__ == '__main__':
     table1()
     #dimension_dependence()
     #full_bias_eps()
+
+    #0.003284
+    #0.003307
+    #0.003379

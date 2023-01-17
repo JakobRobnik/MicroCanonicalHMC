@@ -9,7 +9,7 @@ import arviz as az
 import matplotlib.dates as mdates
 from numpyro.examples.datasets import SP500, load_dataset
 
-from MCHMC.benchmark_targets import *
+from sampling.benchmark_targets import *
 
 tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
 
@@ -838,6 +838,9 @@ def stohastic_volatility():
     plt.show()
 
 
+def potential(L, d, q):
+    return -(1/q) * np.exp(- q * L / (d - q))
+
 def qspace():
     from scipy.stats import norm
     xmax = 4
@@ -845,7 +848,8 @@ def qspace():
 
     plt.figure(figsize = (20, 5))
 
-    p = norm.pdf(t)
+    L = - np.log(np)
+    d = 2
 
 
     plt.subplot(1, 4, 1)
@@ -854,12 +858,12 @@ def qspace():
     ax.spines['top'].set_visible(False)
 
     plt.title('Target')
-    plt.plot(t, p, color = 'black')
+    plt.plot(t, np.exp(-L), color = 'black')
     plt.xlabel('x')
     plt.yticks([])
     plt.xticks([])
     plt.xlim(-xmax, xmax)
-    plt.ylim(0, 0.45)
+    #plt.ylim(0, 0.45)
 
     plt.subplot(1, 4, 2)
     ax = plt.gca()
@@ -867,13 +871,13 @@ def qspace():
     ax.spines['top'].set_visible(False)
 
     plt.title('q > 0', color ='tab:blue')
-    plt.plot(t, -p, color = 'tab:blue')
+    plt.plot(t, potential(L, d, 1), color = 'tab:blue')
     plt.xlabel('x')
 
     plt.yticks([])
     plt.xticks([])
     plt.xlim(-xmax, xmax)
-    plt.ylim(-0.4, 0.05)
+    #plt.ylim(-0.4, 0.05)
 
     plt.subplot(1, 4, 3)
     ax = plt.gca()
@@ -881,13 +885,13 @@ def qspace():
     ax.spines['top'].set_visible(False)
 
     plt.title('q = 0', color = 'tab:orange')
-    plt.plot(t, np.square(t), color = 'tab:orange')
+    plt.plot(t, L / d, color = 'tab:orange')
     plt.yticks([])
     plt.xticks([])
 
     plt.xlabel('x')
     plt.xlim(-xmax, xmax)
-    plt.ylim(0, 9)
+    #plt.ylim(0, 9)
 
     plt.subplot(1, 4, 4)
     ax = plt.gca()
@@ -895,13 +899,13 @@ def qspace():
     ax.spines['top'].set_visible(False)
 
     plt.title('q < 0', color = 'tab:red')
-    plt.plot(t, 1/p, color = 'tab:red')
+    plt.plot(t, potential(L, d, -1), color = 'tab:red')
     plt.xlabel('x')
     plt.yticks([])
     plt.xticks([])
 
     plt.xlim(-xmax, xmax)
-    plt.ylim(0, 50)
+    #plt.ylim(0, 50)
 
 
     plt.subplots_adjust(wspace=0, hspace=0)
@@ -909,6 +913,9 @@ def qspace():
     plt.show()
 
 
-dimension_dependence()
-#energy_fluctuations()
+if __name__ == '__main__':
+
+    qspace()
+    #dimension_dependence()
+    #energy_fluctuations()
 
