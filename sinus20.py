@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 L = 10
 C = np.array([-0.466516, -0.834376, -0.714529, -0.0245586, 0.238837, 0.0143649, 0.271003, -0.374538, 0.873564, -0.370258, 0.891462, -0.665239, 0.810546, 0.198216, -0.816637, -0.195351, -0.573181, 0.251745, 0.647615, 0.201654])
-T = 1.0
+T = 0.1
 
 bins= 100
 dx = L/bins
@@ -79,9 +79,9 @@ def mchmc(steps):
 
 
 chi2 = mchmc(100000)
-plt.plot(np.sqrt(chi2))
+plt.plot(chi2)
 plt.xlabel('steps')
-plt.ylabel(r'$\chi$')
+plt.ylabel(r'$\chi^2$')
 plt.yscale('log')
 plt.xscale('log')
 plt.savefig('sinus20_large_steps.png')
