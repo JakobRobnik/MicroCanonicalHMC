@@ -120,15 +120,16 @@ class IllConditionedGaussianGamma():
 class ICG():
     """Ill-conditioned rotated Gaussian distribution"""
 
-    def __init__(self, d, numpy_seed):
+    def __init__(self, d, condition_number, numpy_seed):
         self.d = d
         rng = np.random.RandomState(seed=numpy_seed)
-        eigs = np.sort(rng.gamma(shape=1.0, scale=1., size=self.d)) #get the variance
-        D = np.diagonal(eigs)
-        R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
-        self.Hessian = R @ D @ R.T
+        eigs = jnp.logspace(-0.5*jnp.log10(condition_number), 0.5*jnp.log10(condition_number), d)
+        D = jnp.diag(eigs)
+        inv_D = jnp.diag(1/eigs)
+        R, _ = jnp.array(np.linalg.qr(rng.randn(self.d, self.d))) #random rotation
+        self.Hessian = R @ inv_D @ R.T
 
-        self.variance = jnp.diagonal(R @ (1/D) @ R.T)
+        self.variance = jnp.diagonal(R @ D @ R.T)
 
 
     def nlogp(self, x):

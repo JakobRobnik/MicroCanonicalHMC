@@ -14,7 +14,7 @@ lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the mi
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, L = None, eps = None, integrator = 'MN', generalized= True, K = 1):
+    def __init__(self, Target, L = None, eps = None, integrator = 'MN', generalized= True):
         """Args:
                 Target: the target distribution class
                 L: momentum decoherence scale (can be tuned automatically)
@@ -29,28 +29,19 @@ class Sampler:
         if integrator == "LF": #leapfrog (first updates the velocity)
             self.hamiltonian_dynamics = self.leapfrog
             self.grad_evals_per_step = 1.0
-        elif integrator == 'LFp': #position leapfrog (first updates the position)
-            self.hamiltonian_dynamics = self.position_leapfrog
-            self.grad_evals_per_step = 1.0
         elif integrator== 'MN': #minimal norm integrator (velocity)
             self.hamiltonian_dynamics = self.minimal_norm
-            self.grad_evals_per_step = 2.0
-        elif integrator == 'MNp': #minimal norm (position)
-            self.hamiltonian_dynamics = self.position_minimal_norm
             self.grad_evals_per_step = 2.0
         elif integrator == 'RM':
             self.hamiltonian_dynamics = self.randomized_midpoint
             self.grad_evals_per_step = 1.0
-            print('Assumed RM takes 1 grad eval / step')
         else:
             print('integrator = ' + integrator + 'is not a valid option.')
 
 
         ### decoherence mechanism ###
         self.dynamics = self.dynamics_generalized if generalized else self.dynamics_bounces
-        if K != 1:
-            self.dynamics = self.dynamicsK
-        self.K= K
+
 
         if (not (L is None)) and (not (eps is None)):
             self.set_hyperparameters(L, eps)
@@ -60,7 +51,7 @@ class Sampler:
     def set_hyperparameters(self, L, eps):
         self.L = L
         self.eps= eps
-        self.nu = jnp.sqrt((jnp.exp(2 * self.eps * self.K / L) - 1.0) / self.Target.d)
+        self.nu = jnp.sqrt((jnp.exp(2 * self.eps / L) - 1.0) / self.Target.d)
 
 
     def energy(self, x, r):
@@ -112,21 +103,6 @@ class Sampler:
         return xx, gg, uu, rr, key
 
 
-    def position_leapfrog(self, x, g, u, r, key):
-        """position leapfrog"""
-
-        #half step in x
-        xx = x + 0.5 * self.eps * u
-        gg = self.Target.grad_nlogp(xx)
-
-        #full step in momentum
-        uu, rr = self.update_momentum(self.eps, gg, u, r)
-
-        #half step in x
-        xx = xx + 0.5 * self.eps * uu
-
-        return xx, gg, uu, rr, key
-
 
     def minimal_norm(self, x, g, u, r, key):
         """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
@@ -147,24 +123,6 @@ class Sampler:
 
         return xx, gg, uu, rr, key
 
-
-    def position_minimal_norm(self, x, g, u, r, key):
-
-        # T V T V T
-
-        xx = x + lambda_c * self.eps * u
-        gg = self.Target.grad_nlogp(xx)
-
-        uu, rr = self.update_momentum(0.5*self.eps, gg, u, r)
-
-        xx = xx + (1 - 2*lambda_c) * self.eps* uu
-        gg = self.Target.grad_nlogp(xx)
-
-        uu, rr = self.update_momentum(0.5 * self.eps, gg, uu, rr)
-
-        xx = xx + lambda_c * self.eps* uu
-
-        return xx, gg, uu, rr, key
 
 
     def randomized_midpoint(self, x, g, u, r, key):
@@ -200,24 +158,6 @@ class Sampler:
         u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
         return xx, u_return, gg, rr, key, time
-
-
-    def dynamicsK(self, state):
-        """One step of the dynamics (with K > 1 langevin)"""
-        x, u, g, r, key, counter = state
-
-        # Hamiltonian step
-        xx, gg, uu, rr, key = self.hamiltonian_dynamics(x, g, u, r, key)
-
-        # bounce
-        u_bounce, key = self.partially_refresh_momentum(uu, key)
-
-        counter += 1.0
-        do_bounce = counter > self.K
-        counter = counter * (1 - do_bounce) + do_bounce * (1e-5) # reset time if the bounce is done
-        u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
-
-        return xx, u_return, gg, rr, key, counter
 
 
     def dynamics_generalized(self, state):
