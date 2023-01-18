@@ -95,10 +95,40 @@ class IllConditionedGaussianGamma():
 
         rng = np.random.RandomState(seed=10)
         eigs = np.sort(rng.gamma(shape=1.0, scale=1., size=self.d)) #get the variance
+        D = np.diagonal(eigs)
         R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
-        self.Hessian = (R * eigs).dot(R.T)
+        self.Hessian = R @ D @ R.T
 
-        self.variance = jnp.diagonal((R * eigs ** -1).dot(R.T))
+        self.variance = jnp.diagonal(R @ (1/D) @ R.T)
+
+
+    def nlogp(self, x):
+        """- log p of the target distribution"""
+        return 0.5 * x.T @ self.Hessian @ x
+
+    def grad_nlogp(self, x):
+        return self.Hessian @ x
+
+    def transform(self, x):
+        return x
+
+    def prior_draw(self, key):
+
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')#* 100
+
+
+class ICG():
+    """Ill-conditioned rotated Gaussian distribution"""
+
+    def __init__(self, d, numpy_seed):
+        self.d = d
+        rng = np.random.RandomState(seed=numpy_seed)
+        eigs = np.sort(rng.gamma(shape=1.0, scale=1., size=self.d)) #get the variance
+        D = np.diagonal(eigs)
+        R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
+        self.Hessian = R @ D @ R.T
+
+        self.variance = jnp.diagonal(R @ (1/D) @ R.T)
 
 
     def nlogp(self, x):
