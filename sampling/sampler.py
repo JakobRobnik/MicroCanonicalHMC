@@ -444,35 +444,6 @@ class Sampler:
 
 
 
-    def full_b(self, x_arr):
-
-        def step(moments, index):
-            F2, W = moments
-            x = x_arr[index, :]
-            F2 = (F2 * index + jnp.square(self.Target.transform(x)))/ (index + 1)  # Update <f(x)> with a Kalman filter
-            b = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
-
-            return (F2, ), b
-
-        def step_parallel(moments, index):
-            F2, W = moments
-            x = x_arr[:, index, :]
-            F2 = (F2 * index + jnp.square(self.Target.transform(x))) / index # Update <f(x)> with a Kalman filter
-            W += 1
-            b = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance), axis = 1))
-
-            return (F2, W), b
-
-
-        if len(x_arr.shape) == 2: #single chain
-            return jax.lax.scan(step, (jnp.zeros(self.Target.d), ), xs= jnp.arange(len(x_arr)))[1]
-
-        else:
-            num_chains = x_arr.shape[0]
-            return jax.lax.scan(step_parallel, (jnp.zeros((num_chains, self.Target.d)), ), xs=jnp.arange(x_arr.shape[1]))[1]
-
-
-
 def ess_cutoff_crossing(bias):
 
     def find_crossing(carry, b):
