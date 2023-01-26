@@ -150,7 +150,6 @@ def table1():
     alpha = -1.0 #bounce frequency (1.0 for generalized, 1.6 for bounces, something very large if no bounces). If -1, alpha is tuned by a grid search.
     integrator = 'LF' #integrator (Leapfrog (LF) or Minimum Norm (MN))
     HMC = False
-    K = 5
 
     #name of the version
     if alpha > 1e10:
@@ -159,9 +158,8 @@ def table1():
     else:
         generalized_string = 'generalized_' if generalized else 'bounces_'
         alpha_string = '_tuning-free' if (alpha > 0) else ''
-    K_string = '' if K == 1 else '_K'+str(K)
     #parallel_string = '_parallel' if parallel else ''
-    name_sampler = generalized_string + integrator + '_q=' + str(q) + alpha_string + K_string #parallel_string
+    name_sampler = generalized_string + integrator + '_q=' + str(q) + alpha_string #parallel_string
     
     if HMC:
         name_sampler = 'HMC' + '_' + integrator
@@ -169,10 +167,7 @@ def table1():
     print(name_sampler)
 
     #targets
-    long = False
-    name_targets = '' if long else '_short'
-    indexes = [0, 1, 2, 3, 4, 5] if long else [0, 2, 5]
-    indexes = [2, ]
+    indexes = [0, 1, 2, 3, 4, 5]
     names = ['Ill-Conditioned', 'Bi-Modal', 'Rosenbrock', "Neal's Funnel", 'German Credit', 'Stochastic Volatility']
     targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
@@ -222,11 +217,11 @@ def table1():
     else:
 
         def ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
-            sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized, K = K)
+            sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized)
             return jnp.average(sampler.parallel_sample(10, num_samples, ess=True))
 
         def ESS_tf(target, num_samples):  #tuning-free sequential mode. Only runs a handful of chains to average ESS over the initial conditions
-            sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized, K = K)
+            sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized)
             sampler.tune_hyperparameters()
             ess= jnp.average(sampler.parallel_sample(10, num_samples, ess=True))
             print(ess)

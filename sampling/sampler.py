@@ -54,10 +54,6 @@ class Sampler:
         self.nu = jnp.sqrt((jnp.exp(2 * self.eps / L) - 1.0) / self.Target.d)
 
 
-    def energy(self, x, r):
-        return self.Target.d * r + self.Target.nlogp(x)
-
-
     def random_unit_vector(self, key):
         """Generates a random (isotropic) unit vector."""
         key, subkey = jax.random.split(key)
@@ -74,7 +70,7 @@ class Sampler:
         return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
 
 
-    def update_momentum(self, eps, g, u, r):
+    def update_momentum(self, eps, g, u):
         """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
         g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
         e = - g / g_norm
@@ -84,71 +80,70 @@ class Sampler:
         th = jnp.tanh(eps * g_norm / (self.Target.d-1))
         delta_r = jnp.log(ch) + jnp.log1p(ue * th)
 
-        return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), r + delta_r
+        return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), delta_r
 
 
-    def leapfrog(self, x, g, u, r, key):
+    def leapfrog(self, x, u, g, key):
         """leapfrog"""
 
         #half step in momentum
-        uu, rr = self.update_momentum(self.eps * 0.5, g, u, r)
+        uu, r1 = self.update_momentum(self.eps * 0.5, g, u)
 
         #full step in x
         xx = x + self.eps * uu
-        gg = self.Target.grad_nlogp(xx)
+        ll, gg = self.Target.grad_nlogp(xx)
 
         #half step in momentum
-        uu, rr = self.update_momentum(self.eps * 0.5, gg, uu, rr)
+        uu, r2 = self.update_momentum(self.eps * 0.5, gg, uu)
 
-        return xx, gg, uu, rr, key
+        return xx, uu, ll, gg, (r1 + r2)*(self.Target.d-1), key
 
 
 
-    def minimal_norm(self, x, g, u, r, key):
+    def minimal_norm(self, x, u, g, key):
         """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
         # V T V T V
 
-        uu, rr = self.update_momentum(self.eps * lambda_c, g, u, r)
+        uu, r1 = self.update_momentum(self.eps * lambda_c, g, u)
 
         xx = x + self.eps * 0.5 * uu
-        gg = self.Target.grad_nlogp(xx)
+        ll, gg = self.Target.grad_nlogp(xx)
 
-        uu, rr = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg, uu, rr)
+        uu, r2 = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg, uu)
 
         xx = xx + self.eps * 0.5 * uu
-        gg = self.Target.grad_nlogp(xx)
+        ll, gg = self.Target.grad_nlogp(xx)
 
-        uu, rr = self.update_momentum(self.eps * lambda_c, gg, uu, rr)
+        uu, r3 = self.update_momentum(self.eps * lambda_c, gg, uu)
 
-        return xx, gg, uu, rr, key
-
-
-
-    def randomized_midpoint(self, x, g, u, r, key):
-
-        key1, key2 = jax.random.split(key)
-
-        xx = x + jax.random.uniform(key2) * self.eps * u
-
-        gg = self.Target.grad_nlogp(xx)
-
-        uu, rr = self.update_momentum(self.eps, gg, u, r)
-
-        xx = self.update_position_RM(xx, )
+        return xx, uu, ll, gg, (r1 + r2 + r3) * (self.Target.d-1), key
 
 
-        return xx, gg, uu, rr, key1
-
+    #
+    # def randomized_midpoint(self, x, u, g, r, key):
+    #
+    #     key1, key2 = jax.random.split(key)
+    #
+    #     xx = x + jax.random.uniform(key2) * self.eps * u
+    #
+    #     gg = self.Target.grad_nlogp(xx)
+    #
+    #     uu, r1 = self.update_momentum(self.eps, gg, u)
+    #
+    #     xx = self.update_position_RM(xx, )
+    #
+    #
+    #     return xx, uu, gg, r1 * (self.Target.d-1), key1
 
 
 
     def dynamics_bounces(self, state):
         """One step of the dynamics (with bounces)"""
-        x, u, g, r, key, time = state
+        x, u, g, l, E, key, time = state
 
         # Hamiltonian step
-        xx, gg, uu, rr, key = self.hamiltonian_dynamics(x, g, u, r, key)
+        xx, uu, ll, gg, dK, key = self.hamiltonian_dynamics(x, u, g, key)
 
         # bounce
         u_bounce, key = self.random_unit_vector(key)
@@ -157,21 +152,21 @@ class Sampler:
         time = time * (1 - do_bounce)  # reset time if the bounce is done
         u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
-        return xx, u_return, gg, rr, key, time
+        return xx, u_return, ll, gg, E+dK + ll -l, key, time
 
 
     def dynamics_generalized(self, state):
         """One step of the generalized dynamics."""
 
-        x, u, g, r, key, time = state
+        x, u, l, g, E, key, time = state
 
         # Hamiltonian step
-        xx, gg, uu, rr, key = self.hamiltonian_dynamics(x, g, u, r, key)
+        xx, uu, ll, gg, dK, key = self.hamiltonian_dynamics(x, u, g, key)
 
         # bounce
         uu, key = self.partially_refresh_momentum(uu, key)
 
-        return xx, uu, gg, rr, key, 0.0
+        return xx, uu, ll, gg, E+dK+ll-l, key, 0.0
 
 
 
@@ -194,13 +189,12 @@ class Sampler:
         else: #initial x is given
             x = x_initial
 
-        g = self.Target.grad_nlogp(x)
-        r = 0.5 * self.Target.d - self.Target.nlogp(x) / (self.Target.d-1) # initialize r such that all the chains have the same energy = d / 2
+        l, g = self.Target.grad_nlogp(x)
 
         u, key = self.random_unit_vector(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
 
-        return x, u, g, r, key
+        return x, u, l, g, key
 
 
 
@@ -223,23 +217,16 @@ class Sampler:
         def step(state, useless):
             """Tracks transform(x) as a function of number of iterations"""
 
-            x, u, g, r, key, time = self.dynamics(state)
+            x, u, l, g, E, key, time = self.dynamics(state)
 
-            return (x, u, g, r, key, time), self.Target.transform(x)
+            return (x, u, l, g, E, key, time), (self.Target.transform(x), E)
 
-
-        def step_with_energy(state, useless):
-            """Tracks transform(x) and the energy as a function of number of iterations"""
-
-            x, u, g, r, key, time = self.dynamics(state)
-
-            return (x, u, g, r, key, time), (x, self.energy(x, r))
 
 
         def b_step(state_track, useless):
             """Only tracks b as a function of number of iterations."""
 
-            x, u, g, r, key, time = self.dynamics(state_track[0])
+            x, u, l, g, E, key, time = self.dynamics(state_track[0])
             W, F2 = state_track[1]
 
             F2 = (W * F2 + jnp.square(self.Target.transform(x)))/ (W + 1)  # Update <f(x)> with a Kalman filter
@@ -247,17 +234,17 @@ class Sampler:
             bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
             #bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
 
-            return ((x, u, g, r, key, time), (W, F2)), bias
+            return ((x, u, l, g, E, key, time), (W, F2)), bias
 
 
-        x, u, g, r, key = self.get_initial_conditions(x_initial, random_key)
+        x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
 
 
         ### do sampling ###
 
         if ess:  # only track the bias
 
-            _, b = jax.lax.scan(b_step, init=((x, u, g, r, key, 0.0), (1.0, jnp.square(x))), xs=None, length=num_steps)
+            _, b = jax.lax.scan(b_step, init=((x, u, l, g, 0.0, key, 0.0), (1.0, jnp.square(x))), xs=None, length=num_steps)
 
 
             no_nans = 1-jnp.any(jnp.isnan(b))
@@ -273,15 +260,14 @@ class Sampler:
 
         else: # track the full transform(x)
 
-            if monitor_energy:
-                return jax.lax.scan(step_with_energy, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
+            final_state, track = jax.lax.scan(step, init=(x, u, l, g, l, 0.0, key, 0.0), xs=None, length=num_steps)
 
-            elif final_state:
-                return jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[0][0]
-
-            else:
-                return jax.lax.scan(step, init=(x, u, g, r, key, 0.0), xs=None, length=num_steps)[1]
-
+            if final_state: #only return the final x
+                return final_state[0]
+            elif monitor_energy: #return the samples X and the energy E
+                return track
+            else: #return the samples X
+                return track[0]
 
 
     def parallel_sample(self, num_chains, num_steps, x_initial = 'prior', random_key= None, ess= False, monitor_energy= False, final_state = False, num_cores= 1):
@@ -329,12 +315,11 @@ class Sampler:
 
 
 
-    def tune_hyperparameters(self, x_initial = 'prior', random_key= None):
+    def tune_hyperparameters(self, x_initial = 'prior', random_key= None, dialog = False):
 
         varE_wanted = 0.0005             # targeted energy variance per dimension
         burn_in, samples = 2000, 1000
 
-        dialog = False
 
         ### random key ###
         if random_key is None:

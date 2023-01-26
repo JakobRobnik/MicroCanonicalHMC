@@ -17,13 +17,13 @@ class StandardNormal():
     def __init__(self, d):
         self.d = d
         self.variance = jnp.ones(d)
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
 
     def nlogp(self, x):
         """- log p of the target distribution"""
         return 0.5 * jnp.sum(jnp.square(x), axis= -1)
 
-    def grad_nlogp(self, x):
-        return x
 
     def transform(self, x):
         return x
@@ -36,44 +36,60 @@ class StandardNormal():
 class IllConditionedGaussian():
     """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber^1/2 to condition_number^1/2."""
 
-    def __init__(self, d, condition_number):
+
+    def __init__(self, d, condition_number, numpy_seed=None):
+        """numpy_seed is used to generate a random rotation for the covariance matrix.
+            If None, the covariance matrix is diagonal."""
+
         self.d = d
-        self.variance = jnp.logspace(-0.5*jnp.log10(condition_number), 0.5*jnp.log10(condition_number), d)
+        self.condition_number = condition_number
+        eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
+
+        if numpy_seed == None:  # diagonal
+            self.variance = eigs
+            self.R = jnp.eye(d)
+            self.Hessian = jnp.diag(1 / eigs)
+
+        else:  # randomly rotate
+            rng = np.random.RandomState(seed=numpy_seed)
+            D = jnp.diag(eigs)
+            inv_D = jnp.diag(1 / eigs)
+            R, _ = jnp.array(np.linalg.qr(rng.randn(self.d, self.d)))  # random rotation
+            self.R = R
+            self.Hessian = R @ inv_D @ R.T
+            self.variance = jnp.diagonal(R @ D @ R.T)
+
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
 
     def nlogp(self, x):
         """- log p of the target distribution"""
-        return 0.5 * jnp.sum(jnp.square(x) / self.variance, axis= -1)
-
-    def grad_nlogp(self, x):
-        return x / self.variance
+        return 0.5 * x.T @ self.Hessian @ x
 
     def transform(self, x):
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') #* jnp.sqrt(self.variance)#* jnp.sqrt(self.variance[-1])
+        return jax.random.normal(key, shape=(self.d,), dtype='float64') *10 #* np.power(self.condition_number, 0.25) * 2
 
 
 
 class IllConditionedESH():
-    """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber^1/2 to condition_number^1/2."""
+    """ICG from the ESH paper."""
 
     def __init__(self):
         self.d = 50
         self.variance = jnp.linspace(0.01, 1, self.d)
 
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
     def nlogp(self, x):
         """- log p of the target distribution"""
         return 0.5 * jnp.sum(jnp.square(x) / self.variance, axis= -1)
 
-    def grad_nlogp(self, x):
-        return x / self.variance
 
     def transform(self, x):
         return x
-
 
     def draw(self, key):
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * jnp.sqrt(self.variance)
@@ -82,10 +98,8 @@ class IllConditionedESH():
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
-
-
 class IllConditionedGaussianGamma():
-    """Gaussian distribution. Covariance matrix has eigenvalues drawn from the Gamma distribution."""
+    """Richard's ICG"""
 
     def __init__(self):
         self.d = 1000
@@ -100,14 +114,12 @@ class IllConditionedGaussianGamma():
         self.Hessian = R @ D @ R.T
 
         self.variance = jnp.diagonal(R @ (1/D) @ R.T)
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
 
     def nlogp(self, x):
         """- log p of the target distribution"""
         return 0.5 * x.T @ self.Hessian @ x
-
-    def grad_nlogp(self, x):
-        return self.Hessian @ x
 
     def transform(self, x):
         return x
@@ -116,35 +128,6 @@ class IllConditionedGaussianGamma():
 
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')#* 100
 
-
-class ICG():
-    """Ill-conditioned rotated Gaussian distribution"""
-
-    def __init__(self, d, condition_number, numpy_seed):
-        self.d = d
-        rng = np.random.RandomState(seed=numpy_seed)
-        eigs = jnp.logspace(-0.5*jnp.log10(condition_number), 0.5*jnp.log10(condition_number), d)
-        D = jnp.diag(eigs)
-        inv_D = jnp.diag(1/eigs)
-        R, _ = jnp.array(np.linalg.qr(rng.randn(self.d, self.d))) #random rotation
-        self.Hessian = R @ inv_D @ R.T
-
-        self.variance = jnp.diagonal(R @ D @ R.T)
-
-
-    def nlogp(self, x):
-        """- log p of the target distribution"""
-        return 0.5 * x.T @ self.Hessian @ x
-
-    def grad_nlogp(self, x):
-        return self.Hessian @ x
-
-    def transform(self, x):
-        return x
-
-    def prior_draw(self, key):
-
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')#* 100
 
 
 class BiModal():
@@ -159,6 +142,7 @@ class BiModal():
         self.sigma1, self.sigma2 = sigma1, sigma2
         self.f = f
         self.variance = jnp.insert(jnp.ones(d-1) * ((1 - f) * sigma1**2 + f * sigma2**2), 0, (1-f)*(sigma1**2 + mu1**2) + f*(sigma2**2 + mu2**2))
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
 
     def nlogp(self, x):
@@ -168,14 +152,6 @@ class BiModal():
         N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu2), axis= -1) / self.sigma2 ** 2) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
 
         return -jnp.log(N1 + N2)
-
-
-    def grad_nlogp(self, x):
-
-        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu1), axis= -1) / self.sigma1 ** 2) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
-        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu2), axis= -1) / self.sigma2 ** 2) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
-
-        return (N1 * (x - self.mu1) / self.sigma1**2 + N2 * (x - self.mu2) / self.sigma2**2) / (N1 + N2)
 
 
     def draw(self, num_samples):
@@ -205,18 +181,14 @@ class BiModalEqual():
 
         self.d = d
         self.mu = mu
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
 
     def nlogp(self, x):
         """- log p of the target distribution"""
 
         return 0.5 * jnp.sum(jnp.square(x), axis= -1) - jnp.log(jnp.cosh(0.5*self.mu*x[0])) + 0.5* self.d * jnp.log(2 * jnp.pi) + self.mu**2 / 8.0
 
-
-    def grad_nlogp(self, x):
-        grad = jnp.copy(x)
-        grad[0] -= 0.5*self.mu * jnp.tanh(0.5 * self.mu * x[0])
-
-        return grad
 
     def draw(self, num_samples):
         """direct sampler from a target"""
@@ -239,6 +211,7 @@ class Funnel():
         self.d = d
         self.sigma_theta= 3.0
         self.variance = jnp.ones(d)
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
 
     def nlogp(self, x):
@@ -248,13 +221,6 @@ class Funnel():
         X = x[..., :- 1]
 
         return 0.5* jnp.square(theta / self.sigma_theta) + 0.5 * (self.d - 1) * theta + 0.5 * jnp.exp(-theta) * jnp.sum(jnp.square(X), axis = -1)
-
-
-    def grad_nlogp(self, x):
-        theta = x[..., -1]
-        X = x[..., :- 1]
-        return jnp.append(jnp.exp(-theta) * X, (theta / self.sigma_theta**2) + 0.5 * (self.d - 1) - 0.5 * jnp.sum(jnp.square(X), axis =-1) * jnp.exp(-theta))
-
 
     def draw(self, num_samples):
         """direct sampler from a target"""
@@ -302,17 +268,14 @@ class Rosenbrock():
 
         self.variance = jnp.concatenate((var_x * jnp.ones(d//2), var_y * jnp.ones(d//2)))
 
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
 
     def nlogp(self, x):
         """- log p of the target distribution"""
         X, Y = x[..., :self.d//2], x[..., self.d//2:]
         return 0.5 * jnp.sum(jnp.square(X - 1.0) + jnp.square(jnp.square(X) - Y) / self.Q, axis= -1)
 
-
-    def grad_nlogp(self, x):
-        X, Y = x[..., :self.d//2], x[..., self.d//2:]
-
-        return jnp.concatenate((X - 1.0 + 2*(jnp.square(X) - Y) * X / self.Q, (Y - jnp.square(X)) / self.Q), axis = -1)
 
 
     def draw(self, num):
@@ -329,7 +292,7 @@ class Rosenbrock():
 
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')*4.0
 
 
     def compute_moments(self):
@@ -361,7 +324,7 @@ class StochasticVolatility():
         self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
 
         self.variance = np.load('data/stochastic_volatility/ground_truth_moments.npy')
-        self.grad_nlogp = jax.grad(self.nlogp)
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
 
     def nlogp(self, x):

@@ -8,7 +8,7 @@ import os
 
 
 def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
-    show= False
+    show= True
 
     A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
 
@@ -61,9 +61,13 @@ def direct_compare(ess_function1, ess_function2, amin, amax, epsmin, epsmax):
 
         plt.show()
 
+#
+# def search_step(ess_function, A, epsilon):
+#     return jax.vmap(lambda a: jax.pmap(lambda e: ess_function(a, e))(epsilon))(A)
 
 def search_step(ess_function, A, epsilon):
-    return jax.vmap(lambda a: jax.pmap(lambda e: ess_function(a, e))(epsilon))(A)
+    return [[ess_function(a, e) for e in epsilon] for a in A]
+
 
 
 def visualize(ess_arr, A, epsilon, show):
