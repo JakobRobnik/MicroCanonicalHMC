@@ -140,7 +140,7 @@ class Sampler:
 
     def dynamics_bounces(self, state):
         """One step of the dynamics (with bounces)"""
-        x, u, g, l, E, key, time = state
+        x, u, l, g, E, key, time = state
 
         # Hamiltonian step
         xx, uu, ll, gg, dK, key = self.hamiltonian_dynamics(x, u, g, key)
@@ -198,7 +198,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, x_initial = 'prior', random_key= None, ess=False, monitor_energy= False, final_state = False):
+    def sample(self, num_steps, x_initial = 'prior', random_key= None, ess=False, monitor_energy= False, final_state = False, burn_in = 0):
         """Args:
                num_steps: number of integration steps to take.
                x_initial: initial condition for x (an array of shape (target dimension, )). It can also be 'prior' in which case it is drawn from the prior distribution (self.Target.prior_draw).
@@ -260,14 +260,13 @@ class Sampler:
 
         else: # track the full transform(x)
 
-            final_state, track = jax.lax.scan(step, init=(x, u, l, g, l, 0.0, key, 0.0), xs=None, length=num_steps)
-
+            state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
             if final_state: #only return the final x
-                return final_state[0]
+                return state[0]
             elif monitor_energy: #return the samples X and the energy E
-                return track
+                return track[0][burn_in:], track[1][burn_in:]
             else: #return the samples X
-                return track[0]
+                return track[0][burn_in:]
 
 
     def parallel_sample(self, num_chains, num_steps, x_initial = 'prior', random_key= None, ess= False, monitor_energy= False, final_state = False, num_cores= 1):
