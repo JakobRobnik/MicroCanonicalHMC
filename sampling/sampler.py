@@ -45,17 +45,14 @@ class Sampler:
         ### decoherence mechanism ###
         self.dynamics = self.dynamics_generalized if generalized else self.dynamics_bounces
 
+        self.sigma = jnp.ones(self.Target.d)
 
         if (not (L is None)) and (not (eps is None)):
-            self.parameters_given = (L, eps)
             self.set_hyperparameters(L, eps)
 
         else:
-            self.parameters_given = None #will be determined automatically when the sampling is called for the first time
-            self.set_hyperparameters(jnp.sqrt(Target.d), jnp.sqrt(Target.d)*1)
+            self.set_hyperparameters(jnp.sqrt(Target.d), jnp.sqrt(Target.d) * 1)
 
-
-        self.do_burnin = True
 
 
 
@@ -188,7 +185,7 @@ class Sampler:
         # bounce
         uu, key = self.partially_refresh_momentum(uu, key)
 
-        return xx, uu, ll, gg, kinetic_change, key, 0.0
+        return xx, uu, ll, gg, kinetic_change, key, time + self.eps
 
 
 
@@ -222,69 +219,81 @@ class Sampler:
 
         adam = Adam(g0)
 
-        max_burn_in = 1000
+        maxsteps = 250
+        maxsteps_per_level = 50
 
         Ls = []
         self.sigma = jnp.ones(self.Target.d)
         #self.sigma = np.load('simga.npy')
         #self.sigma = jnp.sqrt(self.Target.variance)
 
-        def burn_in_step(state):
 
-            index, x, u, l, g, key, _ = state
-            #self.sigma = adam.sigma_estimate()  # diagonal conditioner
-
-            xx, uu, ll, gg, kinetic_change, key, _ = self.dynamics(x, u, g, key, 0)
-            energy_change = kinetic_change + ll - l
-            energy_condition = energy_change**2 / self.Target.d < 10000
-
-            # if the loss has not decreased, let's reduce the stepsize
+        def nan_reject(x, u, l, g, xx, uu, ll, gg):
+            """if there are nans, let's reduce the stepsize, and not update the state"""
             no_nans = jnp.all(jnp.isfinite(xx))
-            tru = no_nans and energy_condition # loss went down and there were no nans
+            tru = no_nans
             false = (1 - tru)
             new_eps = self.eps * (false * 0.5 + tru * 1.0)
-            if not tru:
-                print(index, new_eps)
+            X = jnp.nan_to_num(xx) * tru + x * false
+            U = jnp.nan_to_num(uu) * tru + u * false
+            L = jnp.nan_to_num(ll) * tru + l * false
+            G = jnp.nan_to_num(gg) * tru + g * false
+            return new_eps,X, U, L, G
+
+        def burn_in_step(state):
+
+            index, stationary, x, u, l, g, key, time = state
+            #self.sigma = adam.sigma_estimate()  # diagonal conditioner
+
+            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time)
+            #energy_change = kinetic_change + ll - l
+            #energy_condition = energy_change**2 / self.Target.d < 10000
+            new_eps, xx, uu, ll, gg = nan_reject(x, u, l, g, xx, uu, ll, gg)
             self.set_hyperparameters(self.L, new_eps)
 
-            # lets update the state if the loss went down
-            xx = jnp.nan_to_num(xx) * tru + x * false
-
-            uu = jnp.nan_to_num(uu) * tru + u * false
-            ll = jnp.nan_to_num(ll) * tru + l * false
-            gg = jnp.nan_to_num(gg) * tru + g * false
-
-            Ls.append(ll)
             adam.step(gg)
+            Ls.append(ll)
 
-            return index + 1, xx, uu, ll, gg, key, energy_change
+            if len(Ls) > 10:
+                stationary = np.std(Ls[-10:]) / np.sqrt(self.Target.d * 0.5) < 1.2
+            else:
+                stationary = False
 
-        condition = lambda state: (state[0] < max_burn_in)  # false if the burn-in should be ended
+            return index + 1, stationary, xx, uu, ll, gg, key, time
 
-        burn_in_steps, x, u, l, g, key, energy_change = my_while(condition, burn_in_step, (0, x0, u0, l0, g0, key0, 0.0))
 
-        # after you are done with developing, replace, my_while with jax.lax.while_loop
-        self.sigma = adam.sigma_estimate()  # diagonal conditioner
-        #np.save('simga.npy', self.sigma)
-        plt.plot(self.sigma/np.sqrt(self.Target.variance), 'o')
-        plt.yscale('log')
-        plt.show()
+        condition = lambda state: (state[0] < maxsteps_per_level) and not state[1] # false if the burn-in should be ended
 
+
+        x, u, l, g, key = x0, u0, l0, g0, key0
+        total_steps = 0
+        new_level = True
+        l_plateau = np.inf
+        while new_level and total_steps < maxsteps:
+            steps, stationary, x, u, l, g, key, time = my_while(condition, burn_in_step, (0, False, x, u, l, g, key, 0.0))
+            total_steps += steps
+            l_plateau_new = np.average(Ls[-10:])
+            diff = np.abs(l_plateau_new - l_plateau) / np.sqrt(self.Target.d * 0.5)
+            new_level = diff > 1.0
+            l_plateau = l_plateau_new
+            self.eps = self.eps * 0.5
 
         plt.plot(Ls)
         plt.yscale('log')
         plt.show()
+        # after you are done with developing, replace, my_while with jax.lax.while_loop
+        #self.sigma = adam.sigma_estimate()  # diagonal conditioner
+        #np.save('simga.npy', self.sigma)
+        # plt.plot(self.sigma/np.sqrt(self.Target.variance), 'o')
+        # plt.yscale('log')
+        # plt.show()
+
+        return total_steps, x, u, l, g, key
 
 
-        if burn_in_steps == max_burn_in:
-            print('Burn-in exceeded the predescribed number of iterations.')
-
-        return burn_in_steps, x, u, l, g, key, energy_change
 
 
-
-
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1, remove_burn_in= True):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -306,10 +315,12 @@ class Sampler:
                         In unadjusted methods such as MCHMC, all samples contribute to the posterior and thining degrades the quality of the posterior.
                         If thining << # steps needed for one effective sample the loss is not too large.
                         However, in general we recommend no thining, as it can often be avoided by using Target.transform.
+
+               remove_burn_in: removes the samples during the burn-in phase. The end of burn-in is determined by settling of the -log p.
         """
 
         if num_chains == 1:
-            return self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
+            return self.single_chain_sample(num_steps, x_initial, random_key, output, thinning, remove_burn_in) #the function which actually does the sampling
 
         else:
             num_cores = jax.local_device_count()
@@ -332,7 +343,7 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning, remove_burn_in)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
@@ -355,7 +366,7 @@ class Sampler:
 
 
 
-    def single_chain_sample(self, num_steps, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
+    def single_chain_sample(self, num_steps, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1, remove_burn_in= True):
 
 
         def step(state, useless):
@@ -364,7 +375,7 @@ class Sampler:
             x, u, l, g, E, key, time = state
             xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time)
             EE = E + kinetic_change + ll - l
-            return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), EE)
+            return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), ll, EE)
 
 
         def step_full_track(state, useless):
@@ -373,7 +384,7 @@ class Sampler:
             x, u, l, g, E, key, time = state
             xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time)
             EE = E + kinetic_change + ll - l
-            return (xx, uu, ll, gg, EE, key, time), (xx, EE)
+            return (xx, uu, ll, gg, EE, key, time), (xx, ll, EE)
 
 
         def b_step(state_track, useless):
@@ -394,27 +405,6 @@ class Sampler:
         ### initial conditions ###
         x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
 
-
-        ### burn-in ###
-        if self.do_burnin:
-            x, u, l, g, key, burnin_steps = self.burn_in(x, u, l, g, key)
-
-        else:
-            burnin_steps = 0
-
-
-        exit()
-
-        ### tuning the hyperparameters ###
-
-        if self.parameters_given == None: #tune the hyperparameters automatically
-            self.tune_hyperparameters(x, key, dialog= False)
-
-        else: #use the given hyperparameters
-            self.set_hyperparameters(*self.parameters_given)
-
-
-
         ### sampling ###
 
         if output == 'ess':  # only track the bias
@@ -429,22 +419,34 @@ class Sampler:
             # plt.yscale('log')
             # plt.show()
 
-            return ess_cutoff_crossing(b, burnin_steps) * no_nans * cutoff_reached / self.grad_evals_per_step #return 0 if there are nans, or if the bias cutoff was not reached
+            return ess_cutoff_crossing(b) * no_nans * cutoff_reached / self.grad_evals_per_step #return 0 if there are nans, or if the bias cutoff was not reached
 
         elif output == 'full': #track everything
             state, track = jax.lax.scan(step_full_track, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
-            return track[0][::thinning, :], track[1][::thinning]
+            x, L, E = track
+            if remove_burn_in:
+                index_burnin = burn_in_ending(L)
+            else:
+                index_burnin = 0
+            return x[index_burnin::thinning, :], E[index_burnin::thinning]
 
 
         else: # track the transform(x) and the energy
 
             state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
+            x, L, E = track
+
+            if remove_burn_in:
+                index_burnin = burn_in_ending(L)
+            else:
+                index_burnin = 0
+
             if output == 'final state': #only return the final x
                 return state[0]
             elif output == 'energy': #return the samples X and the energy E
-                return track[0][::thinning, :], track[1][::thinning]
+                return x[index_burnin::thinning, :], E[index_burnin::thinning]
             elif output == 'normal': #return the samples X
-                return track[0][::thinning]
+                return x[index_burnin::thinning]
             else:
                 raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
@@ -454,20 +456,15 @@ class Sampler:
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None, dialog = False):
 
         varE_wanted = 0.0005             # targeted energy variance per dimension
-        burn_in, samples = 2000, 1000
+        samples = 1000
 
+        x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
 
-        ### random key ###
-        if random_key is None:
-            key = jax.random.PRNGKey(0)
-        else:
-            key = random_key
+        ### burn-in ###
+        burnin_steps, x0, u, l, g, key = self.burn_in(x, u, l, g, key)
 
+        #self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
 
-        self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
-
-        key, subkey = jax.random.split(key)
-        x0 = self.sample(burn_in, x_initial, random_key= subkey, output= 'final state')
         props = (key, np.inf, 0.0, False)
         if dialog:
             print('Hyperparameter tuning (first stage)')
@@ -478,7 +475,7 @@ class Sampler:
 
             # get a small number of samples
             key_new, subkey = jax.random.split(key)
-            X, E = self.sample(samples, x0, subkey, output= 'full')
+            X, E = self.sample(samples, x_initial= x0, random_key= subkey, output= 'full', remove_burn_in = False)
 
             # remove large jumps in the energy
             E -= jnp.average(E)
@@ -489,8 +486,9 @@ class Sampler:
             # typical size of the posterior
             x1 = jnp.average(X, axis= 0) #first moments
             x2 = jnp.average(jnp.square(X), axis=0) #second moments
-            sigma = jnp.sqrt(jnp.average(x2 - jnp.square(x1))) #average variance over the dimensions
-
+            sigma_old = self.sigma
+            self.sigma = jnp.sqrt(x2 - jnp.square(x1))
+            sigma_ratio = jnp.sum(jnp.square(self.sigma)) / jnp.sum(jnp.square(sigma_old))
             # energy fluctuations
             varE = jnp.std(E)**2 / self.Target.d #variance per dimension
             no_divergences = np.isfinite(varE)
@@ -498,12 +496,10 @@ class Sampler:
             ### update the hyperparameters ###
 
             if no_divergences:
-                L_new = sigma * jnp.sqrt(self.Target.d)
                 eps_new = self.eps * jnp.power(varE_wanted / varE, 0.25) #assume var[E] ~ eps^4
                 success = jnp.abs(1.0 - varE / varE_wanted) < 0.2 #we are done
 
             else:
-                L_new = self.L
 
                 if self.eps < eps_inappropriate:
                     eps_inappropriate = self.eps
@@ -524,11 +520,16 @@ class Sampler:
             # if suggested new eps is inappropriate we switch to bisection
             if eps_new > eps_inappropriate:
                 eps_new = 0.5 * (eps_inappropriate + eps_appropriate)
-            self.set_hyperparameters(L_new, eps_new)
+
+
+            eps_appropriate /= sigma_ratio
+            eps_inappropriate /= sigma_ratio
+            eps_new /= sigma_ratio
+            self.set_hyperparameters(self.L, eps_new)
 
             if dialog:
                 word = 'bisection' if (not no_divergences) else 'update'
-                print('varE / varE wanted: {} ---'.format(np.round(varE / varE_wanted, 4)) + word + '---> eps: {}, sigma = L / sqrt(d): {}'.format(np.round(eps_new, 3), np.round(L_new / np.sqrt(self.Target.d), 3)))
+                print('varE / varE wanted: {} ---'.format(np.round(varE / varE_wanted, 4)) + word + '---> eps: {}, sigma raito: {}'.format(np.round(eps_new, 3), np.round(sigma_ratio, 3)))
 
             return key_new, eps_inappropriate, eps_appropriate, success
 
@@ -549,7 +550,7 @@ class Sampler:
         X[0] = x0
         for i in range(1, len(n)):
             key, subkey = jax.random.split(key)
-            X[n[i-1]:n[i]] = self.sample(n[i] - n[i-1], x_initial= X[n[i-1]-1], random_key= subkey, output = 'full')[0]
+            X[n[i-1]:n[i]] = self.sample(n[i] - n[i-1], x_initial= X[n[i-1]-1], random_key= subkey, output = 'full', remove_burn_in = False)[0]
             ESS = ess_corr(X[:n[i]])
             if dialog:
                 print('n = {0}, ESS = {1}'.format(n[i], ESS))
@@ -565,7 +566,7 @@ class Sampler:
 
 
 
-def ess_cutoff_crossing(bias, burnin_steps):
+def ess_cutoff_crossing(bias):
 
     def find_crossing(carry, b):
         above_threshold = b > 0.1
@@ -574,7 +575,7 @@ def ess_cutoff_crossing(bias, burnin_steps):
 
     crossing_index = jax.lax.scan(find_crossing, init= (0, 1), xs = bias, length=len(bias))[0][0]
 
-    return 200.0 / (np.sum(crossing_index) + burnin_steps)
+    return 200.0 / np.sum(crossing_index)
 
 
 def point_reduction(num_points, reduction_factor):
@@ -587,13 +588,20 @@ def point_reduction(num_points, reduction_factor):
 
 
 def burn_in_ending(loss):
-
     loss_avg = jnp.median(loss[len(loss)//2:])
     above = loss[0] > loss_avg
     i = 0
     while (loss[i] > loss_avg) == above:
          i += 1
-    return i
+
+    ### plot the removal ###
+    # t= np.arange(len(loss))
+    # plt.plot(t[:i*2], loss[:i*2], color= 'tab:red')
+    # plt.plot(t[i*2:], loss[i*2:], color= 'tab:blue')
+    # plt.yscale('log')
+    # plt.show()
+
+    return i * 2 #we add a safety factor of 2
 
 
 
@@ -606,5 +614,36 @@ def my_while(cond_fun, body_fun, initial_state):
         state = body_fun(state)
 
     return state
+
+
+
+def moving_median(x, band_half_width, average = np.median, borders= True):
+    """smoothing by a moving average method.
+        x -> series to be smoothened
+        band_half_width -> integer half width of the moving window
+        average -> function for comuting the average, e.g. np.average, np.median...
+        if borders == True the points near the border are computed using smaller window
+        if borders == False the points with indexes 0:band_half_width+1 have the same value and points len(flux) - band_half_width -1 : len(flux) have the same value
+    """
+    smooth = np.zeros(len(x))
+    indeks_min = band_half_width
+    indeks_maks = len(x) - 1 - band_half_width  # chosen in such a way that when averiging we do not have out of range
+    for i in range(indeks_min, indeks_maks + 1):
+        smooth[i] = average(x[i - band_half_width: i + band_half_width + 1])
+
+    # bordering regions
+    if borders:
+        for i in range(indeks_min):  # bordering region at the beggining of the series
+            smooth[i] = average(x[: 2 * i + 1])
+        for i in range(indeks_maks + 1, len(x)):  # bordering region at the end of the series
+            smooth[i] = average(x[-len(x) + 1 + 2 * i:])
+
+    else:
+        for i in range(indeks_min):  # bordering region at the beggining of the series
+            smooth[i] = smooth[indeks_min]
+        for i in range(indeks_maks + 1, len(x)):  # bordering region at the end of the series
+            smooth[i] = smooth[indeks_maks]
+
+        return smooth
 
 

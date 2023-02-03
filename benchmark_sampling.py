@@ -329,11 +329,29 @@ def esh_not_converging():
 
 def simple_run():
 
-    target = IllConditionedGaussian(d= 100, condition_number= 10000.0)
+    target = StandardNormal(d = 100)
 
     sampler = mchmc.Sampler(target)
+    sampler.eps = 0.1
+    #sampler.tune_hyperparameters(dialog= True)
 
-    sampler.sample(1000)
+    #print(sampler.L, sampler.eps)
+
+    x, E = sampler.sample(10000, output= 'energy', remove_burn_in= False)
+
+    E1= np.cumsum(E) / np.arange(1, 1+len(E))
+    E2 = np.cumsum(np.square(E)) / np.arange(1, 1 + len(E))
+
+    stdE = np.sqrt(E2 - np.square(E1))
+
+    plt.plot(stdE)
+    plt.show()
+
+
+    print(len(x))
+    plt.hist(x[:, 0])
+    plt.show()
+
 
 
 

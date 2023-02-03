@@ -43,7 +43,7 @@ class Theory:
         x = self.plaquete(links_lattice) / (2 * jnp.pi)
         x = (x - jnp.floor(x)) - 0.5 # now, -0.5 < x < 0.5
         return jnp.sum(x)
-    
+
 
     def prior_draw(self, key):
         """uniform angles [0, 2pi)"""
