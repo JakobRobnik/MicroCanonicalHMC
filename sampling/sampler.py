@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 
 from .jump_identification import remove_jumps
 from .correlation_length import ess_corr
-from ..optimization.adam import Adam
 
 
 jax.config.update('jax_enable_x64', True)
@@ -217,7 +216,7 @@ class Sampler:
     def burn_in(self, x0, u0, l0, g0, key0):
         """assuming the prior is wider than the posterior"""
 
-        adam = Adam(g0)
+        #adam = Adam(g0)
 
         maxsteps = 250
         maxsteps_per_level = 50
@@ -250,7 +249,7 @@ class Sampler:
             new_eps, xx, uu, ll, gg = nan_reject(x, u, l, g, xx, uu, ll, gg)
             self.set_hyperparameters(self.L, new_eps)
 
-            adam.step(gg)
+            #adam.step(gg)
             Ls.append(ll)
 
             if len(Ls) > 10:
@@ -463,7 +462,6 @@ class Sampler:
 
         ### burn-in ###
         burnin_steps, x0, u, l, g, key = self.burn_in(x, u, l, g, key)
-
         #self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
 
         props = (key, np.inf, 0.0, False)
@@ -471,7 +469,6 @@ class Sampler:
             print('Hyperparameter tuning (first stage)')
 
         def tuning_step(props):
-
             key, eps_inappropriate, eps_appropriate, success = props
 
             # get a small number of samples
@@ -480,7 +477,7 @@ class Sampler:
 
             # remove large jumps in the energy
             E -= jnp.average(E)
-            E = remove_jumps(E)
+            #E = remove_jumps(E)
 
             ### compute quantities of interest ###
 

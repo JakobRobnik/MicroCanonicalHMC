@@ -332,8 +332,7 @@ def simple_run():
     target = StandardNormal(d = 100)
 
     sampler = mchmc.Sampler(target)
-    sampler.tune_hyperparameters(dialog= True)
-
+    sampler.tune_hyperparameters(dialog= False)
     x= sampler.sample(1000)
 
     print(len(x))
