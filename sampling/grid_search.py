@@ -7,14 +7,13 @@ import os
 ### Some convenient function for doing grid search of the hyperparameters ###
 
 
-def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
-    show= True
+def search_wrapper(ess_function, amin, amax, epsmin, epsmax, parallel = True, show = True):
 
     A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
 
     epsilon = jnp.logspace(np.log10(epsmin), np.log10(epsmax), 6)
 
-    results1 = search_step(ess_function, A, epsilon)
+    results1 = search_step(ess_function, A, epsilon, parallel)
 
     if show:
         plt.figure(figsize= (15, 10))
@@ -31,7 +30,7 @@ def search_wrapper(ess_function, amin, amax, epsmin, epsmax):
     else:
         A = jnp.logspace(np.log10(A[i-1]), np.log10(A[i+1]), 6)
         epsilon = jnp.logspace(np.log10(epsilon[j-1]), np.log10(epsilon[j+1]), 6)
-        results2 = search_step(ess_function, A, epsilon)
+        results2 = search_step(ess_function, A, epsilon, parallel)
 
         if show:
             plt.subplot(1, 2, 2)
@@ -61,12 +60,12 @@ def direct_compare(ess_function1, ess_function2, amin, amax, epsmin, epsmax):
 
         plt.show()
 
-#
-# def search_step(ess_function, A, epsilon):
-#     return jax.vmap(lambda a: jax.pmap(lambda e: ess_function(a, e))(epsilon))(A)
 
-def search_step(ess_function, A, epsilon):
-    return [[ess_function(a, e) for e in epsilon] for a in A]
+def search_step(ess_function, A, epsilon, parallel):
+    if parallel:
+        return jax.vmap(lambda a: jax.pmap(lambda e: ess_function(a, e))(epsilon))(A)
+    else:
+        return [[ess_function(a, e) for e in epsilon] for a in A]
 
 
 

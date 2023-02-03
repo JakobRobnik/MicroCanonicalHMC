@@ -2,8 +2,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from .jump_identification import remove_jumps
-from .correlation_length import ess_corr
+
+from sampling.jump_identification import remove_jumps
+from sampling.correlation_length import ess_corr
+from optimization.adam import Adam
+
 
 jax.config.update('jax_enable_x64', True)
 
@@ -44,7 +47,15 @@ class Sampler:
 
 
         if (not (L is None)) and (not (eps is None)):
+            self.parameters_given = (L, eps)
             self.set_hyperparameters(L, eps)
+
+        else:
+            self.parameters_given = None #will be determined automatically when the sampling is called for the first time
+            self.set_hyperparameters(jnp.sqrt(Target.d), jnp.sqrt(Target.d)*1)
+
+
+        self.do_burnin = True
 
 
 
@@ -86,38 +97,52 @@ class Sampler:
     def leapfrog(self, x, u, g, key):
         """leapfrog"""
 
-        #half step in momentum
-        uu, r1 = self.update_momentum(self.eps * 0.5, g, u)
+        z = x / self.sigma # go to the latent space
 
-        #full step in x
-        xx = x + self.eps * uu
-        ll, gg = self.Target.grad_nlogp(xx)
+        # half step in momentum
+        uu, delta_r1 = self.update_momentum(self.eps * 0.5, g * self.sigma, u)
 
-        #half step in momentum
-        uu, r2 = self.update_momentum(self.eps * 0.5, gg, uu)
+        # full step in x
+        zz = z + self.eps * uu
+        xx = self.sigma * zz # go back to the configuration space
+        l, gg = self.Target.grad_nlogp(xx)
 
-        return xx, uu, ll, gg, (r1 + r2)*(self.Target.d-1), key
+        # half step in momentum
+        uu, delta_r2 = self.update_momentum(self.eps * 0.5, gg * self.sigma, uu)
+        kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
 
+        return xx, uu, l, gg, kinetic_change, key
 
 
     def minimal_norm(self, x, u, g, key):
         """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
         # V T V T V
+        z = x / self.sigma # go to the latent space
 
-        uu, r1 = self.update_momentum(self.eps * lambda_c, g, u)
+        #V (momentum update)
+        uu, r1 = self.update_momentum(self.eps * lambda_c, g * self.sigma, u)
 
-        xx = x + self.eps * 0.5 * uu
+        #T (postion update)
+        zz = z + 0.5 * self.eps * uu
+        xx = self.sigma * zz # go back to the configuration space
         ll, gg = self.Target.grad_nlogp(xx)
 
-        uu, r2 = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg, uu)
+        #V (momentum update)
+        uu, r2 = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg * self.sigma, uu)
 
-        xx = xx + self.eps * 0.5 * uu
+        #T (postion update)
+        zz = zz + 0.5 * self.eps * uu
+        xx = self.sigma * zz  # go back to the configuration space
         ll, gg = self.Target.grad_nlogp(xx)
 
+        #V (momentum update)
         uu, r3 = self.update_momentum(self.eps * lambda_c, gg, uu)
 
-        return xx, uu, ll, gg, (r1 + r2 + r3) * (self.Target.d-1), key
+        #kinetic energy change
+        kinetic_change = (r1 + r2 + r3) * (self.Target.d-1)
+
+        return xx, uu, ll, gg, kinetic_change, key
 
 
     #
@@ -138,12 +163,11 @@ class Sampler:
 
 
 
-    def dynamics_bounces(self, state):
+    def dynamics_bounces(self, x, u, g, key, time):
         """One step of the dynamics (with bounces)"""
-        x, u, l, g, E, key, time = state
 
         # Hamiltonian step
-        xx, uu, ll, gg, dK, key = self.hamiltonian_dynamics(x, u, g, key)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key)
 
         # bounce
         u_bounce, key = self.random_unit_vector(key)
@@ -152,21 +176,19 @@ class Sampler:
         time = time * (1 - do_bounce)  # reset time if the bounce is done
         u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
-        return xx, u_return, ll, gg, E+dK + ll -l, key, time
+        return xx, u_return, ll, gg, kinetic_change, key, time
 
 
-    def dynamics_generalized(self, state):
+    def dynamics_generalized(self, x, u, g, key, time):
         """One step of the generalized dynamics."""
 
-        x, u, l, g, E, key, time = state
-
         # Hamiltonian step
-        xx, uu, ll, gg, dK, key = self.hamiltonian_dynamics(x, u, g, key)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key)
 
         # bounce
         uu, key = self.partially_refresh_momentum(uu, key)
 
-        return xx, uu, ll, gg, E+dK+ll-l, key, 0.0
+        return xx, uu, ll, gg, kinetic_change, key, 0.0
 
 
 
@@ -184,11 +206,9 @@ class Sampler:
                 key, prior_key = jax.random.split(key)
                 x = self.Target.prior_draw(prior_key)
             else:  # if not 'prior' the x_initial should specify the initial condition
-                raise KeyError(
-                    'x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
+                raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
         else: #initial x is given
             x = x_initial
-
         l, g = self.Target.grad_nlogp(x)
 
         u, key = self.random_unit_vector(key)
@@ -197,36 +217,170 @@ class Sampler:
         return x, u, l, g, key
 
 
+    def burn_in(self, x0, u0, l0, g0, key0):
+        """assuming the prior is wider than the posterior"""
 
-    def sample(self, num_steps, x_initial = 'prior', random_key= None, ess=False, monitor_energy= False, final_state = False, burn_in = 0):
+        adam = Adam(g0)
+
+        max_burn_in = 1000
+
+        Ls = []
+        self.sigma = jnp.ones(self.Target.d)
+        #self.sigma = np.load('simga.npy')
+        #self.sigma = jnp.sqrt(self.Target.variance)
+
+        def burn_in_step(state):
+
+            index, x, u, l, g, key, _ = state
+            #self.sigma = adam.sigma_estimate()  # diagonal conditioner
+
+            xx, uu, ll, gg, kinetic_change, key, _ = self.dynamics(x, u, g, key, 0)
+            energy_change = kinetic_change + ll - l
+            energy_condition = energy_change**2 / self.Target.d < 10000
+
+            # if the loss has not decreased, let's reduce the stepsize
+            no_nans = jnp.all(jnp.isfinite(xx))
+            tru = no_nans and energy_condition # loss went down and there were no nans
+            false = (1 - tru)
+            new_eps = self.eps * (false * 0.5 + tru * 1.0)
+            if not tru:
+                print(index, new_eps)
+            self.set_hyperparameters(self.L, new_eps)
+
+            # lets update the state if the loss went down
+            xx = jnp.nan_to_num(xx) * tru + x * false
+
+            uu = jnp.nan_to_num(uu) * tru + u * false
+            ll = jnp.nan_to_num(ll) * tru + l * false
+            gg = jnp.nan_to_num(gg) * tru + g * false
+
+            Ls.append(ll)
+            adam.step(gg)
+
+            return index + 1, xx, uu, ll, gg, key, energy_change
+
+        condition = lambda state: (state[0] < max_burn_in)  # false if the burn-in should be ended
+
+        burn_in_steps, x, u, l, g, key, energy_change = my_while(condition, burn_in_step, (0, x0, u0, l0, g0, key0, 0.0))
+
+        # after you are done with developing, replace, my_while with jax.lax.while_loop
+        self.sigma = adam.sigma_estimate()  # diagonal conditioner
+        #np.save('simga.npy', self.sigma)
+        plt.plot(self.sigma/np.sqrt(self.Target.variance), 'o')
+        plt.yscale('log')
+        plt.show()
+
+
+        plt.plot(Ls)
+        plt.yscale('log')
+        plt.show()
+
+
+        if burn_in_steps == max_burn_in:
+            print('Burn-in exceeded the predescribed number of iterations.')
+
+        return burn_in_steps, x, u, l, g, key, energy_change
+
+
+
+
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
         """Args:
                num_steps: number of integration steps to take.
-               x_initial: initial condition for x (an array of shape (target dimension, )). It can also be 'prior' in which case it is drawn from the prior distribution (self.Target.prior_draw).
-               eps: jax radnom seed, e.g. jax.random.PRNGKey(42).
-               ess: if True, it only ouputs the Effective Sample Size. In this case self.Target.variance = <x_i^2>_true should be defined.
-               monitor_energy: also tracks the energy error (energy should be conserved but there are numerical errors). Outputs samples, weights and energy (at each step).
-               final_state: only returns the final x of the chain (not self.Target.transform(x)!)
 
-            Returns:
-                samples (shape = (num_steps, self.Target.d))
-                weights (shape = (num_steps))
+               num_chains: number of independent chains, defaults to 1. If different than 1, jax will parallelize the computation with the number of available devices (CPU, GPU, TPU),
+               as returned by jax.local_device_count().
 
-                Except if ess == True, monitor_energy == True or final_state == True.
+               x_initial: initial condition for x, shape: (d, ). Defaults to 'prior' in which case the initial condition is drawn from the prior distribution (self.Target.prior_draw).
+
+               random_key: jax radnom seed, defaults to jax.random.PRNGKey(0)
+
+               output: determines the output of the function:
+                        'normal': returns Target.transform of the samples (to save memory), shape: (num_samples, len(Target.transform(x)))
+                        'full': returns the full samples and the energy at each step, shape: (num_samples, Target.d), (num_samples, )
+                        'energy': returns the transformed samples and the energy at each step, shape: (num_samples, len(Target.transform(x))), (num_samples, )
+                        'final state': only returns the final state of the chain, shape: (Target.d, )
+                        'ess': only ouputs the Effective Sample Size, float. In this case self.Target.variance = <x_i^2>_true should be defined.
+
+               thinning: integer for thinning the chains (every n-th sample is returned), defaults to 1 (no thinning).
+                        In unadjusted methods such as MCHMC, all samples contribute to the posterior and thining degrades the quality of the posterior.
+                        If thining << # steps needed for one effective sample the loss is not too large.
+                        However, in general we recommend no thining, as it can often be avoided by using Target.transform.
         """
+
+        if num_chains == 1:
+            return self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
+
+        else:
+            num_cores = jax.local_device_count()
+
+            if random_key is None:
+                key = jax.random.PRNGKey(0)
+            else:
+                key = random_key
+
+            if isinstance(x_initial, str):
+                if x_initial == 'prior':  # draw the initial x from the prior
+                    keys_all = jax.random.split(key, num_chains * 2)
+                    x0 = jnp.array([self.Target.prior_draw(keys_all[num_chains+i]) for i in range(num_chains)])
+                    keys = keys_all[:num_chains]
+
+                else:  # if not 'prior' the x_initial should specify the initial condition
+                    raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
+            else: #initial x is given
+                x0 = jnp.copy(x_initial)
+                keys = jax.random.split(key, num_chains)
+
+
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning)
+
+            if num_cores != 1: #run the chains on parallel cores
+                parallel_function = jax.pmap(jax.vmap(f))
+                results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
+                ### reshape results ###
+                if type(results) is tuple: #each chain returned a tuple
+                    results_reshaped =[]
+                    for i in range(len(results)):
+                        res = jnp.array(results[i])
+                        results_reshaped.append(res.reshape([num_chains, ] + [res.shape[j] for j in range(2, len(res.shape))]))
+                    return results_reshaped
+
+                else:
+                    return results.reshape([num_chains, ] + [results.shape[j] for j in range(2, len(results.shape))])
+
+
+            else: #run chains serially on a single core
+
+                return jax.vmap(f)(jnp.arange(num_chains))
+
+
+
+    def single_chain_sample(self, num_steps, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
+
 
         def step(state, useless):
             """Tracks transform(x) as a function of number of iterations"""
 
-            x, u, l, g, E, key, time = self.dynamics(state)
+            x, u, l, g, E, key, time = state
+            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time)
+            EE = E + kinetic_change + ll - l
+            return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), EE)
 
-            return (x, u, l, g, E, key, time), (self.Target.transform(x), E)
 
+        def step_full_track(state, useless):
+            """Tracks transform(x) as a function of number of iterations"""
+
+            x, u, l, g, E, key, time = state
+            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time)
+            EE = E + kinetic_change + ll - l
+            return (xx, uu, ll, gg, EE, key, time), (xx, EE)
 
 
         def b_step(state_track, useless):
             """Only tracks b as a function of number of iterations."""
 
-            x, u, l, g, E, key, time = self.dynamics(state_track[0])
+            x, u, l, g, E, key, time = state_track[0]
+            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, l, g, key, time)
             W, F2 = state_track[1]
 
             F2 = (W * F2 + jnp.square(self.Target.transform(x)))/ (W + 1)  # Update <f(x)> with a Kalman filter
@@ -234,18 +388,38 @@ class Sampler:
             bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
             #bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
 
-            return ((x, u, l, g, E, key, time), (W, F2)), bias
+            return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 
 
+        ### initial conditions ###
         x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
 
 
-        ### do sampling ###
+        ### burn-in ###
+        if self.do_burnin:
+            x, u, l, g, key, burnin_steps = self.burn_in(x, u, l, g, key)
 
-        if ess:  # only track the bias
+        else:
+            burnin_steps = 0
+
+
+        exit()
+
+        ### tuning the hyperparameters ###
+
+        if self.parameters_given == None: #tune the hyperparameters automatically
+            self.tune_hyperparameters(x, key, dialog= False)
+
+        else: #use the given hyperparameters
+            self.set_hyperparameters(*self.parameters_given)
+
+
+
+        ### sampling ###
+
+        if output == 'ess':  # only track the bias
 
             _, b = jax.lax.scan(b_step, init=((x, u, l, g, 0.0, key, 0.0), (1.0, jnp.square(x))), xs=None, length=num_steps)
-
 
             no_nans = 1-jnp.any(jnp.isnan(b))
             cutoff_reached = b[-1] < 0.1
@@ -255,62 +429,25 @@ class Sampler:
             # plt.yscale('log')
             # plt.show()
 
-            return ess_cutoff_crossing(b) * no_nans * cutoff_reached / self.grad_evals_per_step #return 0 if there are nans, or if the bias cutoff was not reached
+            return ess_cutoff_crossing(b, burnin_steps) * no_nans * cutoff_reached / self.grad_evals_per_step #return 0 if there are nans, or if the bias cutoff was not reached
+
+        elif output == 'full': #track everything
+            state, track = jax.lax.scan(step_full_track, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
+            return track[0][::thinning, :], track[1][::thinning]
 
 
-        else: # track the full transform(x)
+        else: # track the transform(x) and the energy
 
             state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
-            if final_state: #only return the final x
+            if output == 'final state': #only return the final x
                 return state[0]
-            elif monitor_energy: #return the samples X and the energy E
-                return track[0][burn_in:], track[1][burn_in:]
-            else: #return the samples X
-                return track[0][burn_in:]
-
-
-    def parallel_sample(self, num_chains, num_steps, x_initial = 'prior', random_key= None, ess= False, monitor_energy= False, final_state = False, num_cores= 1):
-        """Run multiple chains. The initial conditions for each chain are drawn with self.Target.prior_draw"""
-
-        if random_key is None:
-            key = jax.random.PRNGKey(0)
-        else:
-            key = random_key
-
-
-        if isinstance(x_initial, str):
-            if x_initial == 'prior':  # draw the initial x from the prior
-                keys_all = jax.random.split(key, num_chains * 2)
-                x0 = jnp.array([self.Target.prior_draw(keys_all[num_chains+i]) for i in range(num_chains)])
-                keys = keys_all[:num_chains]
-
-            else:  # if not 'prior' the x_initial should specify the initial condition
-                raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
-        else: #initial x is given
-            x0 = jnp.copy(x_initial)
-            keys = jax.random.split(key, num_chains)
-
-
-        f = lambda i: self.sample(num_steps, x_initial= x0[i], random_key=keys[i], ess=ess, monitor_energy=monitor_energy, final_state= final_state)
-
-        if num_cores != 1: #run the chains on parallel cores
-            parallel_function = jax.pmap(jax.vmap(f))
-            results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
-            ### reshape results ###
-            if type(results) is tuple: #each chain returned a tuple
-                results_reshaped =[]
-                for i in range(len(results)):
-                    res = jnp.array(results[i])
-                    results_reshaped.append(res.reshape([num_chains, ] + [res.shape[j] for j in range(2, len(res.shape))]))
-                return results_reshaped
-
+            elif output == 'energy': #return the samples X and the energy E
+                return track[0][::thinning, :], track[1][::thinning]
+            elif output == 'normal': #return the samples X
+                return track[0][::thinning]
             else:
-                return results.reshape([num_chains, ] + [results.shape[j] for j in range(2, len(results.shape))])
+                raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
-
-        else: #run chains serially on a single core
-
-            return jax.vmap(f)(jnp.arange(num_chains))
 
 
 
@@ -330,7 +467,7 @@ class Sampler:
         self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
 
         key, subkey = jax.random.split(key)
-        x0 = self.sample(burn_in, x_initial, random_key= subkey, final_state= True)
+        x0 = self.sample(burn_in, x_initial, random_key= subkey, output= 'final state')
         props = (key, np.inf, 0.0, False)
         if dialog:
             print('Hyperparameter tuning (first stage)')
@@ -341,7 +478,7 @@ class Sampler:
 
             # get a small number of samples
             key_new, subkey = jax.random.split(key)
-            X, E = self.sample(samples, x0, subkey, monitor_energy= True)
+            X, E = self.sample(samples, x0, subkey, output= 'full')
 
             # remove large jumps in the energy
             E -= jnp.average(E)
@@ -412,7 +549,7 @@ class Sampler:
         X[0] = x0
         for i in range(1, len(n)):
             key, subkey = jax.random.split(key)
-            X[n[i-1]:n[i]] = self.sample(n[i] - n[i-1], x_initial= X[n[i-1]-1], random_key= subkey, monitor_energy=True)[0]
+            X[n[i-1]:n[i]] = self.sample(n[i] - n[i-1], x_initial= X[n[i-1]-1], random_key= subkey, output = 'full')[0]
             ESS = ess_corr(X[:n[i]])
             if dialog:
                 print('n = {0}, ESS = {1}'.format(n[i], ESS))
@@ -428,7 +565,7 @@ class Sampler:
 
 
 
-def ess_cutoff_crossing(bias):
+def ess_cutoff_crossing(bias, burnin_steps):
 
     def find_crossing(carry, b):
         above_threshold = b > 0.1
@@ -437,7 +574,7 @@ def ess_cutoff_crossing(bias):
 
     crossing_index = jax.lax.scan(find_crossing, init= (0, 1), xs = bias, length=len(bias))[0][0]
 
-    return 200.0 / np.sum(crossing_index)
+    return 200.0 / (np.sum(crossing_index) + burnin_steps)
 
 
 def point_reduction(num_points, reduction_factor):
@@ -446,5 +583,28 @@ def point_reduction(num_points, reduction_factor):
     indexes = np.concatenate((np.arange(1, 1 + num_points // reduction_factor, dtype=int),
                               np.arange(1 + num_points // reduction_factor, num_points, reduction_factor, dtype=int)))
     return indexes
+
+
+
+def burn_in_ending(loss):
+
+    loss_avg = jnp.median(loss[len(loss)//2:])
+    above = loss[0] > loss_avg
+    i = 0
+    while (loss[i] > loss_avg) == above:
+         i += 1
+    return i
+
+
+
+def my_while(cond_fun, body_fun, initial_state):
+    """see https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.while_loop.html"""
+
+    state = initial_state
+
+    while cond_fun(state):
+        state = body_fun(state)
+
+    return state
 
 

@@ -79,9 +79,9 @@ def energy_variance(target, L, eps):
     sampler = mchmc.Sampler(target, L, eps, integrator='LF', generalized=True)
 
     sampler.eps = 0.4
-    x_init = sampler.parallel_sample(num_cores, burn_in, random_key= jax.random.PRNGKey(0), final_state= True, num_cores= num_cores)
+    x_init = sampler.sample(burn_in, num_cores, random_key= jax.random.PRNGKey(0), output = 'final state', num_cores= num_cores)
     sampler.eps = eps
-    Xall, Wall, Eall = sampler.parallel_sample(num_cores, samples, x_initial= x_init, random_key= jax.random.PRNGKey(1), monitor_energy=True, num_cores= num_cores)
+    Xall, Eall = sampler.sample(samples, num_cores, x_initial= x_init, random_key= jax.random.PRNGKey(1), output= 'energy', num_cores= num_cores)
 
     # Xall, Wall, Eall = sampler.parallel_sample(num_cores, samples + burn_in, random_key= jax.random.PRNGKey(42), monitor_energy=True, num_cores=num_cores)
     # Wall, Eall = Wall[:, burn_in:], Eall[:, burn_in:]
@@ -353,9 +353,9 @@ def dimension_dependence():
         for i in range(len(dimensions)):
             sampler = mchmc.Sampler(targets[num](dimensions[i]), L[num, i], eps[num, i] * 0.95, 'LF', True)
 
-            _, W, E = sampler.parallel_sample(10, samples + burn_in, monitor_energy=True)
+            E = sampler.sample(samples+burn_in, 10, output= 'energy')[1]
 
-            Evar[num, i] = get_var(E[:, burn_in:], W[:, burn_in:]) / dimensions[i]
+            Evar[num, i] = get_var(E[:, burn_in:]) / dimensions[i]
 
     np.save('data/energy/dimension_scaling_0.95.npy', Evar)
 

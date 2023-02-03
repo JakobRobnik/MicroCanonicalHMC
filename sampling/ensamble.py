@@ -76,7 +76,7 @@ class Sampler:
         return (u + e * (sh + ue * (ch - 1))[:, None]) / (ch + ue * sh)[:, None], delta_r
 
 
-    def hamiltonian_dynamics(self, x, g, u, key):
+    def hamiltonian_dynamics(self, x, u, g, key):
         """leapfrog"""
 
         z = x / self.sigma # go to the latent space
@@ -91,20 +91,20 @@ class Sampler:
 
         # half step in momentum
         uu, delta_r2 = self.update_momentum(self.eps * 0.5, gg * self.sigma, uu)
-        dK = (delta_r1 + delta_r2) * (self.Target.d-1)
-        return xx, gg, uu, dK, l, key
+        kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
+        return xx, uu, l, gg, kinetic_change, key
 
 
     def dynamics(self, x, u, g, key):
         """One step of the generalized dynamics."""
 
         # Hamiltonian step
-        xx, gg, uu, dK, l, key = self.hamiltonian_dynamics(x, g, u, key)
+        xx, uu, l, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key)
 
         # bounce
         uu, key = self.partially_refresh_momentum(uu, key)
 
-        return xx, uu, gg, dK, l, key
+        return xx, uu, l, gg, kinetic_change, key
 
 
     def full_b(self, X):
@@ -170,7 +170,7 @@ class Sampler:
             index, loss, x, u, l, g, key, _ = state
             self.sigma = jnp.std(x, axis=0)  # diagonal conditioner
 
-            xx, uu, gg, dK, ll, key = self.dynamics(x, u, g, key)  # update particles by one step
+            xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key)  # update particles by one step
 
             loss_new = self.virial_loss(xx, gg)
 
@@ -188,7 +188,7 @@ class Sampler:
             l = ll * tru + l * false
             g = gg * tru + g * false
 
-            energy_change = dK + ll - l
+            energy_change = kinetic_change + ll - l
 
             return index + 1, loss, x, u, l, g, key, energy_change
 
@@ -229,8 +229,8 @@ class Sampler:
 
         for i_step in range(1, num_steps):
 
-            x, u, g, dK, ll, key = self.dynamics(x, u, g, key)  # update particles by one step
-            energy_change = dK + ll - l
+            x, u, ll, g, kinetic_change, key = self.dynamics(x, u, g, key)  # update particles by one step
+            energy_change = kinetic_change + ll - l
             l = ll
 
             if i_step<10: #at the begining we adjust the stepsize according to the energy fluctuations
@@ -257,11 +257,11 @@ class Sampler:
 
 
 
-def steps_for_convergence(bias):
+def steps_for_convergence(bias, cutoff = 0.1):
     """returns the smallest M such that b[i] < 0.1 for each i > M"""
 
     def find_crossing(carry, b):
-        above_threshold = b > 0.1
+        above_threshold = b > cutoff
         never_been_below = carry[1] * above_threshold
         return (carry[0] + never_been_below, never_been_below), above_threshold
 
