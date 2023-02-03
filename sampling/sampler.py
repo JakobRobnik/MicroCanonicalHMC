@@ -452,7 +452,6 @@ class Sampler:
 
 
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None, dialog = False):
-        print('start tuning')
 
         varE_wanted = 0.0005             # targeted energy variance per dimension
 
