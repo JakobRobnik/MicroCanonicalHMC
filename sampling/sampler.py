@@ -51,7 +51,7 @@ class Sampler:
             self.set_hyperparameters(L, eps)
 
         else:
-            self.set_hyperparameters(jnp.sqrt(Target.d), jnp.sqrt(Target.d) * 1)
+            self.set_hyperparameters(jnp.sqrt(Target.d), jnp.sqrt(Target.d) * 0.1)
 
 
 
@@ -223,7 +223,6 @@ class Sampler:
         maxsteps_per_level = 50
 
         Ls = []
-        self.sigma = jnp.ones(self.Target.d)
         #self.sigma = np.load('simga.npy')
         #self.sigma = jnp.sqrt(self.Target.variance)
 
@@ -278,9 +277,9 @@ class Sampler:
             l_plateau = l_plateau_new
             self.eps = self.eps * 0.5
 
-        plt.plot(Ls)
-        plt.yscale('log')
-        plt.show()
+        # plt.plot(Ls)
+        # plt.yscale('log')
+        # plt.show()
         # after you are done with developing, replace, my_while with jax.lax.while_loop
         #self.sigma = adam.sigma_estimate()  # diagonal conditioner
         #np.save('simga.npy', self.sigma)
@@ -455,6 +454,8 @@ class Sampler:
 
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None, dialog = False):
 
+        self.set_hyperparameters(self.L, self.eps * 10) #larger epsilon for the burn-in
+
         varE_wanted = 0.0005             # targeted energy variance per dimension
         samples = 1000
 
@@ -614,36 +615,5 @@ def my_while(cond_fun, body_fun, initial_state):
         state = body_fun(state)
 
     return state
-
-
-
-def moving_median(x, band_half_width, average = np.median, borders= True):
-    """smoothing by a moving average method.
-        x -> series to be smoothened
-        band_half_width -> integer half width of the moving window
-        average -> function for comuting the average, e.g. np.average, np.median...
-        if borders == True the points near the border are computed using smaller window
-        if borders == False the points with indexes 0:band_half_width+1 have the same value and points len(flux) - band_half_width -1 : len(flux) have the same value
-    """
-    smooth = np.zeros(len(x))
-    indeks_min = band_half_width
-    indeks_maks = len(x) - 1 - band_half_width  # chosen in such a way that when averiging we do not have out of range
-    for i in range(indeks_min, indeks_maks + 1):
-        smooth[i] = average(x[i - band_half_width: i + band_half_width + 1])
-
-    # bordering regions
-    if borders:
-        for i in range(indeks_min):  # bordering region at the beggining of the series
-            smooth[i] = average(x[: 2 * i + 1])
-        for i in range(indeks_maks + 1, len(x)):  # bordering region at the end of the series
-            smooth[i] = average(x[-len(x) + 1 + 2 * i:])
-
-    else:
-        for i in range(indeks_min):  # bordering region at the beggining of the series
-            smooth[i] = smooth[indeks_min]
-        for i in range(indeks_maks + 1, len(x)):  # bordering region at the end of the series
-            smooth[i] = smooth[indeks_maks]
-
-        return smooth
 
 

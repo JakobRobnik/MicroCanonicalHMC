@@ -332,21 +332,9 @@ def simple_run():
     target = StandardNormal(d = 100)
 
     sampler = mchmc.Sampler(target)
-    sampler.eps = 0.1
-    #sampler.tune_hyperparameters(dialog= True)
+    sampler.tune_hyperparameters(dialog= True)
 
-    #print(sampler.L, sampler.eps)
-
-    x, E = sampler.sample(10000, output= 'energy', remove_burn_in= False)
-
-    E1= np.cumsum(E) / np.arange(1, 1+len(E))
-    E2 = np.cumsum(np.square(E)) / np.arange(1, 1 + len(E))
-
-    stdE = np.sqrt(E2 - np.square(E1))
-
-    plt.plot(stdE)
-    plt.show()
-
+    x= sampler.sample(1000)
 
     print(len(x))
     plt.hist(x[:, 0])
