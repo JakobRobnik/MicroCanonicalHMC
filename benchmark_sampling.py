@@ -333,7 +333,7 @@ def simple_run():
     target = StochasticVolatility()
 
     sampler = mchmc.Sampler(target, integrator= 'LF')
-    sampler.tune_hyperparameters(random_key= jax.random.PRNGKey(42), dialog= True)
+    sampler.tune_hyperparameters(dialog= True)
 
     print(sampler.L, sampler.eps)
 
