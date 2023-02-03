@@ -329,16 +329,13 @@ def esh_not_converging():
 
 def simple_run():
 
-    target = StandardNormal(d = 100)
+    #target = StandardNormal(d = 100)
+    target = StochasticVolatility()
 
-    sampler = mchmc.Sampler(target)
-    sampler.tune_hyperparameters(dialog= False)
-    x= sampler.sample(1000)
+    sampler = mchmc.Sampler(target, integrator= 'LF')
+    sampler.tune_hyperparameters(random_key= jax.random.PRNGKey(42), dialog= True)
 
-    print(len(x))
-    plt.hist(x[:, 0])
-    plt.show()
-
+    print(sampler.L, sampler.eps)
 
 
 

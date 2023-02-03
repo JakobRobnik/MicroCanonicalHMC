@@ -453,22 +453,27 @@ class Sampler:
 
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None, dialog = False):
 
-        self.set_hyperparameters(self.L, self.eps * 10) #larger epsilon for the burn-in
-
         varE_wanted = 0.0005             # targeted energy variance per dimension
-        samples = 1000
 
-        x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
+        burn_in, samples = 2000, 1000
 
-        ### burn-in ###
-        burnin_steps, x0, u, l, g, key = self.burn_in(x, u, l, g, key)
-        #self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
+        ### random key ###
+        if random_key is None:
+            key = jax.random.PRNGKey(0)
+        else:
+            key = random_key
 
+
+        self.set_hyperparameters(np.sqrt(self.Target.d), 0.6)
+
+        key, subkey = jax.random.split(key)
+        x0 = self.sample(burn_in, x_initial= x_initial, random_key= subkey, output= 'final state', remove_burn_in = False)
         props = (key, np.inf, 0.0, False)
         if dialog:
             print('Hyperparameter tuning (first stage)')
 
         def tuning_step(props):
+
             key, eps_inappropriate, eps_appropriate, success = props
 
             # get a small number of samples
@@ -484,9 +489,11 @@ class Sampler:
             # typical size of the posterior
             x1 = jnp.average(X, axis= 0) #first moments
             x2 = jnp.average(jnp.square(X), axis=0) #second moments
+            #sigma = jnp.sqrt(jnp.average(x2 - jnp.square(x1))) #average variance over the dimensions
             sigma_old = self.sigma
             self.sigma = jnp.sqrt(x2 - jnp.square(x1))
-            sigma_ratio = jnp.sum(jnp.square(self.sigma)) / jnp.sum(jnp.square(sigma_old))
+            sigma_ratio = jnp.sqrt(jnp.sum(self.sigma**2) / jnp.sum(sigma_old**2))
+
             # energy fluctuations
             varE = jnp.std(E)**2 / self.Target.d #variance per dimension
             no_divergences = np.isfinite(varE)
@@ -494,10 +501,12 @@ class Sampler:
             ### update the hyperparameters ###
 
             if no_divergences:
+                #L_new = sigma * jnp.sqrt(self.Target.d)
                 eps_new = self.eps * jnp.power(varE_wanted / varE, 0.25) #assume var[E] ~ eps^4
                 success = jnp.abs(1.0 - varE / varE_wanted) < 0.2 #we are done
 
             else:
+                L_new = self.L
 
                 if self.eps < eps_inappropriate:
                     eps_inappropriate = self.eps
@@ -519,15 +528,15 @@ class Sampler:
             if eps_new > eps_inappropriate:
                 eps_new = 0.5 * (eps_inappropriate + eps_appropriate)
 
-
-            eps_appropriate /= sigma_ratio
             eps_inappropriate /= sigma_ratio
+            eps_appropriate /= sigma_ratio
             eps_new /= sigma_ratio
+
             self.set_hyperparameters(self.L, eps_new)
 
             if dialog:
                 word = 'bisection' if (not no_divergences) else 'update'
-                print('varE / varE wanted: {} ---'.format(np.round(varE / varE_wanted, 4)) + word + '---> eps: {}, sigma raito: {}'.format(np.round(eps_new, 3), np.round(sigma_ratio, 3)))
+                print('varE / varE wanted: {} ---'.format(np.round(varE / varE_wanted, 4)) + word + '---> eps: {}, sigma = L / sqrt(d): {}'.format(np.round(eps_new, 3), np.round(sigma_ratio, 3)))
 
             return key_new, eps_inappropriate, eps_appropriate, success
 
@@ -549,7 +558,7 @@ class Sampler:
         for i in range(1, len(n)):
             key, subkey = jax.random.split(key)
             X[n[i-1]:n[i]] = self.sample(n[i] - n[i-1], x_initial= X[n[i-1]-1], random_key= subkey, output = 'full', remove_burn_in = False)[0]
-            ESS = ess_corr(X[:n[i]])
+            ESS = ess_corr(X[:n[i]] / self.sigma[None, :])
             if dialog:
                 print('n = {0}, ESS = {1}'.format(n[i], ESS))
             if n[i] > 10.0 / ESS:
