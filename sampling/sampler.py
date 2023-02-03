@@ -482,7 +482,8 @@ class Sampler:
 
             # remove large jumps in the energy
             E -= jnp.average(E)
-            #E = remove_jumps(E)
+            E = remove_jumps(E)
+            
 
             ### compute quantities of interest ###
 
