@@ -5,6 +5,10 @@ import jax.numpy as jnp
 import pandas as pd
 
 
+from .sampler import find_crossing
+from .sampler import my_while
+
+
 
 class vectorize_target:
 
@@ -122,6 +126,8 @@ class Sampler:
 
 
     def virial_loss(self, x, g):
+        """loss^2 = (1/d) sum_i (virial_i - 1)^2"""
+
         virials = jnp.average(x*g, axis=0) #should be all close to 1 if we have reached the typical set
         return jnp.sqrt(jnp.average(jnp.square(virials - 1.0)))
 
@@ -149,7 +155,7 @@ class Sampler:
         l, g = self.Target.grad_nlogp(x)
 
         ### initial velocity ###
-        virials = jnp.average(x * g, axis=0)  # should be all close to 1 if we have reached the typical set
+        virials = jnp.average(x * g, axis=0)
         loss = jnp.sqrt(jnp.average(jnp.square(virials - 1.0)))
         sgn = -2.0 * (virials < 1.0) + 1.0
         u = - g / jnp.sqrt(jnp.sum(jnp.square(g), axis = 1))[:, None] # initialize momentum in the direction of the gradient of log p
@@ -206,7 +212,7 @@ class Sampler:
 
 
 
-    def sample(self, num_chains, num_steps, x_initial='prior', random_key=None, ess = False):
+    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, output = 'normal', thinning= 1):
 
 
         state = self.initialize(random_key, x_initial, num_chains) #initialize
@@ -219,7 +225,9 @@ class Sampler:
         ### prepare for sampling ###
         self.sigma = jnp.std(x, axis=0)
         varE = jnp.std(energy_change)**2 / self.Target.d
-        self.set_hyperparameters(self.L, self.eps * jnp.power(self.varE_wanted / varE, 0.25)) # assume var[E] ~ eps^4
+        self.set_hyperparameters(self.L, self.eps * jnp.power(self.varE_wanted / varE, 1.0/6.0)) # assume var[E] ~ eps^6 for the estimator used her
+
+
 
 
         ### sampling ###
@@ -242,40 +250,21 @@ class Sampler:
 
         ### return results ###
 
-        if ess: #we return the number of sampling steps (needed for b2 < 0.1) and the number of burn-in steps
+        if output == 'ess': #we return the number of sampling steps (needed for b2 < 0.1) and the number of burn-in steps
             b2 = self.full_b(X)
             print(self.eps)
             plt.plot(b2)
             plt.show()
             no_nans = 1-jnp.any(jnp.isnan(b2))
             cutoff_reached = b2[-1] < 0.1
-            return steps_for_convergence(b2) if (no_nans and cutoff_reached) else np.inf, burn_in_steps
+            return (find_crossing(b2, 0.1), burn_in_steps) if (no_nans and cutoff_reached) else (np.inf, burn_in_steps)
 
 
-        else: # we return the samples
-            return X
+        else:
 
+            if output == 'normal': #return the samples X
+                return X[::thinning]
 
+            else:
+                raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
-def steps_for_convergence(bias, cutoff = 0.1):
-    """returns the smallest M such that b[i] < 0.1 for each i > M"""
-
-    def find_crossing(carry, b):
-        above_threshold = b > cutoff
-        never_been_below = carry[1] * above_threshold
-        return (carry[0] + never_been_below, never_been_below), above_threshold
-
-    crossing_index = jax.lax.scan(find_crossing, init= (0, 1), xs = bias, length=len(bias))[0][0]
-    return np.sum(crossing_index).item()
-
-
-
-def my_while(cond_fun, body_fun, initial_state):
-    """see https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.while_loop.html"""
-
-    state = initial_state
-
-    while cond_fun(state):
-        state = body_fun(state)
-
-    return state

@@ -327,27 +327,63 @@ def esh_not_converging():
     np.save('ESH_not_converging/data/ESHexample_'+('MCHMC' if bounces else 'ESH')+'.npy', X[:, [0, 100, 1000, 10000], :])
 
 
-def simple_run():
+def energy_time_chains():
 
-    #target = StandardNormal(d = 100)
-    target = StochasticVolatility()
+    target = Rosenbrock(d = 100)
+    #target = StochasticVolatility()
 
-    sampler = mchmc.Sampler(target, integrator= 'LF')
-    sampler.tune_hyperparameters(dialog= True)
+    sampler = mchmc.Sampler(target, np.sqrt(target.d), 10.0, integrator= 'LF')
+    epsilon = np.logspace(np.log10(0.05), np.log10(0.3), 10)
+    dE= np.empty((len(epsilon), 4))
 
-    print(sampler.L, sampler.eps)
+    for i in range(len(epsilon)):
+        print(epsilon[i])
+        sampler.eps = epsilon[i]
+        X, E = sampler.sample(2000, 300, remove_burn_in= False, output = 'energy')
+        E = E[:, 1000:]
+        de1 = np.std(E, axis = 1)**2 / target.d
+        de2 = np.average(np.square(E[:, 1:] - E[:, :-1]), axis= 0) / target.d
 
+        dE[i, 0] = np.average(de1)
+        dE[i, 1] = np.std(de1)
+        dE[i, 2] = np.average(de2)
+        dE[i, 3] = np.std(de2)
+
+    df = pd.DataFrame(dE, columns = ['avg time', 'std time', 'avg chains', 'std chains'])
+    df['epsilon'] = epsilon
+    df.to_csv('energy_fluctuations_time_chains_Rosenbrock.csv')
+
+
+
+def plot_energy_time_chains():
+    from scipy.stats import linregress
+    words = ['time', 'chains']
+    fmts= ['s:', 'o:']
+    colors = ['tab:blue', 'tab:red']
+    target_names = ['STN', "Rosenbrock"]
+    DF= [pd.read_csv('energy_fluctuations_time_chains_'+target_name+'.csv') for target_name in target_names]
+
+    for j in range(len(target_names)): #targets
+        df = DF[j]
+        for i in range(2): #time vs chains
+            word = words[i]
+            x, y = df['epsilon'], df['avg '+word]
+            yerr = df['std '+word]
+            label = target_names[j] + '('+word+')'
+            plt.errorbar(x, y, yerr = yerr, capsize= 2.0, fmt =fmts[i], label = label, color = colors[j])
+
+            print(label, linregress(np.log(x), np.log(y)))
+
+    plt.legend()
+    plt.ylabel('Var[E]/d')
+    plt.xlabel('stepsize')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.show()
 
 
 if __name__ == '__main__':
+    #energy_time_chains()
+    plot_energy_time_chains()
 
-    simple_run()
-    #ill_conditioned_tuning_free()
-    #esh_not_converging()
-    #table1()
-    #dimension_dependence()
-    #full_bias_eps()
 
-    #0.003284
-    #0.003307
-    #0.003379

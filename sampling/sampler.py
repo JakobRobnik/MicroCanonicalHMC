@@ -564,17 +564,25 @@ class Sampler:
             print('-------------')
 
 
+def find_crossing(array, cutoff):
+
+    def step(carry, element):
+        """carry = (, 1 if (array[i] > cutoff for all i < current index) else 0"""
+        above_threshold = element > cutoff
+        never_been_below = carry[1] * above_threshold  #1 if (array[i] > cutoff for all i < current index) else 0
+        return (carry[0] + never_been_below, never_been_below), above_threshold
+
+    state, track = jax.lax.scan(step, init=(0, 1), xs=array, length=len(array))
+
+    return state[0] #the smallest M such that array[m] < cutoff for all m > M.
+    #return jnp.sum(track) #total number of indices for which array[m] < cutoff
+
+
 
 def ess_cutoff_crossing(bias):
 
-    def find_crossing(carry, b):
-        above_threshold = b > 0.1
-        never_been_below = carry[1] * above_threshold
-        return (carry[0] + never_been_below, never_been_below), above_threshold
+    return 200.0 / find_crossing(bias, 0.1)
 
-    crossing_index = jax.lax.scan(find_crossing, init= (0, 1), xs = bias, length=len(bias))[0][0]
-
-    return 200.0 / np.sum(crossing_index)
 
 
 def point_reduction(num_points, reduction_factor):
@@ -588,10 +596,7 @@ def point_reduction(num_points, reduction_factor):
 
 def burn_in_ending(loss):
     loss_avg = jnp.median(loss[len(loss)//2:])
-    above = loss[0] > loss_avg
-    i = 0
-    while (loss[i] > loss_avg) == above:
-         i += 1
+    return 2 * find_crossing(loss - loss_avg, 0.0) #we add a safety factor of 2
 
     ### plot the removal ###
     # t= np.arange(len(loss))
@@ -599,8 +604,6 @@ def burn_in_ending(loss):
     # plt.plot(t[i*2:], loss[i*2:], color= 'tab:blue')
     # plt.yscale('log')
     # plt.show()
-
-    return i * 2 #we add a safety factor of 2
 
 
 
