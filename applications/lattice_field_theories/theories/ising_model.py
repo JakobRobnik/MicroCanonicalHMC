@@ -1,4 +1,4 @@
-from lattice_field_theories.phi4 import *
+from .phi4 import *
 
 
 @jax.jit

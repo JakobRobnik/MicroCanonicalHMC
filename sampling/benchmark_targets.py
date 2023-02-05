@@ -70,7 +70,7 @@ class IllConditionedGaussian():
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape=(self.d,), dtype='float64') * np.sqrt(self.variance[0]) * 10#* np.power(self.condition_number, 0.25) * 2
+        return jax.random.normal(key, shape=(self.d,), dtype='float64') * 10#* np.power(self.condition_number, 0.25) * 2
 
 
 
@@ -292,7 +292,7 @@ class Rosenbrock():
 
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')*4.0
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')*3.0
 
 
     def compute_moments(self):
@@ -398,6 +398,28 @@ class DiagonalPreconditioned():
 
     def transform(self, x):
         return x
+
+
+
+
+def get_contour_plot(target, x, y):
+    """Args:
+            target with target.nlogp defined (configuration space must be two dimensional)
+            x = linspace over the x axis
+            y = linspace over the y axis
+       Returns:
+            X, Y, Z = nlogp(X, Y), so that you can for example do a contour plot with
+            plt.contourf(X, Y, Z)
+    """
+
+    nx, ny = len(x), len(y)
+    X, Y = np.meshgrid(x, y)
+    R = jnp.array([X, Y])
+    R = jnp.concatenate(jnp.moveaxis(R, [0, 1, 2], [2, 0, 1]))
+    Z = jax.vmap(target.nlogp)(R).reshape(ny, nx)
+
+    return X, Y, Z
+
 
 
 

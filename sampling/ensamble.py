@@ -27,7 +27,7 @@ class vectorize_target:
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, L=None, eps=None, varE_wanted = 0.01):
+    def __init__(self, Target):
         """Args:
                 Target: the target distribution class
         """
@@ -35,20 +35,12 @@ class Sampler:
         self.Target = vectorize_target(Target)
 
         self.grad_evals_per_step = 1.0
-        self.varE_wanted = varE_wanted
-
-        if (not (L is None)) and (not (eps is None)):
-            self.set_hyperparameters(L, eps)
 
 
     def set_hyperparameters(self, L, eps):
         self.L = L
         self.eps = eps
         self.nu = jnp.sqrt((jnp.exp(2 * self.eps / L) - 1.0) / self.Target.d)
-
-
-    def energy(self, x, r):
-        return (self.Target.d-1) * r + self.Target.nlogp(x)
 
 
     def random_unit_vector(self, key, num_chains):
@@ -103,12 +95,12 @@ class Sampler:
         """One step of the generalized dynamics."""
 
         # Hamiltonian step
-        xx, uu, l, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key)
 
         # bounce
         uu, key = self.partially_refresh_momentum(uu, key)
 
-        return xx, uu, l, gg, kinetic_change, key
+        return xx, uu, ll, gg, kinetic_change, key
 
 
     def full_b(self, X):
@@ -168,66 +160,121 @@ class Sampler:
 
     def burn_in(self, loss, x, u, l, g, key):
 
+        ### hyperparameters of the burn in ###
         max_burn_in = 200
+        increase, reduce = 2.0, 0.5
+        varE = 1e-5#5e-4
+
+
+        def accept_reject_step(loss, x, u, l, g, loss_new, xx, uu, ll, gg):
+            """if there are nans or the loss went up we don't want to update the state"""
+
+            no_nans = jnp.all(jnp.isfinite(xx))
+            tru = (loss_new < loss) * no_nans  # loss went down and there were no nans
+            false = (1 - tru)
+            Loss = loss_new * tru + loss * false
+            X = jnp.nan_to_num(xx) * tru + x * false
+            U = jnp.nan_to_num(uu) * tru + u * false
+            L = jnp.nan_to_num(ll) * tru + l * false
+            G = jnp.nan_to_num(gg) * tru + g * false
+            return tru, Loss, X, U, L, G
+
+
+        def energy_variance(eps):
+            """detemrine Var[E]/d at given epsilon"""
+            self.eps = eps
+            xx, uu, ll, gg, kinetic_change, kkey = self.dynamics(x, u, g, key)  # update particles by one step
+            energy_change = kinetic_change + ll - l
+            return jnp.average(jnp.square(energy_change)) / self.Target.d
+
 
 
         def burn_in_step(state):
+            """one step of the burn in"""
 
-            index, loss, x, u, l, g, key, _ = state
+            index, loss, row, never_rejected, x, u, l, g, key = state
             self.sigma = jnp.std(x, axis=0)  # diagonal conditioner
 
             xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key)  # update particles by one step
 
             loss_new = self.virial_loss(xx, gg)
 
-            #if the loss has not decreased, let's reduce the stepsize
-            no_nans = jnp.all(jnp.isfinite(xx))
-            tru = (loss_new < loss)*no_nans #loss went down and there were no nans
-            false = (1 - tru)
-            new_eps = self.eps * (false * 0.5 + tru * 1.0)
+            #will we accept the step?
+            accept, loss, x, u, l, g = accept_reject_step(loss, x, u, l, g, loss_new, xx, uu, ll, gg)
+
+            Ls.append(loss)
+            X.append(x)
+            never_rejected *= accept #True if no step has been rejected so far
+            row = (row + 1) * (1-accept)
+
+                            #reduce eps if rejected    #increase eps if never rejected        #keep the same
+            new_eps = self.eps * ((1-accept) * reduce + accept * (never_rejected * increase + (1-never_rejected) * 1.0))
+            epss.append(new_eps)
             self.set_hyperparameters(self.L, new_eps)
 
-            #lets update the state if the loss went down
-            loss = loss_new * tru + loss * false
-            x = xx * tru + x * false
-            u = uu * tru + u * false
-            l = ll * tru + l * false
-            g = gg * tru + g * false
+            #energy_change = kinetic_change + ll - l
+            #eng.append(jnp.average(jnp.square(energy_change)) / self.Target.d)
 
-            energy_change = kinetic_change + ll - l
+            return index + 1, loss, row, never_rejected, x, u, l, g, key
 
-            return index + 1, loss, x, u, l, g, key, energy_change
+        Ls = []
+        epss = []
+        X = []
 
+        condition = lambda state: (state[1] > 0.05)*(state[0] < max_burn_in)*(state[2] < 6)  # true during the burn in
 
-        condition = lambda state: (state[1] > 0.2)*(state[0] < max_burn_in)  # false if the burn-in should be ended
+        burn_in_steps, loss, row, never_rejected, x, u, l, g, key = my_while(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key))
 
-        burn_in_steps, loss, x, u, l, g, key, energy_change = my_while(condition, burn_in_step, (0, loss, x, u, l, g, key, jnp.zeros(l.shape)))
+        plt.plot(Ls, '.-', label = 'loss')
+        plt.plot(epss, 'o', label = 'epsilon')
+        plt.legend()
+        plt.yscale('log')
+        plt.xlabel('burn-in steps')
+        plt.show()
+        #
+        # X = np.array(X)
+        # x_particles = X[:, :, 0].T
+        # y_particles = X[:, :, self.Target.d].T
+        #
+        # for i in range(10):
+        #     plt.plot(x_particles[i][0], y_particles[i][0], 'o', color ='tab:red')
+        #     plt.plot(x_particles[i], y_particles[i], '.-')
+        #
+        # from sampling.benchmark_targets import get_contour_plot
+        # from sampling.benchmark_targets import Rosenbrock
+        # X, Y, Z = get_contour_plot(Rosenbrock(d = 2), np.linspace(-2, 4, 100), np.linspace(-2, 10, 100))
+        # plt.contourf(X, Y, jnp.exp(-Z), cmap = 'cividis')
+        # plt.show()
+
+        ### determine the epsilon for sampling ###
+        eps_new = self.eps * (1.0/reduce)**row #the epsilon before the row of failures, we will take this as a baseline
+        epsilon = eps_new * jnp.logspace(-1, 1, 5)  # some range around eps
+        vars= jax.vmap(energy_variance)(epsilon)
+        eps_new, success = eps_fit(epsilon, vars, varE)
+        self.set_hyperparameters(self.L, eps_new)
+        print('stepsize for sampling: ', self.eps)
 
         #after you are done with developing, replace, my_while with jax.lax.while_loop
 
-        if burn_in_steps == max_burn_in:
-            print('Burn-in exceeded the predescribed number of iterations, loss = '.format(loss))
 
-        return burn_in_steps, x, u, l, g, key, energy_change
+        ### let's do some checks and print warnings ###
+        if burn_in_steps == max_burn_in:
+            print('Burn-in exceeded the predescribed number of iterations, loss = {0} but we aimed for 0.1'.format(loss))
+        if not success:
+            print('The determination of the step-size for sampling may be unreliable (the energy fluctuations may be more than a factor of 10 off the typical optimum).')
+
+
+        return burn_in_steps + 5, x, u, l, g, key
 
 
 
     def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, output = 'normal', thinning= 1):
 
+        self.set_hyperparameters(jnp.sqrt(self.Target.d), jnp.sqrt(self.Target.d))
 
         state = self.initialize(random_key, x_initial, num_chains) #initialize
 
-        burn_in_steps, x, u, l, g, key, energy_change = self.burn_in(*state) #burn-in
-
-        print(burn_in_steps)
-        exit()
-
-        ### prepare for sampling ###
-        self.sigma = jnp.std(x, axis=0)
-        varE = jnp.std(energy_change)**2 / self.Target.d
-        self.set_hyperparameters(self.L, self.eps * jnp.power(self.varE_wanted / varE, 1.0/6.0)) # assume var[E] ~ eps^6 for the estimator used her
-
-
+        burnin_steps, x, u, l, g, key = self.burn_in(*state) #burn-in
 
 
         ### sampling ###
@@ -235,36 +282,99 @@ class Sampler:
         X = jnp.empty((num_chains, num_steps, self.Target.d)) # we will store the samples here
         X = X.at[:, 0, :].set(x) #initial condition
 
+        Ls = []
         for i_step in range(1, num_steps):
 
-            x, u, ll, g, kinetic_change, key = self.dynamics(x, u, g, key)  # update particles by one step
-            energy_change = kinetic_change + ll - l
-            l = ll
-
-            if i_step<10: #at the begining we adjust the stepsize according to the energy fluctuations
-                varE = jnp.std(energy_change) ** 2 / self.Target.d
-                self.set_hyperparameters(self.L, self.eps * jnp.power(self.varE_wanted / varE, 0.25))  # assume var[E] ~ eps^4
-
+            x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key)  # update particles by one step
+            #energy_change = kinetic_change + ll - l
             X = X.at[:, i_step, :].set(x) #store the sample
+            Ls.append(self.virial_loss(x, g))
+
+        ### remove additional burn in ###
+        var = jnp.average(jnp.average(jnp.square(X), axis = 0), axis = 1)
+        var0 = jnp.median(var[num_steps // 2:])
+        flip = var[0] < var0
+        var = (1 - 2 * flip) * (var-var0)
+        #burnin2_steps = find_crossing(var, 0.0)
+        burnin2_steps = 0
+        plt.plot(var)
+        plt.xlabel('sampling steps')
+        plt.ylabel(r'$E_{\mathrm{d}} STD_{\mathrm{ensamble}}[x_i^2]$')
+        plt.show()
+
+        plt.plot(Ls, '.')
+        plt.xlabel('sampling steps')
+        plt.ylabel('virial loss')
+        plt.yscale("log")
+        plt.show()
 
 
         ### return results ###
 
         if output == 'ess': #we return the number of sampling steps (needed for b2 < 0.1) and the number of burn-in steps
-            b2 = self.full_b(X)
-            print(self.eps)
+
+            b2 = self.full_b(X[:, burnin2_steps:, :])
             plt.plot(b2)
+            plt.xlabel('# sampling steps')
+            plt.ylabel('b2')
             plt.show()
             no_nans = 1-jnp.any(jnp.isnan(b2))
             cutoff_reached = b2[-1] < 0.1
-            return (find_crossing(b2, 0.1), burn_in_steps) if (no_nans and cutoff_reached) else (np.inf, burn_in_steps)
+            return (find_crossing(b2, 0.1), burnin_steps + burnin2_steps) if (no_nans and cutoff_reached) else (np.inf, burnin_steps + burnin2_steps)
 
 
         else:
-
             if output == 'normal': #return the samples X
-                return X[::thinning]
+                return X[:, burnin2_steps::thinning, :]
 
             else:
                 raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
+
+
+
+def linfit(x, y):
+    """Args: data vectors x and y
+
+       Fits the linear model: y = k x + n
+       Estimates the covariance matrix:
+            Cov = [[sigma_n^2, sigma_{n k}]
+                   [sigma_{n k}, sigma_k^2]]
+
+       Returns: (optimal n, optimal k, Cov)
+    """
+
+    Sx = jnp.average(x)
+    Sy = jnp.average(y)
+    Sxx = jnp.average(jnp.square(x))
+    Sxy = jnp.average(x * y)
+    det = Sxx - Sx**2
+    Cov = jnp.array([[Sxx, -Sx], [-Sx, 1.0]]) / det
+    return (Sxx * Sy - Sx * Sxy) / det, (Sxy - Sx * Sy) / det, Cov
+
+
+def eps_fit(eps, var, var0):
+    """Args:
+            eps: stepsize array
+            var: Var[E]/d array
+            var0: targeted value of Var[E]/d. For example 0.0005
+       Returns:
+           eps where var(eps) = var0
+           success boolean: true if roughly 0.1 < var(eps) / var0 < 10
+    """
+
+    y_predict = jnp.log(var0)
+    intercept, slope, Cov = linfit(jnp.log(eps), jnp.log(var))
+    x_predict = (y_predict - intercept) / slope
+    y_predict_err = jnp.sqrt(x_predict**2 * Cov[0, 0] + 2 * Cov[0, 1] * x_predict + Cov[1, 1])
+
+    plt.plot(eps, var, 'o', color='blue')
+    plt.plot(eps, jnp.exp(slope * jnp.log(eps) + intercept), '-', color = 'black', alpha = 0.5)
+    plt.plot(jnp.exp(x_predict), jnp.exp(y_predict), 'o', color ='tab:red')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.xlabel('epsilon')
+    plt.ylabel('Var[E] / d')
+    plt.show()
+
+    return jnp.exp(x_predict), y_predict_err < 2.3 # = log(10)

@@ -5,10 +5,8 @@ import jax
 import jax.numpy as jnp
 import os
 
-from theories import phi4
+from .theories import phi4
 from sampling.sampler import Sampler
-from sampling.correlation_length import ess_corr
-from sampling.ensamble import steps_for_convergence
 from sampling.grid_search import search_wrapper
 
 
@@ -176,7 +174,7 @@ def gerdes_tabel1():
 
 
 
-from NUTS.nuts import nuts6 as nuts_sample
+#from NUTS.nuts import nuts6 as nuts_sample
 
 
 def hmc(target, samples, samples_adapt):
@@ -193,7 +191,7 @@ side = 12
 lam = get_params(side)
 target = phi4.Theory(side, lam)
 
-phibar = hmc(target, 5000, 5000)
+#phibar = hmc(target, 5000, 5000)
 
 
 
