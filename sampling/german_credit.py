@@ -68,7 +68,7 @@ class Target():
         xmap = map_solution()
         self.transform = lambda x: target.default_event_space_bijector(x + xmap)
         self.nlogp = lambda x: target_nlog_prob_fn(x + xmap)
-        self.grad_nlogp = lambda x: target_nlog_prob_grad_fn(x + xmap)
+        self.grad_nlogp = lambda x: target_nlog_prob_fn(x + xmap), target_nlog_prob_grad_fn(x + xmap)
 
     # def prior_draw(self, key):
     #     return jnp.zeros(self.d)

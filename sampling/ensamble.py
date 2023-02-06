@@ -17,7 +17,6 @@ class vmap_target:
         """target: a given target to vmap"""
 
         # obligatory attributes
-        self.nlogp = jax.vmap(target.nlogp)
         self.grad_nlogp = jax.vmap(target.grad_nlogp)
         self.d = target.d
 
@@ -43,7 +42,6 @@ class pmap_target:
         """target: a given target to pmap"""
 
         # obligatory attributes
-        self.nlogp = jax.pmap(target.nlogp)
         self.grad_nlogp = jax.pmap(target.grad_nlogp)
         self.d = target.d
 
@@ -213,7 +211,7 @@ class Sampler:
         # less important parameters
         eps = jnp.sqrt(self.Target.d)       #this will be changed during the burn-in
         max_burn_in = 200                   #we will not take more steps
-        max_fail = 6                        #if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
+        max_fail = 10                       #if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
         virial_target = 0.1                 #if the virial loss is lower, we stop the initial stage of burn-in
         increase, reduce = 2.0, 0.5         #if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
         num_energy_points = 5               #how many points will we use to determine Var[E] (epsilon)  dependence.
@@ -223,6 +221,7 @@ class Sampler:
             """if there are nans or the loss went up we don't want to update the state"""
 
             no_nans = jnp.all(jnp.isfinite(xx))
+            print(no_nans)
             tru = (loss_new < loss) * no_nans  # loss went down and there were no nans
             false = (1 - tru)
             Loss = loss_new * tru + loss * false
@@ -338,7 +337,7 @@ class Sampler:
         state = self.initialize(random_key, x_initial, num_chains) #initialize
 
         burnin_steps, x, u, l, g, key, L, eps, sigma = self.burn_in(*state) #burn-in
-        print(eps, sigma)
+        print(eps)
 
         ### sampling ###
 
