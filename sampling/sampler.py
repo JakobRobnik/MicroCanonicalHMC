@@ -300,14 +300,14 @@ class Sampler:
 
                x_initial: initial condition for x, shape: (d, ). Defaults to 'prior' in which case the initial condition is drawn from the prior distribution (self.Target.prior_draw).
 
-               random_key: jax radnom seed, defaults to jax.random.PRNGKey(0)
+               random_key: jax random seed, defaults to jax.random.PRNGKey(0)
 
                output: determines the output of the function:
                         'normal': returns Target.transform of the samples (to save memory), shape: (num_samples, len(Target.transform(x)))
                         'full': returns the full samples and the energy at each step, shape: (num_samples, Target.d), (num_samples, )
                         'energy': returns the transformed samples and the energy at each step, shape: (num_samples, len(Target.transform(x))), (num_samples, )
                         'final state': only returns the final state of the chain, shape: (Target.d, )
-                        'ess': only ouputs the Effective Sample Size, float. In this case self.Target.variance = <x_i^2>_true should be defined.
+                        'ess': only ouputs the Effective Sample Size, float. In this case, self.Target.variance = <x_i^2>_true should be defined.
 
                thinning: integer for thinning the chains (every n-th sample is returned), defaults to 1 (no thinning).
                         In unadjusted methods such as MCHMC, all samples contribute to the posterior and thining degrades the quality of the posterior.

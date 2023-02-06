@@ -10,31 +10,76 @@ from .sampler import my_while
 
 
 
-class vectorize_target:
+class vmap_target:
+    """A wrapper target class, where jax.vmap has been applied to the functions of a given target"""
 
     def __init__(self, target):
+        """target: a given target to vmap"""
 
+        # obligatory attributes
         self.nlogp = jax.vmap(target.nlogp)
         self.grad_nlogp = jax.vmap(target.grad_nlogp)
-        self.transform = jax.vmap(target.transform)
-        self.prior_draw = jax.vmap(target.prior_draw)
         self.d = target.d
+
+
+        # optional attributes
+
+        if hasattr(target, 'transform'):
+            self.transform = jax.vmap(jax.vmap(target.transform))
+        else:
+            self.transform = lambda x: x #if not given, set it to the identity
+
+        if hasattr(target, 'prior_draw'):
+            self.prior_draw = jax.vmap(target.prior_draw)
+
+        if hasattr(target, 'variance'):
+            self.variance = target.variance
+
+
+class pmap_target:
+    """A wrapper target class, where jax.pmap has been applied to the functions of a given target"""
+
+    def __init__(self, target):
+        """target: a given target to pmap"""
+
+        # obligatory attributes
+        self.nlogp = jax.pmap(target.nlogp)
+        self.grad_nlogp = jax.pmap(target.grad_nlogp)
+        self.d = target.d
+
+        # optional attributes
+
+        if hasattr(target, 'transform'):
+            self.transform = jax.pmap(jax.vmap(target.transform))
+        else:
+            self.transform = lambda x: x  # if not given, set it to the identity
+
+        if hasattr(target, 'prior_draw'):
+            self.prior_draw = jax.pmap(target.prior_draw)
+
         if hasattr(target, 'variance'):
             self.variance = target.variance
 
 
 
 class Sampler:
-    """the MCHMC (q = 0 Hamiltonian) sampler"""
+    """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target):
+    def __init__(self, Target, pmap = False):
         """Args:
-                Target: the target distribution class
+                Target: the target distribution class.
+                pmap: if True, jax.pmap will be applied to the Target functions.
+                      In this case, the number of available devices (as returned by jax.local_device_count())
+                      should be equal or larger than the number of ensamble chains that we are running.
+                      if False, jax.vmap will be applied to the Target functions. The operation will be run on a single device.
         """
 
-        self.Target = vectorize_target(Target)
+        if pmap:
+            self.Target = pmap_target(Target)
+        else:
+            self.Target = vmap_target(Target)
 
-        self.grad_evals_per_step = 1.0
+        self.grad_evals_per_step = 1.0 #per chain
 
 
 
@@ -123,6 +168,7 @@ class Sampler:
 
     def initialize(self, random_key, x_initial, num_chains):
 
+
         if random_key is None:
             key = jax.random.PRNGKey(0)
         else:
@@ -156,14 +202,21 @@ class Sampler:
 
 
     def burn_in(self, loss, x, u, l, g, key):
+        """Initial stage of the burn-in. Here the goal is to get to the typical set as quickly as possible (as measured by the virial conditions)."""
 
-        ### hyperparameters of the burn in ###
-        L = jnp.sqrt(self.Target.d) * 10
-        eps = jnp.sqrt(self.Target.d) #this will be changed during the burn-in
+        ### hyperparameters of the burn in (the value of those parameters typically will not have large impact on the performance)###
 
-        max_burn_in = 200
-        increase, reduce = 2.0, 0.5
-        varE = 1e-4#5e-4
+        # important parameters
+        L = jnp.sqrt(self.Target.d) * 1     #currently not set automatically
+        varE = 1e-4                         #we aim for Var[E] / d = 'varE'. This will determine the stepsize during the sampling.
+
+        # less important parameters
+        eps = jnp.sqrt(self.Target.d)       #this will be changed during the burn-in
+        max_burn_in = 200                   #we will not take more steps
+        max_fail = 6                        #if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
+        virial_target = 0.1                 #if the virial loss is lower, we stop the initial stage of burn-in
+        increase, reduce = 2.0, 0.5         #if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
+        num_energy_points = 5               #how many points will we use to determine Var[E] (epsilon)  dependence.
 
 
         def accept_reject_step(loss, x, u, l, g, loss_new, xx, uu, ll, gg):
@@ -219,7 +272,7 @@ class Sampler:
         # epss = []
         # X = []
 
-        condition = lambda state: (state[1] > 0.1)*(state[0] < max_burn_in)*(state[2] < 6)  # true during the burn-in
+        condition = lambda state: (state[1] > virial_target)*(state[0] < max_burn_in)*(state[2] < max_fail)  # true during the burn-in
 
         steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma = jax.lax.while_loop(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, eps, jnp.ones(self.Target.d)))
 
@@ -248,11 +301,10 @@ class Sampler:
 
         ### determine the epsilon for sampling ###
         eps = eps * (1.0/reduce)**fail_count #the epsilon before the row of failures, we will take this as a baseline
-        epsilon = eps * jnp.logspace(-1, 1, 5)  # some range around eps
+        epsilon = eps * jnp.logspace(-1, 1, num_energy_points)  # some range around eps
         vars= jax.vmap(energy_variance)(epsilon)
         eps, success = eps_fit(epsilon, vars, varE)
-        print('stepsize for sampling: ', eps)
-
+        #print('stepsize for sampling: ', eps)
 
         ### let's do some checks and print warnings ###
         if steps == max_burn_in:
@@ -261,17 +313,30 @@ class Sampler:
             print('The determination of the step-size for sampling may be unreliable (the energy fluctuations may be more than a factor of 10 off the typical optimum).')
 
 
-        return steps + 5, x, u, l, g, key, L, eps, sigma
+        return steps + num_energy_points, x, u, l, g, key, L, eps, sigma
 
 
 
-    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, output = 'normal', thinning= 1):
+    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, output = 'full'):
+        """Args:
+               num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
 
+               num_chains: number of independent chains, currently only tested for num_chains = 300 (ensamble regime).
+
+               x_initial: initial condition for x, shape: (num_chains, d). Defaults to 'prior' in which case the initial condition is drawn from the prior distribution (self.Target.prior_draw).
+
+               random_key: jax random seed, defaults to jax.random.PRNGKey(0).
+
+               output: determines the output of the function. Currently supported:
+                        'full': returns the samples, shape: (num_chains, num_samples, d)
+                        'ess': the number gradient calls per chain needed to get the bias b2 bellow 0.1. In this case, self.Target.variance = <x_i^2>_true should be defined.
+
+        """
 
         state = self.initialize(random_key, x_initial, num_chains) #initialize
 
         burnin_steps, x, u, l, g, key, L, eps, sigma = self.burn_in(*state) #burn-in
-
+        print(eps, sigma)
 
         ### sampling ###
 
@@ -287,21 +352,20 @@ class Sampler:
         f_avg = jnp.average(f[-num_steps // 10])
         burnin2_steps = num_steps - find_crossing(-jnp.abs(f[::-1] - f_avg) / f_avg, -0.1)
 
-        # plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
-        # plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*1.1, color = 'black', alpha= 0.3)
-        # plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*0.9, color= 'black', alpha= 0.3)
-        #
-        # plt.xlabel('steps')
-        # plt.ylabel('f')
-        # plt.show()
+        plt.plot(f, '.-')
+        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
+        plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*1.1, color = 'black', alpha= 0.3)
+        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*0.9, color= 'black', alpha= 0.3)
 
+        plt.xlabel('steps')
+        plt.ylabel('f')
+        plt.show()
 
 
         ### return results ###
 
         if output == 'ess': #we return the number of sampling steps (needed for b2 < 0.1) and the number of burn-in steps
-
-            b2 = self.full_b(X[:, burnin2_steps:, :])
+            b2 = self.full_b(self.Target.transform(X[:, burnin2_steps:, :]))
             plt.plot(b2)
             plt.xlabel('# sampling steps')
             plt.ylabel('b2')
@@ -312,8 +376,8 @@ class Sampler:
 
 
         else:
-            if output == 'normal': #return the samples X
-                return X[:, burnin2_steps::thinning, :]
+            if output == 'full': #return the samples X
+                return X[:, burnin2_steps:, :]
 
             else:
                 raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
