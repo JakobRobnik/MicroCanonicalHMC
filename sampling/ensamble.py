@@ -254,36 +254,38 @@ class Sampler:
             #will we accept the step?
             accept, loss, x, u, l, g = accept_reject_step(loss, x, u, l, g, loss_new, xx, uu, ll, gg)
 
-            #Ls.append(loss)
+            Ls.append(loss)
             #X.append(x)
             never_rejected *= accept #True if no step has been rejected so far
             fail_count = (fail_count + 1) * (1-accept)
 
                             #reduce eps if rejected    #increase eps if never rejected        #keep the same
             eps = eps * ((1-accept) * reduce + accept * (never_rejected * increase + (1-never_rejected) * 1.0))
-            #epss.append(new_eps)
+            epss.append(eps)
 
             #energy_change = kinetic_change + ll - l
             #eng.append(jnp.average(jnp.square(energy_change)) / self.Target.d)
 
             return steps + 1, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma
 
-        # Ls = []
-        # epss = []
+        Ls = []
+        epss = []
         # X = []
 
         condition = lambda state: (state[1] > virial_target)*(state[0] < max_burn_in)*(state[2] < max_fail)  # true during the burn-in
 
-        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma = jax.lax.while_loop(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, eps, jnp.ones(self.Target.d)))
+        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma = my_while(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, eps, jnp.ones(self.Target.d)))
+        # if you want to debug, replace jax.lax.while_loop with my_while
 
+        #jax.lax.while_loop
 
-        # plt.plot(Ls, '.-', label = 'loss')
-        # plt.plot(epss, 'o', label = 'epsilon')
-        # plt.legend()
-        # plt.yscale('log')
-        # plt.xlabel('burn-in steps')
-        # plt.show()
-        #
+        plt.plot(Ls, '.-', label = 'loss')
+        plt.plot(epss, 'o', label = 'epsilon')
+        plt.legend()
+        plt.yscale('log')
+        plt.xlabel('burn-in steps')
+        plt.show()
+
 
         # X = np.array(X)
         # x_particles = X[:, :, 0].T

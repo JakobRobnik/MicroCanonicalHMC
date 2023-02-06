@@ -497,34 +497,31 @@ class Sampler:
 
             ### update the hyperparameters ###
 
-            if no_divergences:
+            if no_divergences: #appropriate eps
+
                 L_new = sigma * jnp.sqrt(self.Target.d)
                 eps_new = self.eps * jnp.power(varE_wanted / varE, 0.25) #assume var[E] ~ eps^4
                 success = jnp.abs(1.0 - varE / varE_wanted) < 0.2 #we are done
 
-            else:
+                if self.eps > eps_appropriate: #it is the largest appropriate eps found so far
+                    eps_appropriate = self.eps
+
+            else: #inappropriate eps
+
                 L_new = self.L
 
-                if self.eps < eps_inappropriate:
+                if self.eps < eps_inappropriate: #it is the smallest inappropriatre eps found so far
                     eps_inappropriate = self.eps
 
                 eps_new = jnp.inf #will be lowered later
 
 
-            #update the known region of appropriate eps
-
-            if not no_divergences: # inappropriate epsilon
-                if self.eps < eps_inappropriate: #it is the smallest found so far
-                    eps_inappropriate = self.eps
-
-            else: # appropriate epsilon
-                if self.eps > eps_appropriate: #it is the largest found so far
-                    eps_appropriate = self.eps
-
             # if suggested new eps is inappropriate we switch to bisection
             if eps_new > eps_inappropriate:
                 eps_new = 0.5 * (eps_inappropriate + eps_appropriate)
+
             self.set_hyperparameters(L_new, eps_new)
+
 
             if dialog:
                 word = 'bisection' if (not no_divergences) else 'update'
