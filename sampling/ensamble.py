@@ -360,10 +360,10 @@ class Sampler:
 
         if output == 'ess': #we return the number of sampling steps (needed for b2 < 0.1) and the number of burn-in steps
             b2 = self.full_b(self.Target.transform(X[:, burnin2_steps:, :]))
-            plt.plot(b2)
-            plt.xlabel('# sampling steps')
-            plt.ylabel('b2')
-            plt.show()
+            # plt.plot(b2)
+            # plt.xlabel('# sampling steps')
+            # plt.ylabel('b2')
+            # plt.show()
             no_nans = 1-jnp.any(jnp.isnan(b2))
             cutoff_reached = b2[-1] < 0.1
             return (find_crossing(b2, 0.1), burnin_steps + burnin2_steps) if (no_nans and cutoff_reached) else (np.inf, burnin_steps + burnin2_steps)
