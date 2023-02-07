@@ -385,14 +385,14 @@ class Sampler:
         f_avg = jnp.average(f[-num_steps // 10])
         burnin2_steps = num_steps - find_crossing(-jnp.abs(f[::-1] - f_avg) / f_avg, -0.1)
 
-        plt.plot(f, '.-')
-        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
-        plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*1.1, color = 'black', alpha= 0.3)
-        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*0.9, color= 'black', alpha= 0.3)
-
-        plt.xlabel('steps')
-        plt.ylabel('f')
-        plt.show()
+        # plt.plot(f, '.-')
+        # plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
+        # plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*1.1, color = 'black', alpha= 0.3)
+        # plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*0.9, color= 'black', alpha= 0.3)
+        #
+        # plt.xlabel('steps')
+        # plt.ylabel('f')
+        # plt.show()
 
         return burnin2_steps
 
