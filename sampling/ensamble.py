@@ -63,9 +63,11 @@ class pmap_target:
 class Sampler:
     """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, pmap = False):
+    def __init__(self, Target, alpha = 1.0, varE_wanted = 1e-4, pmap = False):
         """Args:
                 Target: the target distribution class.
+                alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
+                varE_wanted: controls the stepsize after the burn-in. We aim for Var[E] / d = 'varE_wanted'.
                 pmap: if True, jax.pmap will be applied to the Target functions.
                       In this case, the number of available devices (as returned by jax.local_device_count())
                       should be equal or larger than the number of ensamble chains that we are running.
@@ -77,7 +79,25 @@ class Sampler:
         else:
             self.Target = vmap_target(Target)
 
-        self.grad_evals_per_step = 1.0 #per chain
+        self.L = jnp.sqrt(self.Target.d) * alpha
+        self.varE_wanted = varE_wanted
+
+        self.grad_evals_per_step = 1.0 # per chain (leapfrog)
+
+
+        ### Hyperparameters of the burn in. The value of those parameters typically will not have large impact on the performance ###
+        ### Can be changed after initializing the Sampler class. Example: ###
+        # sampler = Sampler(target)
+        # sampler.max_burn_in = 400
+        # samples = sampler.sample(1000, 300)
+
+        self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
+        self.max_burn_in = 200                        # we will not take more steps
+        self.max_fail = 6                             # if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
+        self.loss_wanted = 0.1                        # if the virial loss is lower, we stop the initial stage of burn-in
+        self.increase, self.reduce = 2.0, 0.5         # if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
+        self.num_energy_points = 5                    # how many points will we use to determine Var[E] (epsilon)  dependence.
+
 
 
 
@@ -202,26 +222,13 @@ class Sampler:
     def burn_in(self, loss, x, u, l, g, key):
         """Initial stage of the burn-in. Here the goal is to get to the typical set as quickly as possible (as measured by the virial conditions)."""
 
-        ### hyperparameters of the burn in (the value of those parameters typically will not have large impact on the performance)###
-
-        # important parameters
-        L = jnp.sqrt(self.Target.d) * 1     #currently not set automatically
-        varE = 1e-4                         #we aim for Var[E] / d = 'varE'. This will determine the stepsize during the sampling.
-
-        # less important parameters
-        eps = jnp.sqrt(self.Target.d)       #this will be changed during the burn-in
-        max_burn_in = 200                   #we will not take more steps
-        max_fail = 10                       #if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
-        virial_target = 0.1                 #if the virial loss is lower, we stop the initial stage of burn-in
-        increase, reduce = 2.0, 0.5         #if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
-        num_energy_points = 5               #how many points will we use to determine Var[E] (epsilon)  dependence.
+        L = self.L
 
 
         def accept_reject_step(loss, x, u, l, g, loss_new, xx, uu, ll, gg):
             """if there are nans or the loss went up we don't want to update the state"""
 
             no_nans = jnp.all(jnp.isfinite(xx))
-            print(no_nans)
             tru = (loss_new < loss) * no_nans  # loss went down and there were no nans
             false = (1 - tru)
             Loss = loss_new * tru + loss * false
@@ -232,16 +239,8 @@ class Sampler:
             return tru, Loss, X, U, L, G
 
 
-        def energy_variance(eps):
-            """detemrine Var[E]/d at given epsilon"""
-            xx, uu, ll, gg, kinetic_change, kkey = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
-            energy_change = kinetic_change + ll - l
-            return jnp.average(jnp.square(energy_change)) / self.Target.d
-
-
-
         def burn_in_step(state):
-            """one step of the burn in"""
+            """one step of the burn-in"""
 
             steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma = state
             sigma = jnp.std(x, axis=0)  # diagonal conditioner
@@ -256,14 +255,13 @@ class Sampler:
             Ls.append(loss)
             #X.append(x)
             never_rejected *= accept #True if no step has been rejected so far
-            fail_count = (fail_count + 1) * (1-accept)
+            fail_count = (fail_count + 1) * (1-accept) #how many rejected steps did we have in a row
 
                             #reduce eps if rejected    #increase eps if never rejected        #keep the same
-            eps = eps * ((1-accept) * reduce + accept * (never_rejected * increase + (1-never_rejected) * 1.0))
+            eps = eps * ((1-accept) * self.reduce + accept * (never_rejected * self.increase + (1-never_rejected) * 1.0))
             epss.append(eps)
 
-            #energy_change = kinetic_change + ll - l
-            #eng.append(jnp.average(jnp.square(energy_change)) / self.Target.d)
+            #varE = jnp.square(kinetic_change + ll - l) / self.Target.d
 
             return steps + 1, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma
 
@@ -271,9 +269,9 @@ class Sampler:
         epss = []
         # X = []
 
-        condition = lambda state: (state[1] > virial_target)*(state[0] < max_burn_in)*(state[2] < max_fail)  # true during the burn-in
+        condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * (state[2] < self.max_fail)  # true during the burn-in
 
-        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma = my_while(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, eps, jnp.ones(self.Target.d)))
+        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma = my_while(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, self.eps_initial, jnp.ones(self.Target.d)))
         # if you want to debug, replace jax.lax.while_loop with my_while
 
         #jax.lax.while_loop
@@ -300,31 +298,40 @@ class Sampler:
         # plt.contourf(X, Y, jnp.exp(-Z), cmap = 'cividis')
         # plt.show()
 
+
         ### determine the epsilon for sampling ###
-        eps = eps * (1.0/reduce)**fail_count #the epsilon before the row of failures, we will take this as a baseline
-        epsilon = eps * jnp.logspace(-1, 1, num_energy_points)  # some range around eps
-        vars= jax.vmap(energy_variance)(epsilon)
-        eps, success = eps_fit(epsilon, vars, varE)
-        #print('stepsize for sampling: ', eps)
+        eps = eps * (1.0/self.reduce)**fail_count #the epsilon before the row of failures, we will take this as a baseline
+        epsilon = eps * jnp.logspace(-1, 1, self.num_energy_points)  # some range around eps
+
+        def energy_error(eps):
+            """detemrine Var[E]/d at given epsilon"""
+            xx, uu, ll, gg, kinetic_change, kkey = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
+            energy_change = kinetic_change + ll - l
+            return jnp.average(jnp.square(energy_change)) / self.Target.d
+
+        vars= jax.vmap(energy_error)(epsilon) #energy error at those eps
+        eps, success = eps_fit(epsilon, vars, self.varE_wanted) #fit a power law and determine the epsilon with the wanted energy error
+
+
 
         ### let's do some checks and print warnings ###
-        if steps == max_burn_in:
+        if steps == self.max_burn_in:
             print('Burn-in exceeded the predescribed number of iterations, loss = {0} but we aimed for 0.1'.format(loss))
         if not success:
             print('The determination of the step-size for sampling may be unreliable (the energy fluctuations may be more than a factor of 10 off the typical optimum).')
 
 
-        return steps + num_energy_points, x, u, l, g, key, L, eps, sigma
+        return steps + self.num_energy_points, x, u, l, g, key, L, eps, sigma
 
 
 
-    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, output = 'full'):
+    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, output = 'full', remove_burn_in= True):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
 
                num_chains: number of independent chains, currently only tested for num_chains = 300 (ensamble regime).
 
-               x_initial: initial condition for x, shape: (num_chains, d). Defaults to 'prior' in which case the initial condition is drawn from the prior distribution (self.Target.prior_draw).
+               x_initial: initial condition for x, shape: (num_chains, d). Defaults to 'prior' in which case the initial condition is drawn with self.Target.prior_draw.
 
                random_key: jax random seed, defaults to jax.random.PRNGKey(0).
 
@@ -332,11 +339,14 @@ class Sampler:
                         'full': returns the samples, shape: (num_chains, num_samples, d)
                         'ess': the number gradient calls per chain needed to get the bias b2 bellow 0.1. In this case, self.Target.variance = <x_i^2>_true should be defined.
 
+               remove_burn_in: removes the samples during the burn-in phase. The output shape is (num_chains, num_samples - num_burnin, d).
+                               The end of burn-in is determined based on settling of the expected value of f(x) = x^T x.
+                               Specifically, when the instantaneous expected values start to fluctuate by less than 10%.
         """
 
         state = self.initialize(random_key, x_initial, num_chains) #initialize
 
-        burnin_steps, x, u, l, g, key, L, eps, sigma = self.burn_in(*state) #burn-in
+        burnin_steps, x, u, l, g, key, L, eps, sigma = self.burn_in(*state) #burn-in (first stage)
         print(eps)
 
         ### sampling ###
@@ -346,21 +356,13 @@ class Sampler:
             x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
             return (x, u, g, key), x
 
-        X = jax.lax.scan(step, init=(x, u, g, key), xs=None, length=num_steps)[1]
+        X = jax.lax.scan(step, init=(x, u, g, key), xs=None, length=num_steps)[1] #do the sampling
         X = jnp.swapaxes(X, 0, 1)
-        ### remove additional burn in ###
-        f = jnp.average(jnp.average(jnp.square(X), axis=0), axis=1)
-        f_avg = jnp.average(f[-num_steps // 10])
-        burnin2_steps = num_steps - find_crossing(-jnp.abs(f[::-1] - f_avg) / f_avg, -0.1)
 
-        plt.plot(f, '.-')
-        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
-        plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*1.1, color = 'black', alpha= 0.3)
-        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*0.9, color= 'black', alpha= 0.3)
-
-        plt.xlabel('steps')
-        plt.ylabel('f')
-        plt.show()
+        if remove_burn_in: #optionally remove the secondary burn-in
+            burnin2_steps = self.remove_burn_in(X)
+        else:
+            burnin2_steps = 0
 
 
         ### return results ###
@@ -384,7 +386,24 @@ class Sampler:
                 raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
 
+    def remove_burn_in(self, X):
 
+        num_steps = X.shape[1]
+        f = jnp.average(jnp.average(jnp.square(X), axis=0), axis=1)
+
+        f_avg = jnp.average(f[-num_steps // 10])
+        burnin2_steps = num_steps - find_crossing(-jnp.abs(f[::-1] - f_avg) / f_avg, -0.1)
+
+        plt.plot(f, '.-')
+        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
+        plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*1.1, color = 'black', alpha= 0.3)
+        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*0.9, color= 'black', alpha= 0.3)
+
+        plt.xlabel('steps')
+        plt.ylabel('f')
+        plt.show()
+
+        return burnin2_steps
 
 def linfit(x, y):
     """Args: data vectors x and y

@@ -248,7 +248,6 @@ class Funnel():
 
 
 class Rosenbrock():
-    """Mixture of two Gaussians, one centered at x = [mu/2, 0, 0, ...], the other at x = [-mu/2, 0, 0, ...]"""
 
     def __init__(self, d = 36, Q = 0.1):
 
