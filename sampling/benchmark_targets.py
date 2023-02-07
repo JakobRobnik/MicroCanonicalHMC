@@ -70,7 +70,7 @@ class IllConditionedGaussian():
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape=(self.d,), dtype='float64')#* np.power(self.condition_number, 0.25) * 2
+        return jax.random.normal(key, shape=(self.d,), dtype='float64') *5#* np.power(self.condition_number, 0.25) * 2
 
 
 

@@ -209,7 +209,7 @@ class Sampler:
 
         ### initial velocity ###
         virials = jnp.average(x * g, axis=0)
-        loss = jnp.sqrt(jnp.average(jnp.square(virials - 1.0)))
+        loss = self.virial_loss(x, g)
         sgn = -2.0 * (virials < 1.0) + 1.0
         u = - g / jnp.sqrt(jnp.sum(jnp.square(g), axis = 1))[:, None] # initialize momentum in the direction of the gradient of log p
         u = u * sgn[None, :] #if the virial in that direction is smaller than 1, we flip the direction of the momentum in that direction
@@ -225,7 +225,7 @@ class Sampler:
         L = self.L
 
 
-        def accept_reject_step(loss, x, u, l, g, loss_new, xx, uu, ll, gg):
+        def accept_reject_step(loss, x, u, l, g, varE, loss_new, xx, uu, ll, gg, varE_new):
             """if there are nans or the loss went up we don't want to update the state"""
 
             no_nans = jnp.all(jnp.isfinite(xx))
@@ -236,72 +236,57 @@ class Sampler:
             U = jnp.nan_to_num(uu) * tru + u * false
             L = jnp.nan_to_num(ll) * tru + l * false
             G = jnp.nan_to_num(gg) * tru + g * false
-            return tru, Loss, X, U, L, G
+            Var = jnp.nan_to_num(varE_new) * tru + varE * false
+            return tru, Loss, X, U, L, G, Var
 
 
         def burn_in_step(state):
             """one step of the burn-in"""
 
-            steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma = state
+            steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = state
             sigma = jnp.std(x, axis=0)  # diagonal conditioner
 
             xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
 
             loss_new = self.virial_loss(xx, gg)
+            varE_new = jnp.average(jnp.square(kinetic_change + ll - l)) / self.Target.d
 
             #will we accept the step?
-            accept, loss, x, u, l, g = accept_reject_step(loss, x, u, l, g, loss_new, xx, uu, ll, gg)
-
-            Ls.append(loss)
+            accept, loss, x, u, l, g, varE = accept_reject_step(loss, x, u, l, g, varE, loss_new, xx, uu, ll, gg, varE_new)
+            #Ls.append(loss)
             #X.append(x)
             never_rejected *= accept #True if no step has been rejected so far
             fail_count = (fail_count + 1) * (1-accept) #how many rejected steps did we have in a row
 
                             #reduce eps if rejected    #increase eps if never rejected        #keep the same
             eps = eps * ((1-accept) * self.reduce + accept * (never_rejected * self.increase + (1-never_rejected) * 1.0))
-            epss.append(eps)
+            #epss.append(eps)
 
-            #varE = jnp.square(kinetic_change + ll - l) / self.Target.d
+            return steps + 1, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE
 
-            return steps + 1, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma
-
-        Ls = []
-        epss = []
+        #Ls = []
+        #epss = []
         # X = []
 
         condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * (state[2] < self.max_fail)  # true during the burn-in
 
-        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma = my_while(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, self.eps_initial, jnp.ones(self.Target.d)))
+        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
         # if you want to debug, replace jax.lax.while_loop with my_while
 
         #jax.lax.while_loop
 
-        plt.plot(Ls, '.-', label = 'loss')
-        plt.plot(epss, 'o', label = 'epsilon')
-        plt.legend()
-        plt.yscale('log')
-        plt.xlabel('burn-in steps')
-        plt.show()
-
-
-        # X = np.array(X)
-        # x_particles = X[:, :, 0].T
-        # y_particles = X[:, :, self.Target.d].T
-        #
-        # for i in range(10):
-        #     plt.plot(x_particles[i][0], y_particles[i][0], 'o', color ='tab:red')
-        #     plt.plot(x_particles[i], y_particles[i], '.-')
-        #
-        # from sampling.benchmark_targets import get_contour_plot
-        # from sampling.benchmark_targets import Rosenbrock
-        # X, Y, Z = get_contour_plot(Rosenbrock(d = 2), np.linspace(-2, 4, 100), np.linspace(-2, 10, 100))
-        # plt.contourf(X, Y, jnp.exp(-Z), cmap = 'cividis')
+        # plt.plot(Ls, '.-', label = 'loss')
+        # plt.plot(epss, 'o', label = 'epsilon')
+        # plt.legend()
+        # plt.yscale('log')
+        # plt.xlabel('burn-in steps')
         # plt.show()
 
 
         ### determine the epsilon for sampling ###
         eps = eps * (1.0/self.reduce)**fail_count #the epsilon before the row of failures, we will take this as a baseline
-        epsilon = eps * jnp.logspace(-1, 1, self.num_energy_points)  # some range around eps
+        energy_range = self.varE_wanted * jnp.logspace(-jnp.log10(200), jnp.log10(100), self.num_energy_points) #some range around the wanted energy error
+        epsilon = eps * jnp.power(energy_range / varE, 1.0/6.0) # assume Var[E] ~ eps^6 and use the already computed point to set out the grid for extrapolation
 
         def energy_error(eps):
             """detemrine Var[E]/d at given epsilon"""
@@ -310,8 +295,14 @@ class Sampler:
             return jnp.average(jnp.square(energy_change)) / self.Target.d
 
         vars= jax.vmap(energy_error)(epsilon) #energy error at those eps
-        eps, success = eps_fit(epsilon, vars, self.varE_wanted) #fit a power law and determine the epsilon with the wanted energy error
+        mask = vars < 1e3
+        if np.sum(mask) < 2:
+            raise ValueError('Step-size for sampling cannot be determined, the energy errors are too large.')
 
+        mask_picky = vars < 5e-2 # ideally we don't even use Var[E]/d > 0.05 as the power law there is different
+        if np.sum(mask_picky) > 1: #can we afford to be so picky?
+            mask = mask_picky
+        eps, success = eps_fit(epsilon[mask], vars[mask], self.varE_wanted) #fit a power law and determine the epsilon with the wanted energy error
 
 
         ### let's do some checks and print warnings ###
@@ -347,7 +338,7 @@ class Sampler:
         state = self.initialize(random_key, x_initial, num_chains) #initialize
 
         burnin_steps, x, u, l, g, key, L, eps, sigma = self.burn_in(*state) #burn-in (first stage)
-        print(eps)
+        #print(eps)
 
         ### sampling ###
 
@@ -404,6 +395,7 @@ class Sampler:
         plt.show()
 
         return burnin2_steps
+
 
 def linfit(x, y):
     """Args: data vectors x and y
