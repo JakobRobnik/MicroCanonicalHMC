@@ -79,8 +79,7 @@ def ess_corr(x):
 
     # compute effective sample size
     ess_raw = num_chains * num_samples
-    tau_hat = (
-        -1.0
+    tau_hat = (-1.0
         + 2.0 * jnp.sum(rho_hat_even_final + rho_hat_odd_final, axis=0)
         - rho_hat_even_final[indices]
     )
