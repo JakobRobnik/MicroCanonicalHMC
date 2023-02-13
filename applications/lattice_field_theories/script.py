@@ -5,19 +5,22 @@ import jax
 import jax.numpy as jnp
 import os
 
-from .theories import phi4
+from applications.lattice_field_theories.theories import phi4
 from sampling.sampler import Sampler
+from sampling.sampler import find_crossing
 from sampling.grid_search import search_wrapper
 
 
+#set the number of cores
 num_cores = 6 #specific to my PC
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
-
-params_critical_line = pd.read_csv('phi4_parameters.csv')
+#data
+dir = os.path.dirname(os.path.realpath(__file__))
+params_critical_line = pd.read_csv(dir + '/theories/phi4_parameters.csv')
 
 reduced_lam = np.linspace(-2.5, 7.5, 18)
-#msq = -4.0
+
 
 
 def parallel_run(function, values):
@@ -41,9 +44,10 @@ def reduce_chi(chi, side):
     return chi * np.power(side, -7.0/4.0)
 
 
-def prepare_gerdes_fig3():
+def ground_truth(sides):
 
-    sides = [12, ]#20, 32]
+    sides = [12, ]
+    #sides = [6, 8, 10, 12, 14]
     reduced_chi = np.empty((len(sides), len(reduced_lam)))
 
     def chi(lam):
@@ -63,38 +67,8 @@ def prepare_gerdes_fig3():
     df = pd.DataFrame(reduced_chi.T, columns=['L = ' + str(side) for side in sides])
     df['reduced lam'] = reduced_lam
 
-    df.to_csv('reduced_chi2.csv')
+    df.to_csv('phi4_results/reduced_chi2.csv')
 
-
-def plot_gerdes_fig3():
-    side = 12
-    data = pd.read_csv('reduced_chi2.csv')
-
-    lamr = data['reduced lam']
-    plt.rcParams.update({'font.size': 25})
-    plt.figure(figsize=(20, 10))
-
-    plt.subplot(2, 1, 1)
-    plt.plot(data['reduced lam'], data['L = '+str(side)], 'o', label = 'L = 12')
-    plt.xlabel(r'reduced $\lambda$')
-    plt.ylabel(r'reduced $\chi$')
-    plt.legend()
-
-    plt.subplot(2, 1, 2)
-    ESS = np.load('ESS_L'+str(side) + '.npy')
-    plt.plot(data['reduced lam'], ESS, 'o:')
-    plt.yscale('log')
-    plt.show()
-
-
-
-def visualize_field(phi, side):
-
-    field = np.reshape(phi, (side, side))
-
-    plt.matshow(field)
-    plt.colorbar()
-    plt.show()
 
 
 
@@ -102,22 +76,22 @@ class ess_with_chi:
 
     def __init__(self, side):
         self.lambda_array = unreduce_lam(reduced_lam, side)
-        data = pd.read_csv('reduced_chi2.csv')
-        self.ground = data['L = ' + str(side)]
+        data = pd.read_csv(dir + '/theories/phi4_ground_truth.csv')
+        print(data)
+        self.ground = data['L = ' + str(side)] #ground truth reduced chi(2) as computed by very long chains
         self.side = side
 
 
     def ess(self, alpha, beta, index_lam, steps = 100000):
 
         target = phi4.Theory(self.side, self.lambda_array[index_lam])
-        burnin = 1000
         sampler = Sampler(target, L=np.sqrt(target.d) * alpha, eps=np.sqrt(target.d) * beta, integrator='LF')
 
-        phibar = sampler.sample(steps, num_chains=num_cores*10)[:, burnin:, 0]
+        phibar = sampler.sample(steps, num_chains=num_cores*10, remove_burn_in= True)
         chi = reduce_chi(target.susceptibility2_full(phibar), self.side)
         chi0 = self.ground[index_lam]
         error = jnp.average(jnp.abs(chi - chi0) / chi0, axis = 0)
-        nsteps = steps_for_convergence(error)
+        nsteps = find_crossing(error, 0.1)
 
         return 200.0 / nsteps
 
@@ -141,7 +115,7 @@ def ess_lam(side):
         ESS[i] = ess_explorer.ess(3.0, 0.1, i)
         print(i, ESS[i])
 
-    np.save('ESS_L'+str(side) + '.npy', ESS)
+    np.save('phi4_results/ESS_L'+str(side) + '.npy', ESS)
 
 
 def gerdes_tabel1():
@@ -187,9 +161,8 @@ def hmc(target, samples, samples_adapt):
 
 
 
-side = 12
-lam = get_params(side)
-target = phi4.Theory(side, lam)
+grid_search(6, 17)
+
 
 #phibar = hmc(target, 5000, 5000)
 
@@ -199,9 +172,3 @@ target = phi4.Theory(side, lam)
 
 #ess_lam(12)
 #gerdes_tabel1()
-
-#grid_search(side= 12, index_lam= 15)
-
-
-# prepare_gerdes_fig3()
-#plot_gerdes_fig3()
