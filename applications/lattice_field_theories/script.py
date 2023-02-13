@@ -163,6 +163,8 @@ def hmc(target, samples, samples_adapt):
 
 grid_search(6, 17)
 
+print(jax.lib.xla_bridge.get_backend().platform)
+
 
 #phibar = hmc(target, 5000, 5000)
 
