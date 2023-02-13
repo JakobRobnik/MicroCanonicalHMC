@@ -29,7 +29,7 @@ class vmap_target:
             self.transform = lambda x: x #if not given, set it to the identity
 
         if hasattr(target, 'nlogp'):
-            self.transform = jax.vmap(target.nlogp)
+            self.nlogp = jax.vmap(target.nlogp)
 
         if hasattr(target, 'prior_draw'):
             self.prior_draw = jax.vmap(target.prior_draw)
@@ -56,7 +56,7 @@ class pmap_target:
             self.transform = lambda x: x  # if not given, set it to the identity
 
         if hasattr(target, 'nlogp'):
-            self.transform = jax.pmap(target.nlogp)
+            self.nlogp = jax.pmap(target.nlogp)
 
         if hasattr(target, 'prior_draw'):
             self.prior_draw = jax.pmap(target.prior_draw)
