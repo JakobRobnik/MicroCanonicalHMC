@@ -1,5 +1,8 @@
 import numpy as np
 
+from .jump_identification import remove_jumps
+from .correlation_length import ess_corr
+
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
 
 
@@ -47,14 +50,14 @@ class Sampler:
 
     def random_unit_vector(self):
         """Generates a random (isotropic) unit vector."""
-        u = self.rng.randn(shape = (self.Target.d, ))
+        u = self.rng.randn(self.Target.d)
         u /= np.sqrt(np.sum(np.square(u)))
         return u
 
 
     def partially_refresh_momentum(self, u):
         """Adds a small noise to u and normalizes."""
-        z = self.nu * self.rng.randn(shape = (self.Target.d, ))
+        z = self.nu * self.rng.randn(self.Target.d)
 
         return (u + z) / np.sqrt(np.sum(np.square(u + z)))
 
@@ -64,9 +67,8 @@ class Sampler:
         g_norm = np.sqrt(np.sum(np.square(g)))
         e = - g / g_norm
         ue = np.dot(u, e)
-        sh = np.sinh(eps * g_norm / (self.Target.d-1))
-        ch = np.cosh(eps * g_norm / (self.Target.d-1))
-        th = np.tanh(eps * g_norm / (self.Target.d-1))
+        delt = eps * g_norm / (self.Target.d-1)
+        sh, ch, th = np.sinh(delt), np.cosh(delt), np.tanh(delt)
         delta_r = np.log(ch) + np.log1p(ue * th)
 
         return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), delta_r
@@ -148,7 +150,7 @@ class Sampler:
         ### initial conditions ###
         if isinstance(x_initial, str):
             if x_initial == 'prior':  # draw the initial x from the prior
-                x = self.Target.prior_draw()
+                x = self.Target.prior_draw(self.rng)
             else:  # if not 'prior' the x_initial should specify the initial condition
                 raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
         else: #initial x is given
@@ -207,7 +209,7 @@ class Sampler:
 
             for i in range(num_steps):
 
-                x, u, l, g, kinetic_change = self.dynamics(x, u, l, g)
+                x, u, l, g, kinetic_change = self.dynamics(x, u, g)
                 F2 = (W * F2 + np.square(self.Target.transform(x))) / (W + 1)  # Update <f(x)> with a Kalman filter
                 W += 1
                 bias = np.sqrt(np.average(np.square((F2 - self.Target.variance) / self.Target.variance)))  # bias = np.average((F2 - self.Target.variance) / self.Target.variance)
@@ -255,7 +257,7 @@ class Sampler:
                 index_burnin = 0
 
             if output == 'final state': #only return the final x
-                return state[0]
+                return x
             elif output == 'energy': #return the samples X and the energy E
                 return xarr[index_burnin::thinning, :], Earr[index_burnin::thinning]
             elif output == 'normal': #return the samples X
@@ -268,7 +270,7 @@ class Sampler:
 
     def tune_hyperparameters(self, x_initial = 'prior', random_number_generator= None, varE_wanted = 0.0005, dialog = False, initial_eps= 0.6):
 
-        varE_wanted = 0.0005             # targeted energy variance per dimension
+        varE_wanted = 0.0005           # targeted energy variance per dimension
         burn_in, samples = 2000, 1000
 
         ### random number generator ###
@@ -295,7 +297,7 @@ class Sampler:
 
             # remove large jumps in the energy
             E -= np.average(E)
-            #E = remove_jumps(E)
+            E = remove_jumps(E)
 
             ### compute quantities of interest ###
 
