@@ -439,9 +439,11 @@ def check_gradient(target, x):
 
 
 if __name__ == '__main__':
+    xmin, xmax = -3.0, 5.0
+    ymin, ymax = -2.0, 18.0
+    X, Y, Z = get_contour_plot(Rosenbrock(d= 2), jnp.linspace(xmin, xmax, 100), jnp.linspace(ymin, ymax, 100))
 
-    target = Rosenbrock(d = 100, Q= 5.0)
-    print(np.sqrt(np.average(target.variance)))
+
 
     #target.compute_moments()
 

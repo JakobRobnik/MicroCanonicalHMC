@@ -28,6 +28,9 @@ class vmap_target:
         else:
             self.transform = lambda x: x #if not given, set it to the identity
 
+        if hasattr(target, 'nlogp'):
+            self.nlogp = jax.vmap(target.nlogp)
+
         if hasattr(target, 'prior_draw'):
             self.prior_draw = jax.vmap(target.prior_draw)
 
@@ -52,6 +55,9 @@ class pmap_target:
         else:
             self.transform = lambda x: x  # if not given, set it to the identity
 
+        if hasattr(target, 'nlogp'):
+            self.nlogp = jax.pmap(target.nlogp)
+
         if hasattr(target, 'prior_draw'):
             self.prior_draw = jax.pmap(target.prior_draw)
 
@@ -63,7 +69,7 @@ class pmap_target:
 class Sampler:
     """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, alpha = 1.0, varE_wanted = 1e-4, pmap = False):
+    def __init__(self, Target, alpha = 1.0, varE_wanted =  5e-4, pmap = False):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
