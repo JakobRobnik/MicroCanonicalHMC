@@ -12,14 +12,22 @@ from sampling.grid_search import search_wrapper
 
 
 #set the number of cores
-num_cores = 6 #specific to my PC
+
+
+
+
+num_cores = 1 #specific to my PC
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+
+num_cores = jax.local_device_count()
+print(num_cores, jax.lib.xla_bridge.get_backend().platform)
+
 
 #data
 dir = os.path.dirname(os.path.realpath(__file__))
-params_critical_line = pd.read_csv(dir + '/theories/phi4_parameters.csv')
+#params_critical_line = pd.read_csv(dir + '/theories/phi4_parameters.csv')
 
-reduced_lam = np.linspace(-2.5, 7.5, 18)
+reduced_lam = jnp.linspace(-2.5, 7.5, 20)
 
 
 
@@ -44,30 +52,30 @@ def reduce_chi(chi, side):
     return chi * np.power(side, -7.0/4.0)
 
 
-def ground_truth(sides):
+def ground_truth():
 
-    sides = [12, ]
-    #sides = [6, 8, 10, 12, 14]
+    sides = [6, 8, 10, 12, 14]
     reduced_chi = np.empty((len(sides), len(reduced_lam)))
 
     def chi(lam):
         target = phi4.Theory(side, lam)
         sampler = Sampler(target, L=np.sqrt(target.d) * 1, eps=np.sqrt(target.d) * 0.005)
-        phibar, E = sampler.sample(10000000, output='energy')
+        phibar = sampler.sample(100000)
         return reduce_chi(target.susceptibility2(phibar))
 
 
     for i in range(len(sides)):
         side = sides[i]
+        print('side = ' + str(side))
         lam = unreduce_lam(reduced_lam, side)
         chis= parallel_run(chi, lam)
 
-        reduced_chi[i, :] = chis
+        reduced_chi[i, :] = np.array(chis)
 
     df = pd.DataFrame(reduced_chi.T, columns=['L = ' + str(side) for side in sides])
     df['reduced lam'] = reduced_lam
 
-    df.to_csv('phi4_results/reduced_chi2.csv')
+    df.to_csv('phi4_results/ground_truth.csv')
 
 
 
@@ -161,15 +169,10 @@ def hmc(target, samples, samples_adapt):
 
 
 
-
-print(jax.local_device_count())
-print(jax.lib.xla_bridge.get_backend().platform)
-
-
-#grid_search(6, 17)
-
-print(jax.lib.xla_bridge.get_backend().platform)
-
+import time
+t0 = time.time()
+ground_truth()
+print(time.time - t0)
 
 #phibar = hmc(target, 5000, 5000)
 
