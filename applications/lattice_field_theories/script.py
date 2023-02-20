@@ -95,7 +95,6 @@ class ess_with_chi:
 
 
 
-
 def grid_search(side, index_lam):
 
     ess_explorer = ess_with_chi(side)
@@ -116,33 +115,6 @@ def ess_lam(side):
     np.save('phi4_results/ESS_L'+str(side) + '.npy', ESS)
 
 
-def gerdes_tabel1():
-
-    side= 12
-    lam = get_params(side)
-    target = phi4.Theory(side, lam)
-
-    sampler = Sampler(target, L = np.sqrt(target.d)*1.0, eps = np.sqrt(target.d) * 0.01, integrator= 'LF')
-
-    phi, E = sampler.sample(10000, output = 'full', random_key= jax.random.PRNGKey(0))
-
-    L = jax.vmap(target.nlogp)(phi)
-    from sampling.sampler import burn_in_ending
-    print(burn_in_ending(L))
-    plt.plot(L)
-    plt.show()
-
-
-    phibar, E = sampler.sample(100000, output = 'energy', random_key= jax.random.PRNGKey(0))
-
-    burnin = 1000
-    phi, E = phibar[burnin:], E[burnin:]
-    plt.plot(E)
-    plt.show()
-    print(np.std(E)**2/target.d)
-
-    plt.plot(target.susceptibility2_full(phibar))
-    plt.show()
 
 
 #plot_gerdes_fig3()

@@ -51,3 +51,8 @@ class Theory:
 
 
 
+
+### numpyro ###
+
+
+
