@@ -330,7 +330,7 @@ class Sampler:
 
                x_initial: initial condition for x, shape: (num_chains, d). Defaults to 'prior' in which case the initial condition is drawn with self.Target.prior_draw.
 
-               random_key: jax random seed, defaults to jax.random.PRNGKey(0).
+               random_key: jax random seed, defaults to jax.random.PRNGKey(0)
 
                output: determines the output of the function. Currently supported:
                         'full': returns the samples, shape: (num_chains, num_samples, d)

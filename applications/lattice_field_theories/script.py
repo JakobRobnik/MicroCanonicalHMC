@@ -14,9 +14,7 @@ from sampling.grid_search import search_wrapper
 #set the number of cores
 
 
-
-
-num_cores = 1 #specific to my PC
+num_cores = 6 #specific to my PC
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 num_cores = jax.local_device_count()
@@ -27,7 +25,6 @@ print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 dir = os.path.dirname(os.path.realpath(__file__))
 #params_critical_line = pd.read_csv(dir + '/theories/phi4_parameters.csv')
 
-reduced_lam = jnp.linspace(-2.5, 7.5, 20)
 
 
 
@@ -43,14 +40,6 @@ def get_params(side):
     return np.array(params_critical_line[params_critical_line['L'] == side][['lambda']])[0][0] # = lambda
 
 
-def unreduce_lam(reduced_lam, side):
-    """see Fig 3 in https://arxiv.org/pdf/2207.00283.pdf"""
-    return 4.25 * (reduced_lam * np.power(side, -1.0) + 1.0)
-
-
-def reduce_chi(chi, side):
-    return chi * np.power(side, -7.0/4.0)
-
 
 def ground_truth():
 
@@ -61,13 +50,13 @@ def ground_truth():
         target = phi4.Theory(side, lam)
         sampler = Sampler(target, L=np.sqrt(target.d) * 1, eps=np.sqrt(target.d) * 0.005)
         phibar = sampler.sample(100000)
-        return reduce_chi(target.susceptibility2(phibar))
+        return phi4.reduce_chi(target.susceptibility2(phibar))
 
 
     for i in range(len(sides)):
         side = sides[i]
         print('side = ' + str(side))
-        lam = unreduce_lam(reduced_lam, side)
+        lam = phi4.unreduce_lam(reduced_lam, side)
         chis= parallel_run(chi, lam)
 
         reduced_chi[i, :] = np.array(chis)
@@ -80,10 +69,11 @@ def ground_truth():
 
 
 
+
 class ess_with_chi:
 
     def __init__(self, side):
-        self.lambda_array = unreduce_lam(reduced_lam, side)
+        self.lambda_array = phi4.unreduce_lam(reduced_lam, side)
         data = pd.read_csv(dir + '/theories/phi4_ground_truth.csv')
         print(data)
         self.ground = data['L = ' + str(side)] #ground truth reduced chi(2) as computed by very long chains
@@ -96,7 +86,7 @@ class ess_with_chi:
         sampler = Sampler(target, L=np.sqrt(target.d) * alpha, eps=np.sqrt(target.d) * beta, integrator='LF')
 
         phibar = sampler.sample(steps, num_chains=num_cores*10, remove_burn_in= True)
-        chi = reduce_chi(target.susceptibility2_full(phibar), self.side)
+        chi = phi4.reduce_chi(target.susceptibility2_full(phibar), self.side)
         chi0 = self.ground[index_lam]
         error = jnp.average(jnp.abs(chi - chi0) / chi0, axis = 0)
         nsteps = find_crossing(error, 0.1)
@@ -153,29 +143,6 @@ def gerdes_tabel1():
 
     plt.plot(target.susceptibility2_full(phibar))
     plt.show()
-
-
-
-#from NUTS.nuts import nuts6 as nuts_sample
-
-
-def hmc(target, samples, samples_adapt):
-    theta0 = target.prior_draw(jax.random.PRNGKey(0))
-    delta = 0.2
-
-    samples, lnprob, epsilon = nuts_sample(target.grad_nlogp, samples, samples_adapt, theta0, delta, progress=True)
-
-    return samples
-
-
-
-import time
-t0 = time.time()
-ground_truth()
-print(time.time - t0)
-
-#phibar = hmc(target, 5000, 5000)
-
 
 
 #plot_gerdes_fig3()

@@ -54,7 +54,7 @@ class Hypercube(Lattice):
 
 
 class Theory:
-    """Latice Phi^4 theory."""
+    """Latice Phi^4 theory (MCHMC target class)"""
 
     def __init__(self, L, lam, m_sq = -4):
         """m^2 = -4, such that the diagonal terms cancel out"""
@@ -90,7 +90,7 @@ class Theory:
         """See appendix in https://arxiv.org/pdf/2207.00283.pdf"""
         #phibar = jnp.average(phi, axis= 1)
 
-        return self.d * (jnp.average(jnp.square(phibar)) - jnp.square(jnp.average(jnp.abs(phibar))))
+        return self.d * (jnp.average(jnp.square(phibar), axis= -1) - jnp.square(jnp.average(jnp.abs(phibar), axis = -1)))
 
 
     def susceptibility2_full(self, phibar):
@@ -119,6 +119,47 @@ class Theory:
 
 
 
+reduced_lam = jnp.linspace(-2.5, 7.5, 18) #lambda range around the critical point (m^2 = -4 is fixed)
 
+def unreduce_lam(reduced_lam, side):
+    """see Fig 3 in https://arxiv.org/pdf/2207.00283.pdf"""
+    return 4.25 * (reduced_lam * np.power(side, -1.0) + 1.0)
+
+
+def reduce_chi(chi, side):
+    return chi * np.power(side, -7.0/4.0)
+
+
+
+
+### numpyro ###
+import numpyro
+from numpyro.distributions import constraints
+
+
+class phi4_numpyro(numpyro.distributions.Distribution):
+    """Custom defined phi^4 distribution, see https://forum.pyro.ai/t/creating-a-custom-distribution-in-numpyro/3332/3"""
+
+    support = constraints.real_vector
+
+    def __init__(self, L, lam):
+
+        self.d = L**2
+        self.L = L
+        self.lam = lam
+
+        self.K = jnp.asarray(Hypercube(L, 2, 'periodic').Adj)
+
+        super().__init__(event_shape=(self.d, ))
+
+    def sample(self, key, sample_shape=()):
+        raise NotImplementedError
+
+    def log_prob(self, phi):
+        return phi @ self.K @ phi - self.lam* jnp.sum(jnp.power(phi, 4))
+
+
+def model(L, lam):
+    phi = numpyro.sample('phi', phi4_numpyro(L, lam))
 
 
