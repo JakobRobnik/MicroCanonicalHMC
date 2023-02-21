@@ -102,6 +102,8 @@ class Theory:
 
         return self.d * (phi_2 - jnp.square(phi_1))
 
+    def psd(self, phi):
+        return np.square(np.abs(np.fft.fft2(phi))) / self.L ** 2
 
     def greens_function0(self, phi):
         """zero momentum 2-point Green's function, Equations 22 and 23 in https://journals.aps.org/prd/pdf/10.1103/PhysRevD.100.034515"""

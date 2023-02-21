@@ -76,7 +76,7 @@ def ess():
     plt.figure(figsize=(20, 10))
 
     for i in range(len(sides)):
-        data = np.load(dir + '/phi4results/hmc/ess/L6.npy')
+        data = np.load(dir + '/phi4results/hmc/ess/psd/L6.npy')
         plt.plot(phi4.reduced_lam, data[:, 0], 'o-', color=tab_colors[i], label='L = ' + str(sides[i]))
 
     plt.xlabel(r'reduced $\lambda$')
@@ -95,6 +95,23 @@ def visualize_field(phi, side):
     plt.colorbar()
     plt.show()
 
+
+def check_ground_truth():
+
+    side= 6
+    PSD0 = np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy')
+
+    data = np.sort(PSD0, axis=1)
+    val = (data[:, 2, :, :] + data[:, 3, :, :]) *0.5
+    #lower, upper = data[:, 1, :, :], data[:, 4, :, :]
+    lower, upper = data[:, 0, :, :], data[:, 5, :, :]
+
+
+    rel = 0.5*(upper - lower)/val
+    print(np.max(rel))
+    # plt.imshow(rel[0, :, :], origin= 'lower')
+    # plt.colorbar()
+    # plt.show()
 
 
 ess()

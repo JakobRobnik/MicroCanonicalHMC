@@ -3,13 +3,13 @@ import numpy as np
 import os
 import jax
 
-#num_cores = 6 #specific to my PC
-#os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+num_cores = 6 #specific to my PC
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 import numpyro
 from numpyro.distributions import constraints
 from numpyro.infer import MCMC, NUTS
-numpyro.set_platform("gpu")
+#numpyro.set_platform("gpu")
 
 num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
@@ -46,7 +46,7 @@ phi4_model = mchmc_target_to_numpyro(phi4.Theory)
 U1_model = mchmc_target_to_numpyro(gauge_theory.Theory)
 
 
-def nuts(L, lam, num_samples, num_chains, num_warmup = 500, thinning= 1, full= True):
+def nuts(L, lam, num_samples, num_chains, num_warmup = 500, thinning= 1, full= True, psd= True):
 
     # setup
     theory = phi4.Theory(L, lam)
@@ -63,19 +63,28 @@ def nuts(L, lam, num_samples, num_chains, num_warmup = 500, thinning= 1, full= T
 
     sampler.run(key, L, lam, extra_fields=['num_steps'])
 
-    phi = np.array(sampler.get_samples(group_by_chain= True)['x'])
-    #phi = np.array(numpyro_samples['phi']).reshape(num_samples, num_chains, L ** 2)
-    phi_bar = np.average(phi, axis = 2)
-
+    phi = np.array(sampler.get_samples(group_by_chain= True)['x']).reshape(num_chains, num_samples//thinning, L, L)
 
     steps = np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype=int)
 
-    if full:
-        chi = theory.susceptibility2_full(phi_bar)
-        return burn_in_steps, steps, chi
+    if psd:
+
+        PSD = np.average(theory.psd(phi), axis = 1)
+
+        if full:
+            return burn_in_steps, steps, np.cumsum(theory.psd(phi), axis= 1) / np.arange(1, 1+num_samples//thinning)[None, :, None, None]
+        else:
+            return PSD
 
     else:
-        return theory.susceptibility2(phi_bar)
+        phi_bar = np.average(phi, axis=2)
+
+        if full:
+            chi = theory.susceptibility2_full(phi_bar)
+            return burn_in_steps, steps, chi
+
+        else:
+            return theory.susceptibility2(phi_bar)
 
 
 
@@ -84,16 +93,19 @@ def ground_truth_nuts():
     sides = [6, 8, 10, 12, 14]
     thinning = [10, 10, 100, 100, 100]
 
-    reduced_chi = np.empty((len(phi4.reduced_lam), num_cores))
-
-    for i in range(len(sides)):
+    for i in range(1, len(sides)):
         side = sides[i]
         print('side = ' + str(side))
         lam = phi4.unreduce_lam(phi4.reduced_lam, side)
+        data = np.empty((len(phi4.reduced_lam), num_cores, side, side))
+
         for j in range(len(lam)):
             print(str(j) + '/' +str(len(lam)))
-            reduced_chi[j, :] = phi4.reduce_chi(nuts(L= side, lam= lam[j], num_samples= 10000*thinning[i], num_chains= num_cores, num_warmup= 2000, thinning = thinning[i], full= False), side)
-        np.save('phi4results/hmc/ground_truth/L'+str(side)+'.npy', reduced_chi)
+            data[j] = nuts(L= side, lam= lam[j], num_samples= 10000*thinning[i], num_chains= num_cores,
+                           num_warmup= 2000, thinning = thinning[i], full= False, psd= True)
+
+        np.save('phi4results/hmc/ground_truth/psd/L'+str(side)+'.npy', data)
+
 
 def join_ground_truth_arrays():
     dir = 'phi4results/hmc/ground_truth/'
@@ -114,46 +126,63 @@ def quartiles(data, axis):
 
     return val, lower, upper
 
+
 def compute_ess():
 
-    chi0 = np.median(np.load(dir + '/phi4results/hmc/ground_truth/all.npy'), axis = 2)
 
     ess = np.empty((len(phi4.reduced_lam), 2))
 
-    sides = [6, ]
+    sides = [6, 8, 10, 12, 14]
     #sides = [6, ]
+    repeat = 5
 
-    for i in range(len(sides)):
+    for i in range(1, len(sides)):
         side= sides[i]
+        PSD0 = np.median(np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy'), axis= 1)
         print('side = ' + str(side))
         lam = phi4.unreduce_lam(phi4.reduced_lam, side)
+        num_samples, thinning = 3000, 1
+
         for j in range(len(lam)):
             print(str(j) + '/' +str(len(lam)))
 
-            burnin, steps, chi = nuts(L= side, lam= lam[j], num_samples= 5000, num_chains= 200, full= True)
-            num_burnin = np.median(burnin)
-            chi = phi4.reduce_chi(chi, side)
+            num_burnin = 0
+            steps = np.zeros(num_samples//thinning)
+            b2_sq = np.zeros(num_samples//thinning)
 
-            b2_arr = np.median(np.abs(1- (chi/chi0[i, j])), axis = 0)
+            for rep in range(repeat):
+                burnin, _steps, PSD = nuts(L= side, lam= lam[j], num_samples= num_samples,
+                                          num_chains= num_cores, thinning= 1, full= True, psd= True)
+                num_burnin += np.average(burnin)
+                steps += np.average(np.cumsum(_steps, axis= 1), axis= 0)
+                b2_sq += np.average(np.square(1 - (PSD/PSD0[None, None, j, :, :])), axis= (0, 2, 3))
 
-            index= np.argmax(b2_arr < 0.1)
+            b2_sq /= repeat
+            steps /= repeat
+            num_burnin /= repeat
+
+            index= np.argmax(b2_sq < 0.01)
+
             if index == 0:
                 num_steps = np.inf
-                plt.plot(b2_arr)
-                plt.plot(np.arange(len(b2_arr)), np.ones(len(b2_arr))*0.1, color = 'black')
+                plt.plot(np.sqrt(b2_sq))
+                plt.plot(np.arange(len(b2_sq)), np.ones(len(b2_sq))*0.1, color = 'black')
+                plt.xlabel('hmc steps')
+                plt.ylabel(r'$b_2$')
+                plt.yscale('log')
                 plt.show()
 
             else:
-                num_steps = np.median(np.cumsum(steps, axis= 1), axis= 0)[index]
+                num_steps = steps[index]
 
             print(num_steps)
             ess[j, 0] = 200.0 / num_steps
             ess[j, 1] = 200.0 / (num_steps + num_burnin)
 
-        np.save('phi4results/hmc/ess/L'+str(side)+'.npy', ess)
+        np.save('phi4results/hmc/ess/psd/L'+str(side)+'.npy', ess)
 
 
-#ground_truth_nuts()
+ground_truth_nuts()
 #join_ground_truth_arrays()
 
-compute_ess()
+#compute_ess()
