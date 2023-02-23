@@ -105,13 +105,27 @@ def visualize_field(phi, side):
 
 def check_ground_truth():
 
-    side= 6
-    PSD0 = np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy')
+    sides = [6, 8, 10, 12]
+    side = 12
+    psd = np.median(np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy'), axis =1)
+    M = np.max(psd, axis = (1, 2))
+    m = np.min(psd, axis=(1, 2))
 
-    for i in range(18):
-        plt.imshow(np.median(PSD0, axis = 1)[i], origin= 'lower')
-        plt.show()
+    plt.figure(figsize= (15, 10))
+    plt.plot(M)
+    plt.yscale('log')
+    plt.show()
 
+    plt.figure(figsize= (15, 10))
+    plt.plot(m)
+    plt.yscale('log')
+    plt.show()
+
+    plt.figure(figsize= (15, 10))
+    plt.plot(np.array(M)/np.array(m))
+    plt.yscale('log')
+    plt.show()
+    exit()
     data = np.sort(PSD0, axis=1)
     val = (data[:, 2, :, :] + data[:, 3, :, :]) *0.5
     #lower, upper = data[:, 1, :, :], data[:, 4, :, :]
@@ -130,11 +144,15 @@ def grid_search_results():
 
     df = pd.read_csv(dir+'/phi4results/mchmc/grid_search/L6/all.npy')
 
-    plt.figure(figsize = (10, 10))
+    plt.figure(figsize = (14, 7))
 
-    plt.subplot(3, 1, 1)
-    plt.plot(df['reduced lambda'], df['ess'], 'o-')
+    #plt.subplot(3, 1, 1)
+    plt.title('MCHMC (L = 6)')
+    plt.plot(df['reduced lambda'], df['ess'], 'o-', markersize = 7)
     plt.ylabel('ESS')
+    plt.xlabel('reduced lambda')
+    plt.savefig('ess_mchmc.png')
+    plt.show()
 
     plt.subplot(3, 1, 2)
     plt.plot(df['reduced lambda'], df['alpha'], 'o-')
@@ -149,6 +167,6 @@ def grid_search_results():
 
 
 #check_ground_truth()
-#grid_search_results()
-gerdes_fig3()
+grid_search_results()
+#gerdes_fig3()
 #ess()

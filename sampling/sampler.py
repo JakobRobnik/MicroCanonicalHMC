@@ -474,7 +474,7 @@ class Sampler:
         self.set_hyperparameters(np.sqrt(self.Target.d), initial_eps)
 
         key, subkey = jax.random.split(key)
-        x0 = self.sample(burn_in, x_initial= x_initial, random_key= subkey, output = 'final state', remove_burn_in= False)
+        x0 = self.sample(burn_in, x_initial= x_initial, random_key= subkey, output = 'final state')
         props = (key, np.inf, 0.0, False)
         if dialog:
             print('Hyperparameter tuning (first stage)')
@@ -485,7 +485,7 @@ class Sampler:
 
             # get a small number of samples
             key_new, subkey = jax.random.split(key)
-            X, E = self.sample(samples, x_initial= x0, random_key= subkey, output= 'full', remove_burn_in = False)
+            X, E, _ = self.sample(samples, x_initial= x0, random_key= subkey, output= 'full')
 
             # remove large jumps in the energy
             E -= jnp.average(E)
@@ -553,7 +553,7 @@ class Sampler:
         X[0] = x0
         for i in range(1, len(n)):
             key, subkey = jax.random.split(key)
-            X[n[i-1]:n[i]] = self.sample(n[i] - n[i-1], x_initial= X[n[i-1]-1], random_key= subkey, output= 'full', remove_burn_in = False)[0]
+            X[n[i-1]:n[i]] = self.sample(n[i] - n[i-1], x_initial= X[n[i-1]-1], random_key= subkey, output= 'full')[0]
             ESS = ess_corr(X[:n[i]])
             if dialog:
                 print('n = {0}, ESS = {1}'.format(n[i], ESS))

@@ -284,10 +284,10 @@ def stochastic_volatility():
     sampler = mchmc.Sampler(target, 1.61 * jnp.sqrt(target.d), 0.63, 'LF', True)
 
 
-    X= sampler.sample(300000)
+    X, nburnin = sampler.sample(300000)
 
     thin = 10
-    X= X[::thin, :]
+    X= X[nburnin::thin, :]
     print('done sampling')
 
     def posterior_band(R, W):
@@ -322,7 +322,7 @@ def esh_not_converging():
 
     sampler = mchmc.Sampler(target, L, 0.5, 'LF', False)
 
-    X = sampler.sample(10000, 500)
+    X, nburnin = sampler.sample(10000, 500)
 
     np.save('ESH_not_converging/data/ESHexample_'+('MCHMC' if bounces else 'ESH')+'.npy', X[:, [0, 100, 1000, 10000], :])
 
@@ -339,8 +339,8 @@ def energy_time_chains():
     for i in range(len(epsilon)):
         print(epsilon[i])
         sampler.eps = epsilon[i]
-        X, E = sampler.sample(2000, 300, remove_burn_in= False, output = 'energy')
-        E = E[:, 1000:]
+        X, E, nburnin = sampler.sample(2000, 300, output = 'energy')
+        E = E[:, np.max(nburnin):]
         de1 = np.std(E, axis = 1)**2 / target.d
         de2 = np.average(np.square(E[:, 1:] - E[:, :-1]), axis= 0) / target.d
 

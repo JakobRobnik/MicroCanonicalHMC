@@ -71,11 +71,12 @@ class ess_with_psd:
         sampler = Sampler(target, L=np.sqrt(target.d) * alpha, eps=np.sqrt(target.d) * beta, integrator='MN')
 
         phi, E, burnin = sampler.sample(steps, num_chains= num_cores, output= 'full')
-        phi_reshaped = phi.reshape(phi.shape[0], phi.shape[1], target.L, target.L)
+        mask = burnin < steps//2
+        burnin = burnin[burnin]
+        burnin = burnin
+        phi_reshaped = phi.reshape(phi.shape[0], phi.shape[1], target.L, target.L)[mask]
         P = jax.vmap(jax.vmap(target.psd))(phi_reshaped)
-
         b2_all = np.empty((len(P), steps))
-
         for ichain in range(len(P)):
             Pchain = np.cumsum(P[ichain, burnin[ichain]:, :, :], axis= 0) / np.arange(1, 1 + steps-burnin[ichain])[:, None, None]
             b2_part = np.average(np.square(1.0 - (Pchain / self.ground[index_lam][None, :, :])), axis = (1, 2))
@@ -84,9 +85,11 @@ class ess_with_psd:
 
         b2_sq = np.median(b2_all, axis = 0)
 
+        no_nans = 1 - jnp.any(jnp.isnan(b2_sq))
+
         nsteps = find_crossing(b2_sq, 0.01)
 
-        return 200.0 / nsteps
+        return (200.0 / nsteps) * no_nans
 
 
 
@@ -106,8 +109,9 @@ def compute_ess():
     sides = [6, 8, 10, 12, 14]
     ess, alpha, beta = np.zeros(len(phi4.reduced_lam)), np.zeros(len(phi4.reduced_lam)), np.zeros(len(phi4.reduced_lam))
 
-    for i in range(1, len(sides)):
+    for i in range(3, len(sides)):
         side = sides[i]
+        print(side)
 
         for j in range(len(phi4.reduced_lam)):
             ess[j], alpha[j], beta[j] = grid_search(side, j)
@@ -118,5 +122,5 @@ def compute_ess():
 
 
 
-#compute_ess()
-ground_truth()
+compute_ess()
+#ground_truth()

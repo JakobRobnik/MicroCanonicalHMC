@@ -88,6 +88,38 @@ def nuts(L, lam, num_samples, num_chains, num_warmup = 500, thinning= 1, full= T
 
 
 
+def nuts_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1, full= True, psd= True):
+
+    # setup
+    theory = gauge_theory.Theory(L, beta)
+    nuts_setup = NUTS(U1_model, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
+    sampler = MCMC(nuts_setup, num_warmup=num_warmup, num_samples=num_samples, num_chains= num_chains, progress_bar=False, thinning= thinning)
+
+    key = jax.random.PRNGKey(42)
+    key, prior_key = jax.random.split(key)
+    x0 = jax.vmap(theory.prior_draw)(jax.random.split(prior_key, num_chains))
+
+    # run
+    sampler.warmup(key, L, beta, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
+    burn_in_steps = np.sum(np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype = int), axis = 1)
+
+    sampler.run(key, L, beta, extra_fields=['num_steps'])
+    links = np.array(sampler.get_samples()['x'])
+    print(np.shape(links))
+
+    #links = np.array(sampler.get_samples(group_by_chain= True)['x']).reshape(num_chains, num_samples//thinning, theory.d)[0]
+
+    steps = np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype=int)
+    print(steps)
+    Q = jax.vmap(theory.topo_charge)(links)
+
+    plt.plot(np.cumsum(steps), Q, '.')
+    plt.xlabel('gradient evaluations')
+    plt.ylabel('topological charge')
+    plt.show()
+
+
+
 def ground_truth_nuts():
 
     sides = [6, 8, 10, 12, 14]
@@ -133,10 +165,9 @@ def compute_ess():
     ess = np.empty((len(phi4.reduced_lam), 2))
 
     sides = [6, 8, 10, 12, ]#14]
-    #sides = [6, ]
     repeat = 5
 
-    for i in range(1, len(sides)):
+    for i in range(3, len(sides)):
         side= sides[i]
         PSD0 = np.median(np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy'), axis= 1)
         print('side = ' + str(side))
@@ -182,10 +213,13 @@ def compute_ess():
         np.save('phi4results/hmc/ess/psd/L'+str(side)+'.npy', ess)
 
 
-L = 128
-nuts(L, phi4.unreduce_lam(phi4.reduced_lam[-1], L), 1000, 1, num_warmup = 500, thinning= 1, full= False, psd= True)
+
+#nuts_u1(L= 16, beta= 0.1, num_samples= 1000, num_chains= 1, num_warmup= 500, thinning= 1)
+
+# L = 128
+# nuts(L, phi4.unreduce_lam(phi4.reduced_lam[-1], L), 1000, 1, num_warmup = 500, thinning= 1, full= False, psd= True)
 
 #ground_truth_nuts()
 #join_ground_truth_arrays()
 
-#compute_ess()
+compute_ess()
