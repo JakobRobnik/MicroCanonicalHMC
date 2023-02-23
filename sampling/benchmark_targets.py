@@ -247,6 +247,62 @@ class Funnel():
 
 
 
+
+class Funnel_with_Data():
+
+    def __init__(self, d, sigma, minibatch_size, key):
+
+        self.d = d
+        self.sigma_theta= 3.0
+        self.theta_true = 0.0
+        self.sigma_data = sigma
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
+        self.data = self.simulate_data()
+
+        self.batch = minibatch_size
+
+    def simulate_data(self):
+
+        norm = jax.random.normal(jax.random.PRNGKey(123), shape = (2*(self.d-1), ), dtype = 'float64')
+        z_true = norm[:self.d-1] * jnp.exp(self.theta_true * 0.5)
+        self.data = z_true + norm[self.d-1:] * self.sigma_data
+
+
+    def nlogp(self, x, subset):
+        """ - log p of the target distribution
+                x = [z_0, z_1, ... z_{d-1}, theta] """
+        theta = x[-1]
+        z = x[:- 1][subset]
+
+        prior_theta = jnp.square(theta / self.sigma_theta)
+        prior_z = np.sum(subset) * theta + jnp.exp(-theta) * jnp.sum(jnp.square(z*subset))
+        likelihood = jnp.sum(jnp.square((z - self.data)*subset / self.sigma_data))
+
+        return 0.5 * (prior_theta + prior_z + likelihood)
+
+
+    def transform(self, x):
+        """gaussianization"""
+        return x
+
+    def prior_draw(self, key):
+        key1, key2 = jax.random.split(key)
+        theta = jax.random.normal(key1, dtype= 'float64') * self.sigma_theta
+        z = jax.random.normal(key2, shape = (self.d-1, ), dtype = 'float64') * jnp.exp(theta * 0.5)
+        return jnp.concatenate((z, theta))
+
+
+
+
+
+
+
+
+
+
+
+
 class Rosenbrock():
 
     def __init__(self, d = 36, Q = 0.1):

@@ -7,7 +7,7 @@ import os
 ### Some convenient function for doing grid search of the hyperparameters ###
 
 
-def search_wrapper(ess_function, amin, amax, epsmin, epsmax, parallel = True, show = True):
+def search_wrapper_one_stage(ess_function, amin, amax, epsmin, epsmax, parallel = True, show = True):
 
     A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
 
@@ -16,13 +16,36 @@ def search_wrapper(ess_function, amin, amax, epsmin, epsmax, parallel = True, sh
     results1 = search_step(ess_function, A, epsilon, parallel)
 
     if show:
-        plt.figure(figsize= (15, 10))
-        plt.subplot(1, 2, 1)
+        plt.figure(figsize= (10, 10))
     ess, i, j = visualize(results1, A, epsilon, show = show)
 
+    if show:
+        plt.show()
+
+    return ess, A[i], epsilon[j]
+
+def search_wrapper(ess_function, amin, amax, epsmin, epsmax, parallel = True, save_name = None):
+
+    A = jnp.logspace(np.log10(amin), np.log10(amax), 6)
+
+    epsilon = jnp.logspace(np.log10(epsmin), np.log10(epsmax), 6)
+
+    results1 = search_step(ess_function, A, epsilon, parallel)
+
+    if save_name != None:
+        plt.figure(figsize= (15, 10))
+        plt.subplot(1, 2, 1)
+    ess, i, j = visualize(results1, A, epsilon, show = save_name != None)
+
     if (i == 0) or (i == 5) or (j == 0) or (j == 5):
-        if show:
+        if save_name == 'show':
             plt.show()
+        elif save_name != None:
+            plt.savefig(save_name)
+            plt.close()
+        else:
+            0
+
         print('warning bounds')
         return ess, A[i], epsilon[j]
 
@@ -32,11 +55,16 @@ def search_wrapper(ess_function, amin, amax, epsmin, epsmax, parallel = True, sh
         epsilon = jnp.logspace(np.log10(epsilon[j-1]), np.log10(epsilon[j+1]), 6)
         results2 = search_step(ess_function, A, epsilon, parallel)
 
-        if show:
+        if save_name != None:
             plt.subplot(1, 2, 2)
-        ess, i, j = visualize(results2, A, epsilon, show=show)
-        if show:
+        ess, i, j = visualize(results2, A, epsilon, show=save_name != None)
+        if save_name == 'show':
             plt.show()
+        elif save_name != None:
+            plt.savefig(save_name)
+            plt.close()
+        else:
+            0
 
     return ess, A[i], epsilon[j]
 
@@ -75,7 +103,7 @@ def visualize(ess_arr, A, epsilon, show):
     eps_best = epsilon[I % (len(epsilon))]
     alpha_best = A[I // len(epsilon)]
     ess_best = np.max(ess_arr)
-    print(ess_best)
+    #print(ess_best)
 
     if show:
         ax = plt.gca()

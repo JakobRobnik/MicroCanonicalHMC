@@ -54,34 +54,41 @@ def quartiles(data, axis):
 def gerdes_fig3():
     sides = [6, 8, 10, 12, 14]
 
-    data = np.load(dir + '/phi4results/hmc/ground_truth/all.npy')
-
-    chi, lower, upper = quartiles(data, axis= 2)
+    chi_hmc = np.median(np.load(dir + '/phi4results/hmc/ground_truth/chi/all.npy'), axis= 2)
+    chi_mchmc = [np.load(dir + '/phi4results/mchmc/ground_truth/chi/L'+str(s)+'.npy') for s in sides]
     #plt.rcParams.update({'font.size': 25})
     plt.figure(figsize=(20, 10))
 
     for i in range(len(sides)):
-        plt.plot(phi4.reduced_lam, chi[i], 'o', color = tab_colors[i], label = 'L = '+str(sides[i]))
-        plt.fill_between(phi4.reduced_lam, lower[i], upper[i], alpha = 0.9, color = tab_colors[i])
+        plt.plot(phi4.reduced_lam, chi_hmc[i], '-', lw = 3, color = tab_colors[i], label = 'L = '+str(sides[i]))
+        #plt.fill_between(phi4.reduced_lam, lower[i], upper[i], alpha = 0.9, color = tab_colors[i])
 
-    plt.xlabel(r'reduced $\lambda$')
-    plt.ylabel(r'reduced $\chi$')
-    plt.legend()
+        plt.plot(phi4.reduced_lam, chi_mchmc[i], 'o', markersize= 10, color=tab_colors[i])
+
+    plt.plot([], [], 'o', markersize = 10, color ='grey', label = 'MCHMC')
+    plt.plot([], [], '-', lw = 3, color ='grey', label= 'NUTS')
+
+    plt.xlabel(r'$L^{1/\nu}(\lambda - \lambda_c) / \lambda_c$')
+    plt.ylabel(r'$L^{-\gamma/\nu} \chi$')
+    plt.legend(ncol= 3)
+    plt.savefig('gerdes_fig3.png')
     plt.show()
 
 
 
 def ess():
-    sides = [6, ]#8, 10, 12, 14]
+    sides = [6, 8,]# 10, 12]#, 14]
     plt.figure(figsize=(20, 10))
 
     for i in range(len(sides)):
-        data = np.load(dir + '/phi4results/hmc/ess/psd/L6.npy')
-        plt.plot(phi4.reduced_lam, data[:, 0], 'o-', color=tab_colors[i], label='L = ' + str(sides[i]))
+        side = sides[i]
+        data = np.load(dir + '/phi4results/hmc/ess/psd/L'+str(side)+'.npy')
+        plt.plot(phi4.reduced_lam, data[:, 0], 'o-', color=tab_colors[i], label='L = ' + str(side))
 
     plt.xlabel(r'reduced $\lambda$')
     plt.ylabel('ESS')
     plt.legend()
+    plt.savefig(dir+'/phi4results/ess.png')
     plt.show()
 
 
@@ -101,6 +108,10 @@ def check_ground_truth():
     side= 6
     PSD0 = np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy')
 
+    for i in range(18):
+        plt.imshow(np.median(PSD0, axis = 1)[i], origin= 'lower')
+        plt.show()
+
     data = np.sort(PSD0, axis=1)
     val = (data[:, 2, :, :] + data[:, 3, :, :]) *0.5
     #lower, upper = data[:, 1, :, :], data[:, 4, :, :]
@@ -114,4 +125,30 @@ def check_ground_truth():
     # plt.show()
 
 
-ess()
+
+def grid_search_results():
+
+    df = pd.read_csv(dir+'/phi4results/mchmc/grid_search/L6/all.npy')
+
+    plt.figure(figsize = (10, 10))
+
+    plt.subplot(3, 1, 1)
+    plt.plot(df['reduced lambda'], df['ess'], 'o-')
+    plt.ylabel('ESS')
+
+    plt.subplot(3, 1, 2)
+    plt.plot(df['reduced lambda'], df['alpha'], 'o-')
+    plt.ylabel('alpha')
+
+    plt.subplot(3, 1, 3)
+    plt.plot(df['reduced lambda'], df['beta'], 'o-')
+    plt.ylabel('beta')
+    plt.xlabel('reduced lambda')
+    plt.savefig(dir+'/phi4results/grid_search.png')
+    plt.show()
+
+
+#check_ground_truth()
+#grid_search_results()
+gerdes_fig3()
+#ess()

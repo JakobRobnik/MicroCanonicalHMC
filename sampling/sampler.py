@@ -291,7 +291,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1, remove_burn_in= True):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -303,22 +303,34 @@ class Sampler:
                random_key: jax random seed, defaults to jax.random.PRNGKey(0)
 
                output: determines the output of the function:
-                        'normal': returns Target.transform of the samples (to save memory), shape: (num_samples, len(Target.transform(x)))
-                        'full': returns the full samples and the energy at each step, shape: (num_samples, Target.d), (num_samples, )
-                        'energy': returns the transformed samples and the energy at each step, shape: (num_samples, len(Target.transform(x))), (num_samples, )
-                        'final state': only returns the final state of the chain, shape: (Target.d, )
-                        'ess': only ouputs the Effective Sample Size, float. In this case, self.Target.variance = <x_i^2>_true should be defined.
+
+                        'normal': samples, burn in steps.
+                            samples were transformed by  the Target.transform to save memory and have shape: (num_samples, len(Target.transform(x)))
+
+                        'full': samples, energy, burn in steps.
+                            the samples are not transformed
+
+                        'energy': transformed samples, energy, burn in steps
+
+                        'final state': final x of the chain
+
+                        'ess': Effective Sample Size per gradient evaluation, float.
+                            In this case, self.Target.variance = <x_i^2>_true should be defined.
 
                thinning: integer for thinning the chains (every n-th sample is returned), defaults to 1 (no thinning).
                         In unadjusted methods such as MCHMC, all samples contribute to the posterior and thining degrades the quality of the posterior.
                         If thining << # steps needed for one effective sample the loss is not too large.
                         However, in general we recommend no thining, as it can often be avoided by using Target.transform.
 
-               remove_burn_in: removes the samples during the burn-in phase. The end of burn-in is determined by settling of the -log p.
+        Warning: for most purposes the burn-in samples should be removed. Example usage:
+
+        all_samples, burnin = Sampler.sample(10000)
+        samples = all_samples[burnin:, :]
+
         """
 
         if num_chains == 1:
-            return self.single_chain_sample(num_steps, x_initial, random_key, output, thinning, remove_burn_in) #the function which actually does the sampling
+            return self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
 
         else:
             num_cores = jax.local_device_count()
@@ -341,7 +353,7 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning, remove_burn_in)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
@@ -364,7 +376,7 @@ class Sampler:
 
 
 
-    def single_chain_sample(self, num_steps, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1, remove_burn_in= True):
+    def single_chain_sample(self, num_steps, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
 
 
         def step(state, useless):
@@ -422,11 +434,9 @@ class Sampler:
         elif output == 'full': #track everything
             state, track = jax.lax.scan(step_full_track, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
             x, L, E = track
-            if remove_burn_in:
-                index_burnin = burn_in_ending(L)
-            else:
-                index_burnin = 0
-            return x[index_burnin::thinning, :], E[index_burnin::thinning]
+            index_burnin = burn_in_ending(L)
+
+            return x[::thinning, :], E[::thinning], index_burnin
 
 
         else: # track the transform(x) and the energy
@@ -434,17 +444,14 @@ class Sampler:
             state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
             x, L, E = track
 
-            if remove_burn_in:
-                index_burnin = burn_in_ending(L)
-            else:
-                index_burnin = 0
+            index_burnin = burn_in_ending(L)
 
             if output == 'final state': #only return the final x
                 return state[0]
             elif output == 'energy': #return the samples X and the energy E
-                return x[index_burnin::thinning, :], E[index_burnin::thinning]
+                return x[::thinning, :], E[::thinning], index_burnin
             elif output == 'normal': #return the samples X
-                return x[index_burnin::thinning]
+                return x[::thinning], index_burnin
             else:
                 raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 

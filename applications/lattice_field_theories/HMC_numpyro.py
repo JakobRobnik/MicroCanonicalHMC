@@ -101,7 +101,7 @@ def ground_truth_nuts():
 
         for j in range(len(lam)):
             print(str(j) + '/' +str(len(lam)))
-            data[j] = nuts(L= side, lam= lam[j], num_samples= 10000*thinning[i], num_chains= num_cores,
+            data[j] = nuts(L= side, lam= lam[j], num_samples= 1000*thinning[i], num_chains= num_cores,
                            num_warmup= 2000, thinning = thinning[i], full= False, psd= True)
 
         np.save('phi4results/hmc/ground_truth/psd/L'+str(side)+'.npy', data)
@@ -132,7 +132,7 @@ def compute_ess():
 
     ess = np.empty((len(phi4.reduced_lam), 2))
 
-    sides = [6, 8, 10, 12, 14]
+    sides = [6, 8, 10, 12, ]#14]
     #sides = [6, ]
     repeat = 5
 
@@ -182,7 +182,10 @@ def compute_ess():
         np.save('phi4results/hmc/ess/psd/L'+str(side)+'.npy', ess)
 
 
-ground_truth_nuts()
+L = 128
+nuts(L, phi4.unreduce_lam(phi4.reduced_lam[-1], L), 1000, 1, num_warmup = 500, thinning= 1, full= False, psd= True)
+
+#ground_truth_nuts()
 #join_ground_truth_arrays()
 
 #compute_ess()
