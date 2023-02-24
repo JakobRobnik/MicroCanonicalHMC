@@ -20,7 +20,6 @@ dir = os.path.dirname(os.path.realpath(__file__))
 
 
 
-
 def parallel_run(function, values):
     parallel_function= jax.pmap(jax.vmap(function))
     results = jnp.array(parallel_function(values.reshape(num_cores, len(values) // num_cores)))
@@ -77,6 +76,7 @@ class ess_with_psd:
         phi_reshaped = phi.reshape(phi.shape[0], phi.shape[1], target.L, target.L)[mask]
         P = jax.vmap(jax.vmap(target.psd))(phi_reshaped)
         b2_all = np.empty((len(P), steps))
+        print(burnin)
         for ichain in range(len(P)):
             Pchain = np.cumsum(P[ichain, burnin[ichain]:, :, :], axis= 0) / np.arange(1, 1 + steps-burnin[ichain])[:, None, None]
             b2_part = np.average(np.square(1.0 - (Pchain / self.ground[index_lam][None, :, :])), axis = (1, 2))
@@ -122,5 +122,14 @@ def compute_ess():
 
 
 
-compute_ess()
+import time
+t0 = time.time()
+
+ess_explorer = ess_with_psd(6)
+print(ess_explorer.ess(1.0, 0.1, 17))
+
+t1 = time.time()
+print(t1 - t0)
+
+#compute_ess()
 #ground_truth()
