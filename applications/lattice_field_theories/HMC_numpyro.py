@@ -215,9 +215,15 @@ def compute_ess():
 
 
 #nuts_u1(L= 16, beta= 0.1, num_samples= 1000, num_chains= 1, num_warmup= 500, thinning= 1)
+import time.tim
 
-# L = 128
-# nuts(L, phi4.unreduce_lam(phi4.reduced_lam[-1], L), 1000, 1, num_warmup = 500, thinning= 1, full= False, psd= True)
+t0 = time.time()
+
+L = 16
+nuts(L, phi4.unreduce_lam(phi4.reduced_lam[-1], L), 1000, 1, num_warmup = 500, thinning= 1, full= False, psd= True)
+
+t1 = time.time()
+print(t1-t0)
 
 #ground_truth_nuts()
 #join_ground_truth_arrays()
