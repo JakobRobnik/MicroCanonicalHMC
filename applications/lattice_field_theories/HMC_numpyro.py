@@ -88,7 +88,7 @@ def nuts(L, lam, num_samples, num_chains, num_warmup = 500, thinning= 1, full= T
 
 
 
-def nuts_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1, full= True, psd= True):
+def nuts_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1):
 
     # setup
     theory = gauge_theory.Theory(L, beta)
@@ -105,12 +105,7 @@ def nuts_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1, ful
 
     sampler.run(key, L, beta, extra_fields=['num_steps'])
     links = np.array(sampler.get_samples()['x'])
-    print(np.shape(links))
-
-    #links = np.array(sampler.get_samples(group_by_chain= True)['x']).reshape(num_chains, num_samples//thinning, theory.d)[0]
-
     steps = np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype=int)
-    print(steps)
     Q = jax.vmap(theory.topo_charge)(links)
 
     plt.plot(np.cumsum(steps), Q, '.')
@@ -214,18 +209,4 @@ def compute_ess():
 
 
 
-#nuts_u1(L= 16, beta= 0.1, num_samples= 1000, num_chains= 1, num_warmup= 500, thinning= 1)
-import time.tim
-
-t0 = time.time()
-
-L = 16
-nuts(L, phi4.unreduce_lam(phi4.reduced_lam[-1], L), 1000, 1, num_warmup = 500, thinning= 1, full= False, psd= True)
-
-t1 = time.time()
-print(t1-t0)
-
-#ground_truth_nuts()
-#join_ground_truth_arrays()
-
-compute_ess()
+nuts_u1(L= 16, beta= 2.0, num_samples= 1000, num_chains= 1, num_warmup= 500, thinning= 1)

@@ -122,18 +122,7 @@ def compute_ess():
 
 
 
-import time
-t0 = time.time()
 
-ess_explorer = ess_with_psd(12)
-print(ess_explorer.ess(1.0, 0.1, 17))
-
-t1 = time.time()
-print(t1 - t0)
-#compute_ess()
-#ground_truth()
-
-
-#numpyro ground truth 8, 16, 32, 64
-#numpyro ess
-#mchmc ess, alpha, beta
+target = gauge_theory .Theory(8, )
+sampler = Sampler(target, L= np.sqrt(target.d) * 1, eps= np.sqrt(target.d) * 0.2)
+phibar, burnin = sampler.sample(1000000)
