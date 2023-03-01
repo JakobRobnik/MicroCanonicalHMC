@@ -1,6 +1,10 @@
 import jax
 import jax.numpy as jnp
 
+from scipy.special import iv as BesselI
+import numpy as np
+
+
 
 class Theory:
     """Lattice U(1) Euclidean gauge theory: lagrangian = -(1/2) sum_{mu < nu} F_{mu nu}^2
@@ -20,8 +24,8 @@ class Theory:
 
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
-        self.transform = lambda links: links
-        #self.transform = lambda links: self.topo_charge(links)
+        #self.transform = lambda links: links
+        self.transform = lambda links: self.topo_charge(links) * jnp.ones(1)
 
 
 
@@ -57,6 +61,11 @@ class Theory:
     def chiq(self, Q):
         """topological susceptibility"""
         return jnp.average(jnp.square(Q))
+
+
+def thermodynamic_ground_truth(beta):
+    """topological susceptibility (taking the first term in the expansion"""
+    return (BesselI(1, beta)/BesselI(0, beta)) / (beta * 4 * np.pi**2)
 
 
 
@@ -113,3 +122,5 @@ def test():
     print(target.nlogp(u1), target.topo_charge(u1))
     u2 = jnp.array(u1_ex2)
     print(target.nlogp(u2), target.topo_charge(u2))
+
+

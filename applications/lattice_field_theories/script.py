@@ -123,6 +123,6 @@ def compute_ess():
 
 
 
-target = gauge_theory .Theory(8, )
+target = gauge_theory.Theory(8, )
 sampler = Sampler(target, L= np.sqrt(target.d) * 1, eps= np.sqrt(target.d) * 0.2)
 phibar, burnin = sampler.sample(1000000)

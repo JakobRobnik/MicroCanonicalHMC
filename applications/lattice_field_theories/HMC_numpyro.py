@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import jax
+import jax.numpy as jnp
 
 num_cores = 6 #specific to my PC
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
@@ -104,14 +105,21 @@ def nuts_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1):
     burn_in_steps = np.sum(np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype = int), axis = 1)
 
     sampler.run(key, L, beta, extra_fields=['num_steps'])
-    links = np.array(sampler.get_samples()['x'])
-    steps = np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype=int)
-    Q = jax.vmap(theory.topo_charge)(links)
+    links = np.array(sampler.get_samples(group_by_chain= True)['x'])
 
-    plt.plot(np.cumsum(steps), Q, '.')
-    plt.xlabel('gradient evaluations')
-    plt.ylabel('topological charge')
-    plt.show()
+    steps = np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype=int)
+    print(np.median(steps))
+    Q = jax.pmap(jax.vmap(theory.topo_charge))(links)
+
+    chi = jnp.average(jnp.square(Q), axis = 1) / L**2
+
+    return chi
+
+
+    # plt.plot(np.cumsum(steps), Q, '.')
+    # plt.xlabel('gradient evaluations')
+    # plt.ylabel('topological charge')
+    # plt.show()
 
 
 
@@ -154,8 +162,8 @@ def quartiles(data, axis):
     return val, lower, upper
 
 
-def compute_ess():
 
+def compute_ess():
 
     ess = np.empty((len(phi4.reduced_lam), 2))
 
@@ -208,5 +216,19 @@ def compute_ess():
         np.save('phi4results/hmc/ess/psd/L'+str(side)+'.npy', ess)
 
 
+def susceptibility_plot():
 
-nuts_u1(L= 16, beta= 2.0, num_samples= 1000, num_chains= 1, num_warmup= 500, thinning= 1)
+    beta = np.arange(1, 11)
+    chi = np.array([nuts_u1(L= 8, beta= b, num_samples= 10000, num_chains= num_cores, num_warmup= 500, thinning= 1) for b in beta])
+
+    plt.plot(beta, chi, 'o-', label = 'NUTS')
+    plt.legend()
+    plt.xlabel(r'$\beta$')
+    plt.ylabel("topological susceptibility")
+    plt.savefig('U1_nuts.png')
+    plt.show()
+
+
+
+susceptibility_plot()
+

@@ -133,35 +133,35 @@ def reduce_chi(chi, side):
 
 
 
-
-### numpyro ###
-import numpyro
-from numpyro.distributions import constraints
-
-
-class phi4_numpyro(numpyro.distributions.Distribution):
-    """Custom defined phi^4 distribution, see https://forum.pyro.ai/t/creating-a-custom-distribution-in-numpyro/3332/3"""
-
-    support = constraints.real_vector
-
-    def __init__(self, L, lam):
-
-        self.d = L**2
-        self.L = L
-        self.lam = lam
-
-        self.K = jnp.asarray(Hypercube(L, 2, 'periodic').Adj)
-
-        super().__init__(event_shape=(self.d, ))
-
-    def sample(self, key, sample_shape=()):
-        raise NotImplementedError
-
-    def log_prob(self, phi):
-        return phi @ self.K @ phi - self.lam* jnp.sum(jnp.power(phi, 4))
-
-
-def model(L, lam):
-    phi = numpyro.sample('phi', phi4_numpyro(L, lam))
+#
+# ### numpyro ###
+# import numpyro
+# from numpyro.distributions import constraints
+#
+#
+# class phi4_numpyro(numpyro.distributions.Distribution):
+#     """Custom defined phi^4 distribution, see https://forum.pyro.ai/t/creating-a-custom-distribution-in-numpyro/3332/3"""
+#
+#     support = constraints.real_vector
+#
+#     def __init__(self, L, lam):
+#
+#         self.d = L**2
+#         self.L = L
+#         self.lam = lam
+#
+#         self.K = jnp.asarray(Hypercube(L, 2, 'periodic').Adj)
+#
+#         super().__init__(event_shape=(self.d, ))
+#
+#     def sample(self, key, sample_shape=()):
+#         raise NotImplementedError
+#
+#     def log_prob(self, phi):
+#         return phi @ self.K @ phi - self.lam* jnp.sum(jnp.power(phi, 4))
+#
+#
+# def model(L, lam):
+#     phi = numpyro.sample('phi', phi4_numpyro(L, lam))
 
 
