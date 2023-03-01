@@ -115,7 +115,6 @@ def nuts_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1):
 
     return chi
 
-
     # plt.plot(np.cumsum(steps), Q, '.')
     # plt.xlabel('gradient evaluations')
     # plt.ylabel('topological charge')

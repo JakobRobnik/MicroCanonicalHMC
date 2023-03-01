@@ -43,14 +43,21 @@ class Theory:
         return (links[0] + jnp.roll(links[1], -1, 0) - jnp.roll(links[0], -1, 1) - links[1])
 
 
+    # def topo_charge(self, links):
+    #     """Topological charge, an integer. Equation 30 in reference [1]."""
+    #
+    #     x = self.plaquete(links.reshape(self.link_shape)) / (2 * jnp.pi)
+    #     x = jnp.remainder(x + 0.5, 1.0) - 0.5
+    #
+    #     return jnp.sum(x)
+
+
     def topo_charge(self, links):
         """Topological charge, an integer. Equation 30 in reference [1]."""
 
-        x = self.plaquete(links.reshape(self.link_shape)) / (2 * jnp.pi)
-        x = jnp.remainder(x + 0.5, 1.0) - 0.5
+        x = self.plaquete(links.reshape(self.link_shape))
 
-        return jnp.sum(x)
-
+        return jnp.sum(jnp.sin(x)) / (2 * np.pi)
 
 
     def prior_draw(self, key):
@@ -68,59 +75,59 @@ def thermodynamic_ground_truth(beta):
     return (BesselI(1, beta)/BesselI(0, beta)) / (beta * 4 * np.pi**2)
 
 
-
-def test():
-    import torch
-    import numpy as np
-
-    torch_device = 'cpu'
-    float_dtype = np.float64 # double
-
-    L = 8
-    beta = 1.0
-    lattice_shape = (L,L)
-    link_shape = (2,L,L)
-    # some arbitrary configurations
-    u1_ex1 = 2*np.pi*np.random.random(size=link_shape).astype(float_dtype)
-    u1_ex2 = 2*np.pi*np.random.random(size=link_shape).astype(float_dtype)
-    cfgs = torch.from_numpy(np.stack((u1_ex1, u1_ex2), axis=0)).to(torch_device)
-
-
-    def compute_u1_plaq(links, mu, nu):
-        """Compute U(1) plaquettes in the (mu,nu) plane given `links` = arg(U)"""
-        return (links[:,mu] + torch.roll(links[:,nu], -1, mu+1) - torch.roll(links[:,mu], -1, nu+1) - links[:,nu])
-
-    class U1GaugeAction:
-        def __init__(self, beta):
-            self.beta = beta
-        def __call__(self, cfgs):
-            Nd = cfgs.shape[1]
-            action_density = 0
-            for mu in range(Nd):
-                for nu in range(mu+1,Nd):
-                    action_density = action_density + torch.cos(compute_u1_plaq(cfgs, mu, nu))
-            return -self.beta * torch.sum(action_density, dim=tuple(range(1,Nd+1)))
-
-    print(U1GaugeAction(beta=beta)(cfgs))
-
-    def torch_mod(x):
-        return torch.remainder(x, 2*np.pi)
-
-    def torch_wrap(x):
-        return torch_mod(x+np.pi) - np.pi
-
-    def topo_charge(x):
-        P01 = torch_wrap(compute_u1_plaq(x, mu=0, nu=1))
-        axes = tuple(range(1, len(P01.shape)))
-        return torch.sum(P01, dim=axes) / (2*np.pi)
-
-    print(topo_charge(cfgs))
-
-    target = Theory(L, beta)
-
-    u1 = jnp.array(u1_ex1)
-    print(target.nlogp(u1), target.topo_charge(u1))
-    u2 = jnp.array(u1_ex2)
-    print(target.nlogp(u2), target.topo_charge(u2))
-
-
+#
+# def test():
+#     import torch
+#     import numpy as np
+#
+#     torch_device = 'cpu'
+#     float_dtype = np.float64 # double
+#
+#     L = 8
+#     beta = 1.0
+#     lattice_shape = (L,L)
+#     link_shape = (2,L,L)
+#     # some arbitrary configurations
+#     u1_ex1 = 2*np.pi*np.random.random(size=link_shape).astype(float_dtype)
+#     u1_ex2 = 2*np.pi*np.random.random(size=link_shape).astype(float_dtype)
+#     cfgs = torch.from_numpy(np.stack((u1_ex1, u1_ex2), axis=0)).to(torch_device)
+#
+#
+#     def compute_u1_plaq(links, mu, nu):
+#         """Compute U(1) plaquettes in the (mu,nu) plane given `links` = arg(U)"""
+#         return (links[:,mu] + torch.roll(links[:,nu], -1, mu+1) - torch.roll(links[:,mu], -1, nu+1) - links[:,nu])
+#
+#     class U1GaugeAction:
+#         def __init__(self, beta):
+#             self.beta = beta
+#         def __call__(self, cfgs):
+#             Nd = cfgs.shape[1]
+#             action_density = 0
+#             for mu in range(Nd):
+#                 for nu in range(mu+1,Nd):
+#                     action_density = action_density + torch.cos(compute_u1_plaq(cfgs, mu, nu))
+#             return -self.beta * torch.sum(action_density, dim=tuple(range(1,Nd+1)))
+#
+#     print(U1GaugeAction(beta=beta)(cfgs))
+#
+#     def torch_mod(x):
+#         return torch.remainder(x, 2*np.pi)
+#
+#     def torch_wrap(x):
+#         return torch_mod(x+np.pi) - np.pi
+#
+#     def topo_charge(x):
+#         P01 = torch_wrap(compute_u1_plaq(x, mu=0, nu=1))
+#         axes = tuple(range(1, len(P01.shape)))
+#         return torch.sum(P01, dim=axes) / (2*np.pi)
+#
+#     print(topo_charge(cfgs))
+#
+#     target = Theory(L, beta)
+#
+#     u1 = jnp.array(u1_ex1)
+#     print(target.nlogp(u1), target.topo_charge(u1))
+#     u2 = jnp.array(u1_ex2)
+#     print(target.nlogp(u2), target.topo_charge(u2))
+#
+#
