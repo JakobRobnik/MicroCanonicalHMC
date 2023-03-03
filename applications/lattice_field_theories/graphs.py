@@ -105,28 +105,10 @@ def visualize_field(phi, side):
 
 def check_ground_truth():
 
-    sides = [6, 8, 10, 12]
-    side = 12
-    psd = np.median(np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy'), axis =1)
-    M = np.max(psd, axis = (1, 2))
-    m = np.min(psd, axis=(1, 2))
-
-    plt.figure(figsize= (15, 10))
-    plt.plot(M)
-    plt.yscale('log')
-    plt.show()
-
-    plt.figure(figsize= (15, 10))
-    plt.plot(m)
-    plt.yscale('log')
-    plt.show()
-
-    plt.figure(figsize= (15, 10))
-    plt.plot(np.array(M)/np.array(m))
-    plt.yscale('log')
-    plt.show()
-    exit()
-    data = np.sort(PSD0, axis=1)
+    side = 8
+    psd = np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy')
+    print(np.shape(psd))
+    data = np.sort(psd, axis=1)
     val = (data[:, 2, :, :] + data[:, 3, :, :]) *0.5
     #lower, upper = data[:, 1, :, :], data[:, 4, :, :]
     lower, upper = data[:, 0, :, :], data[:, 5, :, :]
@@ -166,7 +148,4 @@ def grid_search_results():
     plt.show()
 
 
-#check_ground_truth()
-grid_search_results()
-#gerdes_fig3()
-#ess()
+check_ground_truth()
