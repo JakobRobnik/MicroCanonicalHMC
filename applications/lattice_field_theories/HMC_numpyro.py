@@ -2,14 +2,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import jax
+import jax.numpy as jnp
+import time
 
-num_cores = 6 #specific to my PC
-os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+#num_cores = 6 #specific to my PC
+#os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 import numpyro
 from numpyro.distributions import constraints
 from numpyro.infer import MCMC, NUTS
-#numpyro.set_platform("gpu")
+numpyro.set_platform("gpu")
 
 num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
@@ -46,38 +48,37 @@ phi4_model = mchmc_target_to_numpyro(phi4.Theory)
 U1_model = mchmc_target_to_numpyro(gauge_theory.Theory)
 
 
-def nuts(L, lam, num_samples, num_chains, num_warmup = 500, thinning= 1, full= True, psd= True):
+def sample(L, lam, num_samples, num_chains, key, num_warmup = 500, thinning= 1, full= True, psd= True):
 
     # setup
     theory = phi4.Theory(L, lam)
     nuts_setup = NUTS(phi4_model, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
     sampler = MCMC(nuts_setup, num_warmup=num_warmup, num_samples=num_samples, num_chains= num_chains, progress_bar=False, thinning= thinning)
 
-    key = jax.random.PRNGKey(42)
     key, prior_key = jax.random.split(key)
     x0 = jax.vmap(theory.prior_draw)(jax.random.split(prior_key, num_chains))
 
     # run
     sampler.warmup(key, L, lam, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
-    burn_in_steps = np.sum(np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype = int), axis = 1)
+    burn_in_steps = jnp.sum(jnp.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype = int), axis = 1)
 
     sampler.run(key, L, lam, extra_fields=['num_steps'])
 
-    phi = np.array(sampler.get_samples(group_by_chain= True)['x']).reshape(num_chains, num_samples//thinning, L, L)
+    phi = jnp.array(sampler.get_samples(group_by_chain= True)['x']).reshape(num_chains, num_samples//thinning, L, L)
 
-    steps = np.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype=int)
+    steps = jnp.array(sampler.get_extra_fields(group_by_chain= True)['num_steps'], dtype=int)
 
     if psd:
 
-        PSD = np.average(theory.psd(phi), axis = 1)
+        PSD = jnp.average(theory.psd(phi), axis = 1)
 
         if full:
-            return burn_in_steps, steps, np.cumsum(theory.psd(phi), axis= 1) / np.arange(1, 1+num_samples//thinning)[None, :, None, None]
+            return burn_in_steps, steps, jnp.cumsum(theory.psd(phi), axis= 1) / jnp.arange(1, 1+num_samples//thinning)[None, :, None, None]
         else:
             return PSD
 
     else:
-        phi_bar = np.average(phi, axis=2)
+        phi_bar = jnp.average(phi, axis=2)
 
         if full:
             chi = theory.susceptibility2_full(phi_bar)
@@ -88,7 +89,7 @@ def nuts(L, lam, num_samples, num_chains, num_warmup = 500, thinning= 1, full= T
 
 
 
-def nuts_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1, full= True, psd= True):
+def sample_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1, full= True, psd= True):
 
     # setup
     theory = gauge_theory.Theory(L, beta)
@@ -120,24 +121,71 @@ def nuts_u1(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1, ful
 
 
 
-def ground_truth_nuts():
+def ground_truth():
 
-    sides = [6, 8, 10, 12, 14]
-    thinning = [10, 10, 100, 100, 100]
+    index = 0
+    side = ([8, 16, 32, 64])[index]
+    thinning = ([100, 100, 100, 100])[index]
 
-    for i in range(1, len(sides)):
-        side = sides[i]
-        print('side = ' + str(side))
-        lam = phi4.unreduce_lam(phi4.reduced_lam, side)
-        data = np.empty((len(phi4.reduced_lam), num_cores, side, side))
+    lam = phi4.unreduce_lam(phi4.reduced_lam, side)
+    keys = jax.random.split(jax.random.PRNGKey(42)) #we repeat the computation twice with 4 gpus to get 8 independent chains
 
-        for j in range(len(lam)):
-            print(str(j) + '/' +str(len(lam)))
-            data[j] = nuts(L= side, lam= lam[j], num_samples= 1000*thinning[i], num_chains= num_cores,
-                           num_warmup= 2000, thinning = thinning[i], full= False, psd= True)
+    
+    def f(i_lam, i_repeat): 
+        return sample(L= side, lam= lam[i_lam], num_samples= 10000*thinning, num_chains= num_cores, 
+                    key = keys[i_repeat], num_warmup= 2000, thinning = thinning, full= False, psd= True)
+        
+        
+    fvmap = lambda x, y: jax.vmap(lambda xx: jax.vmap(f, (None, 0))(xx,y))(x)
 
-        np.save('phi4results/hmc/ground_truth/psd/L'+str(side)+'.npy', data)
+    data = fvmap(jnp.arange(len(lam)), jnp.arange(2))
+    
+    print(np.shape(data))
+    np.save(dir + '/phi4results/hmc/ground_truth/psd/L'+str(side)+'.npy', data)
 
+
+    
+def compute_ess():
+    
+    index = 0
+    side = ([8, 16, 32, 64])[index]
+    thinning = ([1, 1, 1, 1])[index]
+    
+    
+    lam = phi4.unreduce_lam(phi4.reduced_lam, side)
+    keys = jax.random.split(jax.random.PRNGKey(42)) #we repeat the computation twice with 4 gpus to get 8 independent chains
+
+    repeat = 2
+    
+    def f(i_lam, i_repeat): 
+        burnin, _steps, PSD = sample(L= side, lam= lam[i_lam], num_samples= 3000*thinning, num_chains= num_cores, 
+                    key = keys[i_repeat], num_warmup= 500, thinning = thinning, full= True, psd= True)
+        burn = jnp.average(burnin) # = float
+        steps = jnp.average(jnp.cumsum(_steps, axis= 1), axis= 0) #shape = (n_samples, )
+        b2_sq = jnp.average(jnp.square(1 - (PSD/PSD0[None, None, i_lam, :, :])), axis= (0, 2, 3)) #shape = (n_samples,)
+        return burn, steps, b2_sq
+        
+        
+    fvmap = lambda x, y: jax.vmap(lambda xx: jax.vmap(f, (None, 0))(xx,y))(x) #vmap over lambda and repeat
+
+    _burn, _steps, _b2_sq = fvmap(jnp.arange(len(lam)), jnp.arange(repeat)) 
+    
+    burn = jnp.average(_burn, axis = 1)
+    steps = jnp.average(_steps, axis = 1)
+    b2_sq = jnp.average(_b2_sq, axis = 1)
+    
+    index= jnp.argmax(b2_sq < 0.01, axis = 1)
+    
+
+    num_steps = steps[index]
+
+    ess = (200.0 / (num_steps)) * (index==0)
+    ess_with_warmup = (200.0 / (num_steps + burnin)) * (index==0)
+
+    df = pd.DataFrame([phi4.reduced_lam, ess, ess_with_warmup], columns = ['reduced lam', 'ESS', 'ESS (with warmup)'])
+    df.to_csv(dir + '/phi4results/hmc/ess/psd/L'+str(side)+'.csv')
+
+    
 
 def join_ground_truth_arrays():
     dir = 'phi4results/hmc/ground_truth/'
@@ -182,50 +230,13 @@ def compute_ess():
             b2_sq = np.zeros(num_samples//thinning)
 
             for rep in range(repeat):
-                burnin, _steps, PSD = nuts(L= side, lam= lam[j], num_samples= num_samples,
-                                          num_chains= num_cores, thinning= 1, full= True, psd= True)
-                num_burnin += np.average(burnin)
-                steps += np.average(np.cumsum(_steps, axis= 1), axis= 0)
-                b2_sq += np.average(np.square(1 - (PSD/PSD0[None, None, j, :, :])), axis= (0, 2, 3))
+                
 
-            b2_sq /= repeat
-            steps /= repeat
-            num_burnin /= repeat
-
-            index= np.argmax(b2_sq < 0.01)
-
-            if index == 0:
-                num_steps = np.inf
-                plt.plot(np.sqrt(b2_sq))
-                plt.plot(np.arange(len(b2_sq)), np.ones(len(b2_sq))*0.1, color = 'black')
-                plt.xlabel('hmc steps')
-                plt.ylabel(r'$b_2$')
-                plt.yscale('log')
-                plt.show()
-
-            else:
-                num_steps = steps[index]
-
-            print(num_steps)
-            ess[j, 0] = 200.0 / num_steps
-            ess[j, 1] = 200.0 / (num_steps + num_burnin)
-
-        np.save('phi4results/hmc/ess/psd/L'+str(side)+'.npy', ess)
-
-
-
-#nuts_u1(L= 16, beta= 0.1, num_samples= 1000, num_chains= 1, num_warmup= 500, thinning= 1)
-import time.tim
-
+ 
+        
 t0 = time.time()
-
-L = 16
-nuts(L, phi4.unreduce_lam(phi4.reduced_lam[-1], L), 1000, 1, num_warmup = 500, thinning= 1, full= False, psd= True)
+    
+compute_ess()
 
 t1 = time.time()
-print(t1-t0)
-
-#ground_truth_nuts()
-#join_ground_truth_arrays()
-
-compute_ess()
+print(time.strftime('%H:%M:%S', time.gmtime(t1-t0)))

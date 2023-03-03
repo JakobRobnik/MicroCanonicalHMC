@@ -121,7 +121,7 @@ class Theory:
 
 
 
-reduced_lam = jnp.linspace(-2.5, 7.5, 18) #lambda range around the critical point (m^2 = -4 is fixed)
+reduced_lam = jnp.linspace(-2.5, 7.5, 16) #lambda range around the critical point (m^2 = -4 is fixed)
 
 def unreduce_lam(reduced_lam, side):
     """see Fig 3 in https://arxiv.org/pdf/2207.00283.pdf"""
