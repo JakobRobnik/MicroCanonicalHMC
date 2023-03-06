@@ -19,6 +19,8 @@ dir = os.path.dirname(os.path.realpath(__file__))
 
 
 def plot_mixing():
+    """show the charge as a function of number of gradient calls"""
+
     side = 16
     beta = 7.0
     target = u1.Theory(side, beta)
@@ -41,6 +43,8 @@ def plot_mixing():
 
 
 def topo_sus(side, beta):
+    """compute topological susceptibility"""
+
     target = u1.Theory(side, beta)
     alpha = 1.0
     beta_eps= 0.03
@@ -64,6 +68,8 @@ def topo_sus(side, beta):
 
 
 def plot_topo_sus():
+    """show topological susceptibility as a function of beta"""
+
     chi0 = np.loadtxt('theories/topo_susceptibility_ground_truth_L8.csv')
     beta = np.arange(1, 11)
 

@@ -178,7 +178,7 @@ class FTtheory:
         return jnp.arccosh((Gc0[0:-2] + Gc0[2:]) / (2*Gc0[1:-1]))
 
 
-reduced_lam = jnp.linspace(-2.5, 7.5, 18) #lambda range around the critical point (m^2 = -4 is fixed)
+reduced_lam = jnp.linspace(-2.5, 7.5, 16) #lambda range around the critical point (m^2 = -4 is fixed)
 
 
 def unreduce_lam(reduced_lam, side):
