@@ -53,7 +53,7 @@ class Theory:
 
 
     def topo_charge(self, links):
-        """Topological charge, an integer. Equation 30 in reference [1]."""
+        """Topological charge, not an integer"""
 
         x = self.plaquete(links.reshape(self.link_shape))
 

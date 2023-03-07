@@ -23,6 +23,7 @@ U1_model = mchmc_target_to_numpyro(gauge_theory.Theory)
 
 
 def sample(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1):
+    """do sampling with NUTS in numpyro"""
 
     # setup
     theory = gauge_theory.Theory(L, beta)
@@ -55,6 +56,7 @@ def sample(L, beta, num_samples, num_chains, num_warmup = 500, thinning= 1):
 
 
 def susceptibility_plot():
+    """show topological susceptibility as a function of beta with NUTS"""
 
     beta = np.arange(1, 11)
     chi = np.array([sample(L= 8, beta= b, num_samples= 10000, num_chains= num_cores, num_warmup= 500, thinning= 1) for b in beta])
@@ -65,6 +67,7 @@ def susceptibility_plot():
     plt.ylabel("topological susceptibility")
     plt.savefig('U1_nuts.png')
     plt.show()
+
 
 
 susceptibility_plot()
