@@ -41,57 +41,61 @@ def sample(L, lam, num_samples, key, num_warmup=500, thinning=1, full=True, psd=
 
     sampler.run(key, L, lam, extra_fields=['num_steps'])
 
-    phi = jnp.array(sampler.get_samples()['x']).reshape(num_samples // thinning, L, L)
+    phi = jnp.array(sampler.get_samples()['x'])
 
     steps = jnp.array(sampler.get_extra_fields()['num_steps'], dtype=int)
 
     if psd:
-
-        PSD = jnp.average(theory.psd(phi), axis=0)
+        
+        PSD = theory.psd(phi.reshape(num_samples // thinning, L, L))
 
         if full:
-            return burn_in_steps, steps, jnp.cumsum(theory.psd(phi), axis=0) / jnp.arange(1, 1 + num_samples // thinning)[:, None, None]
+            return burn_in_steps, steps, jnp.cumsum(PSD, axis=0) / jnp.arange(1, 1 + num_samples // thinning)[:, None, None]
         else:
-            return PSD
+            return jnp.average(PSD, axis=0)
 
     else:
-        phi_bar = jnp.average(phi, axis=2)
+        phi_bar = jnp.average(phi, axis=1)
 
         if full:
-            chi = theory.susceptibility2_full(phi_bar)
+            chi = phi4.reduce_chi(theory.susceptibility2_full(phi_bar), L)
             return burn_in_steps, steps, chi
 
         else:
-            return theory.susceptibility2(phi_bar)
+            return phi4.reduce_chi(theory.susceptibility2(phi_bar), L)
 
 
         
         
-
 def ground_truth():
+    
+    psd = False
     index = 1
     side = ([8, 16, 32, 64, 128])[index]
-    thinning = ([100, 30, 10, 10, 1])[index]
+    thinning = ([50, 20, 10, 10, 1])[index] #100, 30, 10, 10
 
     lam = phi4.unreduce_lam(phi4.reduced_lam, side)
-    keys = jax.random.split(jax.random.PRNGKey(42), 8)  # we repeat the computation twice with 4 gpus to get 8 independent chains
+    keys = jax.random.split(jax.random.PRNGKey(42), 8)  # we run 8 independent chains
 
             
-    folder = dir + '/phi4results/hmc/ground_truth/psd/'
+    folder = dir + '/phi4results/hmc/ground_truth/'+('psd' if psd else 'chi')+'/'
     
     def f(i_lam, i_repeat):
         return sample(L=side, lam=lam[i_lam], num_samples= 10000* thinning, key=keys[i_repeat],
-                      num_warmup=2000, thinning=thinning, full=False, psd=True)
+                      num_warmup=2000, thinning=thinning, full=False, psd=psd)
 
 
     
-    if index <2:
+    if index <100:
         fvmap = lambda x, y: jax.pmap(jax.vmap(lambda xx: jax.vmap(f, (None, 0))(xx, y)))(x.reshape(4, 4))
 
-        data = fvmap(jnp.arange(len(lam)), jnp.arange(8)).reshape(16, 8, side, side)
-
-        np.save(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy', data)
+        data = fvmap(jnp.arange(len(lam)), jnp.arange(8))
+        
+        if psd:
+            np.save(folder+'L' + str(side) + '.npy', data.reshape(16, 8, side, side))
     
+        else:
+            np.save(folder+'L' + str(side) + '.npy', data.reshape(16, 8))
     
     else:
         fvmap = lambda x, y: jax.pmap(lambda xx: jax.vmap(f, (None, 0))(xx, y))(x)
@@ -107,20 +111,20 @@ def ground_truth():
 
     
 def compute_ess():
-    index = 1
+    index = 3
     side = ([8, 16, 32, 64])[index]
     thinning = ([1, 1, 1, 1])[index]
     folder = dir + '/phi4results/hmc/ess/psd/'
     
-    num_samples= 3000
+    num_samples= 5000
 
     lam = phi4.unreduce_lam(phi4.reduced_lam, side)
     PSD0 = jnp.array(np.median(np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy').reshape(len(lam), 8, side, side), axis =1))
 
     #We run multiple independent chains to average ESS over them. Each of the 4 GPUs simulatanously runs repeat1 chains for each lambda
     #This is repeated sequentially repeat2 times. In total we therefore get 4 * repeat1 * repeat2 chains.
-    repeat1 = ([60, 1, 4, 1])[index]
-    repeat2 = ([2, 1, 2, 2])[index]
+    repeat1 = ([120, 120, 60, 10])[index]
+    repeat2 = ([1, 1, 2, 12])[index]
     keys = jax.random.split(jax.random.PRNGKey(42), repeat1*repeat2)
 
     def f(i_lam, i_repeat):
@@ -138,7 +142,6 @@ def compute_ess():
 
     for r2 in range(repeat2):
         _burn, _steps, _b2_sq = fvmap(jnp.arange(len(lam)), jnp.arange(r2*repeat1, (r2+1)*repeat1))
-        print(_b2_sq.shape)
         burn += jnp.average(_burn.reshape(16, repeat1), axis=1)
         steps += jnp.average(_steps.reshape(16, repeat1, num_samples), axis=1)
         b2_sq += jnp.average(_b2_sq.reshape(16, repeat1, num_samples), axis=1)
@@ -151,15 +154,15 @@ def compute_ess():
     num_steps = steps[jnp.arange(len(lam)), index]
     ess = (200.0 / (num_steps)) * (index != 0)
     ess_with_warmup = (200.0 / (num_steps + burn)) * (index != 0)
-    df = pd.DataFrame(np.array([phi4.reduced_lam[I_lam * 4, (I_lam+1)*4], ess, ess_with_warmup]).T, columns=['reduced lam', 'ESS', 'ESS (with warmup)'])
+    df = pd.DataFrame(np.array([phi4.reduced_lam, ess, ess_with_warmup]).T, columns=['reduced lam', 'ESS', 'ESS (with warmup)'])
     df.to_csv(folder + 'L' + str(side) + '.csv')
 
 
 
 t0 = time.time()
 
-#ground_truth()
-compute_ess()
+ground_truth()
+#compute_ess()
 
 t1 = time.time()
 print(time.strftime('%H:%M:%S', time.gmtime(t1 - t0)))
