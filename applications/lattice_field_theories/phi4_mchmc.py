@@ -88,7 +88,7 @@ def grid_search():
     alpha = jnp.logspace(jnp.log10(0.4), jnp.log10(3.0), 6)
     beta = jnp.logspace(jnp.log10(0.1), jnp.log10(0.5), 6)
     Alpha, Beta = jnp.meshgrid(alpha, beta)
-    index = 2
+    index = 0
     side = ([8, 16, 32, 64])[index]
     folder = dir + '/phi4results/mchmc/ess/psd/'
     

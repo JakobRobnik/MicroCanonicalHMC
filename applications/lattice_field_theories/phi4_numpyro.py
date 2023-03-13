@@ -25,11 +25,16 @@ dir = os.path.dirname(os.path.realpath(__file__))
 phi4_model = mchmc_target_to_numpyro(phi4.Theory)
 
 
-def sample(L, lam, num_samples, key, num_warmup=500, thinning=1, full=True, psd=True):
+def sample(L, lam, num_samples, key, num_warmup=500, thinning=1, full=True, psd=True, nuts = True):
     # setup
     theory = phi4.Theory(L, lam)
-    nuts_setup = NUTS(phi4_model, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
-    sampler = MCMC(nuts_setup, num_warmup=num_warmup, num_samples=num_samples, num_chains=1,
+    
+    if nuts:
+        hmc_setup = NUTS(phi4_model, num_steps = 8, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
+    else:
+        hmc_setup = HMC(phi4_model, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
+    
+    sampler = MCMC(hmc_setup, num_warmup=num_warmup, num_samples=num_samples, num_chains=1,
                    progress_bar=False, thinning=thinning)
 
     key, prior_key = jax.random.split(key)
@@ -44,6 +49,7 @@ def sample(L, lam, num_samples, key, num_warmup=500, thinning=1, full=True, psd=
     phi = jnp.array(sampler.get_samples()['x'])
 
     steps = jnp.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+    print(steps)
 
     if psd:
         
@@ -111,6 +117,7 @@ def ground_truth():
 
     
 def compute_ess():
+    nuts = False
     index = 3
     side = ([8, 16, 32, 64])[index]
     thinning = ([1, 1, 1, 1])[index]
@@ -161,8 +168,9 @@ def compute_ess():
 
 t0 = time.time()
 
-ground_truth()
+#ground_truth()
 #compute_ess()
+sample(8, 10.0, 1000, jax.random.PRNGKey(0), num_warmup=500, thinning=1, full=True, psd=True, nuts = False)
 
 t1 = time.time()
 print(time.strftime('%H:%M:%S', time.gmtime(t1 - t0)))
