@@ -10,7 +10,7 @@ import time
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 import numpyro
-from numpyro.infer import MCMC, NUTS
+from numpyro.infer import MCMC, NUTS, HMC
 
 numpyro.set_platform("gpu")
 
@@ -30,9 +30,9 @@ def sample(L, lam, num_samples, key, num_warmup=500, thinning=1, full=True, psd=
     theory = phi4.Theory(L, lam)
     
     if nuts:
-        hmc_setup = NUTS(phi4_model, num_steps = 8, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
+        hmc_setup = NUTS(phi4_model, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
     else:
-        hmc_setup = HMC(phi4_model, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
+        hmc_setup = HMC(phi4_model, num_steps = 20, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
     
     sampler = MCMC(hmc_setup, num_warmup=num_warmup, num_samples=num_samples, num_chains=1,
                    progress_bar=False, thinning=thinning)
@@ -49,7 +49,6 @@ def sample(L, lam, num_samples, key, num_warmup=500, thinning=1, full=True, psd=
     phi = jnp.array(sampler.get_samples()['x'])
 
     steps = jnp.array(sampler.get_extra_fields()['num_steps'], dtype=int)
-    print(steps)
 
     if psd:
         
@@ -84,7 +83,7 @@ def ground_truth():
     keys = jax.random.split(jax.random.PRNGKey(42), 8)  # we run 8 independent chains
 
             
-    folder = dir + '/phi4results/hmc/ground_truth/'+('psd' if psd else 'chi')+'/'
+    folder = dir + '/phi4results/nuts/ground_truth/'+('psd' if psd else 'chi')+'/'
     
     def f(i_lam, i_repeat):
         return sample(L=side, lam=lam[i_lam], num_samples= 10000* thinning, key=keys[i_repeat],
@@ -118,24 +117,25 @@ def ground_truth():
     
 def compute_ess():
     nuts = False
-    index = 3
+    index = 0
     side = ([8, 16, 32, 64])[index]
     thinning = ([1, 1, 1, 1])[index]
-    folder = dir + '/phi4results/hmc/ess/psd/'
-    
     num_samples= 5000
-
-    lam = phi4.unreduce_lam(phi4.reduced_lam, side)
-    PSD0 = jnp.array(np.median(np.load(dir + '/phi4results/hmc/ground_truth/psd/L' + str(side) + '.npy').reshape(len(lam), 8, side, side), axis =1))
 
     #We run multiple independent chains to average ESS over them. Each of the 4 GPUs simulatanously runs repeat1 chains for each lambda
     #This is repeated sequentially repeat2 times. In total we therefore get 4 * repeat1 * repeat2 chains.
     repeat1 = ([120, 120, 60, 10])[index]
     repeat2 = ([1, 1, 2, 12])[index]
+    
+    
+    lam = phi4.unreduce_lam(phi4.reduced_lam, side)
+    folder = dir + '/phi4results/'+('nuts' if nuts else 'hmc')+'/ess/psd/'   
+    PSD0 = jnp.array(np.median(np.load(dir + '/phi4results/nuts/ground_truth/psd/L' + str(side) + '.npy').reshape(len(lam), 8, side, side), axis =1))
+
     keys = jax.random.split(jax.random.PRNGKey(42), repeat1*repeat2)
 
     def f(i_lam, i_repeat):
-        burn, _steps, PSD = sample(L=side, lam=lam[i_lam], num_samples=num_samples * thinning,                                                                            key=keys[i_repeat], num_warmup=500, thinning=thinning, full=True, psd=True)
+        burn, _steps, PSD = sample(L=side, lam=lam[i_lam], num_samples=num_samples * thinning,                                                                            key=keys[i_repeat], num_warmup=500, thinning=thinning, full=True, psd=True, nuts = nuts)
         steps = jnp.cumsum(_steps)  # shape = (n_samples, )
         b2_sq = jnp.average(jnp.square(1 - (PSD / PSD0[i_lam, :, :])), axis=(1, 2))  # shape = (n_samples,)
         return burn, steps, b2_sq
@@ -162,15 +162,32 @@ def compute_ess():
     ess = (200.0 / (num_steps)) * (index != 0)
     ess_with_warmup = (200.0 / (num_steps + burn)) * (index != 0)
     df = pd.DataFrame(np.array([phi4.reduced_lam, ess, ess_with_warmup]).T, columns=['reduced lam', 'ESS', 'ESS (with warmup)'])
-    df.to_csv(folder + 'L' + str(side) + '.csv')
+    df.to_csv(folder + '/L' + str(side) + '.csv')
 
 
 
 t0 = time.time()
 
 #ground_truth()
-#compute_ess()
-sample(8, 10.0, 1000, jax.random.PRNGKey(0), num_warmup=500, thinning=1, full=True, psd=True, nuts = False)
+compute_ess()
 
 t1 = time.time()
 print(time.strftime('%H:%M:%S', time.gmtime(t1 - t0)))
+
+
+
+
+# side = 8
+# i_lam = -1
+# lam = phi4.unreduce_lam(phi4.reduced_lam, side)
+# burn, _steps, PSD = sample(side, lam[i_lam], 1000, jax.random.PRNGKey(0), num_warmup=500, thinning=1, full=True, psd=True, nuts = False)
+
+# steps = jnp.cumsum(_steps)  # shape = (n_samples, )
+# PSD0 = jnp.array(np.median(np.load(dir + '/phi4results/nuts/ground_truth/psd/L' + str(side) + '.npy').reshape(len(lam), 8, side, side), axis =1))
+
+# b2_sq = jnp.average(jnp.square(1 - (PSD / PSD0[i_lam, :, :])), axis=(1, 2))  # shape = (n_samples,)
+
+# plt.plot(steps, np.sqrt(b2_sq))
+# plt.yscale("log")
+# plt.savefig('krnkei.png')
+# plt.close()
