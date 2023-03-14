@@ -31,6 +31,7 @@ class Sampler:
         if integrator == "LF": #leapfrog (first updates the velocity)
             self.hamiltonian_dynamics = self.leapfrog
             self.grad_evals_per_step = 1.0
+
         elif integrator== 'MN': #minimal norm integrator (velocity)
             self.hamiltonian_dynamics = self.minimal_norm
             self.grad_evals_per_step = 2.0
@@ -76,18 +77,31 @@ class Sampler:
 
         return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
 
+    # naive update
+    # def update_momentum(self, eps, g, u):
+    #     """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
+    #     g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
+    #     e = - g / g_norm
+    #     ue = jnp.dot(u, e)
+    #     sh = jnp.sinh(eps * g_norm / (self.Target.d-1))
+    #     ch = jnp.cosh(eps * g_norm / (self.Target.d-1))
+    #     th = jnp.tanh(eps * g_norm / (self.Target.d-1))
+    #     delta_r = jnp.log(ch) + jnp.log1p(ue * th)
+    #
+    #     return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), delta_r
 
     def update_momentum(self, eps, g, u):
-        """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
+        """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
+        similar to the implementation: https://github.com/gregversteeg/esh_dynamics
+        There are no exponentials e^delta, which prevents overflows when the gradient norm is large."""
         g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
         e = - g / g_norm
         ue = jnp.dot(u, e)
-        sh = jnp.sinh(eps * g_norm / (self.Target.d-1))
-        ch = jnp.cosh(eps * g_norm / (self.Target.d-1))
-        th = jnp.tanh(eps * g_norm / (self.Target.d-1))
-        delta_r = jnp.log(ch) + jnp.log1p(ue * th)
-
-        return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), delta_r
+        delta = eps * g_norm / (self.Target.d-1)
+        zeta = jnp.exp(-delta)
+        uu = e *(1-zeta)*(1+zeta + ue * (1-zeta)) + 2*zeta* u
+        delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1-ue)*zeta**2)
+        return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r
 
 
     def leapfrog(self, x, u, g, key):
@@ -401,7 +415,7 @@ class Sampler:
             """Only tracks b as a function of number of iterations."""
 
             x, u, l, g, E, key, time = state_track[0]
-            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, l, g, key, time)
+            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time)
             W, F2 = state_track[1]
 
             F2 = (W * F2 + jnp.square(self.Target.transform(x)))/ (W + 1)  # Update <f(x)> with a Kalman filter
