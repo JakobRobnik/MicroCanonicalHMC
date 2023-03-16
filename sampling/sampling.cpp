@@ -72,6 +72,8 @@ inline double *Target::prior_draw(std::mt19937 gen){
 
 
 
+double lambda_c = 0.1931833275037836; //critical value of the lambda parameter for the minimal norm integrator
+
 
 class Sampler{
     // Sequential MCHMC sampler
@@ -86,6 +88,7 @@ class Sampler{
 
         double L; double stepsize;
 
+
         std::mt19937 gen;
 
         Target target;
@@ -94,6 +97,8 @@ class Sampler{
             target = _target;
             L = _L; stepsize = _eps;
             gen = _gen;
+
+
         }
 
         // Random generators
@@ -157,11 +162,39 @@ class Sampler{
         }
 
 
+        double minimal_norm(double eps, double *x, double *u, double *l, double *g){
+            //minimal norm integrator
+
+            //V (momentum update)
+            double kinetic1 = update_momentum(eps * lambda_c, target.d, g, u);
+
+            //T (position update)
+            for(int i = 0; i< target.d; i++)x[i] += 0.5*eps * u[i];
+
+            target.grad_nlogp(x, l, g);
+
+            //half step in momentum
+            double kinetic2 = update_momentum(eps * (1-2*lambda_c), target.d, g, u);
+
+            //T (position update)
+            for(int i = 0; i< target.d; i++)x[i] += 0.5*eps * u[i];
+
+            target.grad_nlogp(x, l, g);
+
+            //V (momentum update)
+            double kinetic3 = update_momentum(eps * lambda_c, target.d, g, u);
+
+
+            return (kinetic1 + kinetic2 + kinetic3) * (target.d-1);
+        }
+
+
+
         double dynamics(double eps, double nu, double *x, double *u, double *l, double *g){
             // One step of the Langevin-like dynamics.
 
             // Hamiltonian step
-            double kinetic = leapfrog(eps, x, u, l, g);
+            double kinetic = minimal_norm(eps, x, u, l, g);
 
             // add noise to the momentum direction
             partially_refresh_momentum(u, nu);
@@ -245,7 +278,7 @@ int main(void){
     Target target;
     target.d = 100;
 
-    Sampler sampler = Sampler(target, sqrt(target.d), 0.7 * sqrt(target.d), gen);
+    Sampler sampler = Sampler(target, sqrt(target.d), sqrt(target.d), gen);
 
     sampler.sample(10000); // do the sampling
 
