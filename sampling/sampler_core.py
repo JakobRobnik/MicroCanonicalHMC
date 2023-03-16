@@ -57,17 +57,17 @@ class Sampler:
 
 
     def update_momentum(self, eps, g, u):
-        """The momentum updating map of the ESH dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
-
+        """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
+        similar to the implementation: https://github.com/gregversteeg/esh_dynamics
+        There are no exponentials e^delta, which prevents overflows when the gradient norm is large."""
         g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
         e = - g / g_norm
         ue = jnp.dot(u, e)
-        sh = jnp.sinh(eps * g_norm / (self.Target.d-1))
-        ch = jnp.cosh(eps * g_norm / (self.Target.d-1))
-        th = jnp.tanh(eps * g_norm / (self.Target.d-1))
-        delta_r = jnp.log(ch) + jnp.log1p(ue * th)
-
-        return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), delta_r
+        delta = eps * g_norm / (self.Target.d-1)
+        zeta = jnp.exp(-delta)
+        uu = e *(1-zeta)*(1+zeta + ue * (1-zeta)) + 2*zeta* u
+        delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1-ue)*zeta**2)
+        return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r
 
 
     def leapfrog(self, x, u, g):

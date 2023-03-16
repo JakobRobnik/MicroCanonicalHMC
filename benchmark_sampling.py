@@ -2,6 +2,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import jax
+import jax.numpy as jnp
+
+num_cores = 6 #specific to my PC
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+
 
 from sampling import sampler as mchmc
 from sampling import standardKinetic
@@ -9,12 +15,6 @@ from sampling.benchmark_targets import *
 from sampling import grid_search
 from HMC import myHMC
 from sampling import german_credit
-
-import jax
-import jax.numpy as jnp
-
-num_cores = 6 #specific to my PC
-#os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 ### Runs the bencmark problems. """
 
@@ -218,16 +218,14 @@ def table1():
 
         def ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
             sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized)
-            return jnp.average(sampler.sample(num_samples, 10, output= 'ess'))
+            return jnp.average(sampler.sample(num_samples, 12, output= 'ess'))
 
         def ESS_tf(target, num_samples):  #tuning-free sequential mode. Only runs a handful of chains to average ESS over the initial conditions
             sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized)
             sampler.tune_hyperparameters()
-            ess= jnp.average(sampler.sample(num_samples, 10, output= 'ess'))
+            ess= jnp.average(sampler.sample(num_samples, 12, output= 'ess'))
             print(ess)
             return ess, sampler.L / np.sqrt(target.d), sampler.eps
-
-
 
         #1.0 for Ross, 5.6 for kappa 1, 2.5 for kappa 100
         #borders_eps = 1.0* np.array([[0.5 * np.sqrt(d/100.0), 2 * np.sqrt(d/100.0)] for d in dimensions])
@@ -272,7 +270,7 @@ def table1():
 
     #df.to_csv('data/dimensions_dependence/Rossenbrockg.csv', index=False)
 
-    df.to_csv('submission/Table ' + name_sampler + name_targets + '.csv', index=False)
+    df.to_csv('submission/Table ' + name_sampler + '.csv', index=False)
     print(df)
 
 
@@ -384,6 +382,6 @@ def plot_energy_time_chains():
 
 if __name__ == '__main__':
     #energy_time_chains()
-    plot_energy_time_chains()
-
+    #plot_energy_time_chains()
+    table1()
 

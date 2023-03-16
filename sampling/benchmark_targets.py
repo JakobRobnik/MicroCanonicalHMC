@@ -70,7 +70,7 @@ class IllConditionedGaussian():
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape=(self.d,), dtype='float64') *5#* np.power(self.condition_number, 0.25) * 2
+        return jax.random.normal(key, shape=(self.d,), dtype='float64')#* np.power(self.condition_number, 0.25) * 2
 
 
 
@@ -296,13 +296,6 @@ class Funnel_with_Data():
 
 
 
-
-
-
-
-
-
-
 class Rosenbrock():
 
     def __init__(self, d = 36, Q = 0.1):
@@ -347,7 +340,7 @@ class Rosenbrock():
 
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')*3.0
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
     def compute_moments(self):

@@ -122,18 +122,32 @@ class Sampler:
 
         return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
 
+    #naive
+    # def update_momentum(self, eps, g, u):
+    #     """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
+    #     g_norm = jnp.sqrt(jnp.sum(jnp.square(g), axis = 1)).T
+    #     e = - g / g_norm[:, None]
+    #     ue = jnp.sum(u*e, axis = 1)
+    #     sh = jnp.sinh(eps * g_norm / (self.Target.d - 1))
+    #     ch = jnp.cosh(eps * g_norm / (self.Target.d - 1))
+    #     th = jnp.tanh(eps * g_norm / (self.Target.d-1))
+    #     delta_r = jnp.log(ch) + jnp.log1p(ue * th)
+    #
+    #     return (u + e * (sh + ue * (ch - 1))[:, None]) / (ch + ue * sh)[:, None], delta_r
+    #
 
     def update_momentum(self, eps, g, u):
-        """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
+        """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
+        similar to the implementation: https://github.com/gregversteeg/esh_dynamics
+        There are no exponentials e^delta, which prevents overflows when the gradient norm is large."""
         g_norm = jnp.sqrt(jnp.sum(jnp.square(g), axis = 1)).T
         e = - g / g_norm[:, None]
         ue = jnp.sum(u*e, axis = 1)
-        sh = jnp.sinh(eps * g_norm / (self.Target.d - 1))
-        ch = jnp.cosh(eps * g_norm / (self.Target.d - 1))
-        th = jnp.tanh(eps * g_norm / (self.Target.d-1))
-        delta_r = jnp.log(ch) + jnp.log1p(ue * th)
-
-        return (u + e * (sh + ue * (ch - 1))[:, None]) / (ch + ue * sh)[:, None], delta_r
+        delta = eps * g_norm / (self.Target.d-1)
+        zeta = jnp.exp(-delta)
+        uu = e * ((1-zeta)*(1+zeta + ue * (1-zeta)))[:, None] + 2*zeta[:, None]* u
+        delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1-ue)*zeta**2)
+        return uu/(jnp.sqrt(jnp.sum(jnp.square(g), axis = 1)).T)[:, None], delta_r
 
 
     def hamiltonian_dynamics(self, x, u, g, key, eps, sigma):

@@ -4,6 +4,10 @@ import jax
 import jax.numpy as jnp
 import os
 
+
+num_cores = 6 #specific to my PC
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+
 ### Some convenient function for doing grid search of the hyperparameters ###
 
 
@@ -91,7 +95,7 @@ def direct_compare(ess_function1, ess_function2, amin, amax, epsmin, epsmax):
 
 def search_step(ess_function, A, epsilon, parallel):
     if parallel:
-        return jax.vmap(lambda a: jax.pmap(lambda e: ess_function(a, e))(epsilon))(A)
+        return jax.vmap(lambda a: jax.vmap(lambda e: ess_function(a, e))(epsilon))(A)
     else:
         return [[ess_function(a, e) for e in epsilon] for a in A]
 
