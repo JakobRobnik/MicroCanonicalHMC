@@ -113,13 +113,9 @@ class Sampler:
         uu, delta_r1 = self.update_momentum(self.eps * 0.5, g * self.sigma, u)
 
         # full step in x
-        # zz = z + self.eps * uu
-        # xx = self.sigma * zz # go back to the configuration space
-        # l, gg = self.Target.grad_nlogp(xx)
-
-        xx = x
-        l = 0.0
-        gg = x
+        zz = z + self.eps * uu
+        xx = self.sigma * zz # go back to the configuration space
+        l, gg = self.Target.grad_nlogp(xx)
 
         # half step in momentum
         uu, delta_r2 = self.update_momentum(self.eps * 0.5, gg * self.sigma, uu)
