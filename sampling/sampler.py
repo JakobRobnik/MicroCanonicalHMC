@@ -16,11 +16,11 @@ lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the mi
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, L = None, eps = None, integrator = 'MN', generalized= True):
+    def __init__(self, Target, L = None, eps = None, integrator = 'MN', generalized= True, varEwanted = 1e-3, neff = 50, sigma_xi = 1.0):
         """Args:
                 Target: the target distribution class
-                L: momentum decoherence scale (can be tuned automatically)
-                eps: integration step-size (can be tuned automatically)
+                L: momentum decoherence scale
+                eps: integration step-size
                 integrator: 'LF' (leapfrog) or 'MN' (minimal norm). Typically MN performs better.
                 generalized: True (Langevin-like momentum decoherence) or False (bounces).
         """
@@ -47,19 +47,20 @@ class Sampler:
 
         self.sigma = jnp.ones(self.Target.d)
 
-        if (not (L is None)) and (not (eps is None)):
-            self.set_hyperparameters(L, eps)
+        self.varEwanted = varEwanted
+        self.gamma = (neff - 1.0) / (neff + 1.0)
+        self.sigma_xi = sigma_xi
 
+        if L != None:
+            self.L = L
         else:
-            self.set_hyperparameters(jnp.sqrt(Target.d), jnp.sqrt(Target.d) * 0.1)
+            self.L = jnp.sqrt(Target.d)
 
+        if eps != None:
+            self.eps = eps
+        else:
+            self.eps = jnp.sqrt(Target.d) * 0.1
 
-
-
-    def set_hyperparameters(self, L, eps):
-        self.L = L
-        self.eps= eps
-        self.nu = jnp.sqrt((jnp.exp(2 * self.eps / L) - 1.0) / self.Target.d)
 
 
     def random_unit_vector(self, key):
@@ -70,10 +71,10 @@ class Sampler:
         return u, key
 
 
-    def partially_refresh_momentum(self, u, key):
+    def partially_refresh_momentum(self, u, nu, key):
         """Adds a small noise to u and normalizes."""
         key, subkey = jax.random.split(key)
-        z = self.nu * jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
+        z = nu * jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
 
         return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
 
@@ -104,51 +105,50 @@ class Sampler:
         return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r
 
 
-    def leapfrog(self, x, u, g, key):
+    def leapfrog(self, x, u, g, eps, key):
         """leapfrog"""
 
         z = x / self.sigma # go to the latent space
 
-        epss = self.eps #* (x[-1]/3.0)
         # half step in momentum
-        uu, delta_r1 = self.update_momentum(epss * 0.5, g * self.sigma, u)
+        uu, delta_r1 = self.update_momentum(eps * 0.5, g * self.sigma, u)
 
         # full step in x
-        zz = z + epss * uu
+        zz = z + eps * uu
         xx = self.sigma * zz # go back to the configuration space
         l, gg = self.Target.grad_nlogp(xx)
 
         # half step in momentum
-        uu, delta_r2 = self.update_momentum(epss * 0.5, gg * self.sigma, uu)
+        uu, delta_r2 = self.update_momentum(eps * 0.5, gg * self.sigma, uu)
         kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
 
         return xx, uu, l, gg, kinetic_change, key
 
 
-    def minimal_norm(self, x, u, g, key):
+    def minimal_norm(self, x, u, g, eps, key):
         """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
         # V T V T V
         z = x / self.sigma # go to the latent space
 
         #V (momentum update)
-        uu, r1 = self.update_momentum(self.eps * lambda_c, g * self.sigma, u)
+        uu, r1 = self.update_momentum(eps * lambda_c, g * self.sigma, u)
 
         #T (postion update)
-        zz = z + 0.5 * self.eps * uu
+        zz = z + 0.5 * eps * uu
         xx = self.sigma * zz # go back to the configuration space
         ll, gg = self.Target.grad_nlogp(xx)
 
         #V (momentum update)
-        uu, r2 = self.update_momentum(self.eps * (1 - 2 * lambda_c), gg * self.sigma, uu)
+        uu, r2 = self.update_momentum(eps * (1 - 2 * lambda_c), gg * self.sigma, uu)
 
         #T (postion update)
-        zz = zz + 0.5 * self.eps * uu
+        zz = zz + 0.5 * eps * uu
         xx = self.sigma * zz  # go back to the configuration space
         ll, gg = self.Target.grad_nlogp(xx)
 
         #V (momentum update)
-        uu, r3 = self.update_momentum(self.eps * lambda_c, gg, uu)
+        uu, r3 = self.update_momentum(eps * lambda_c, gg, uu)
 
         #kinetic energy change
         kinetic_change = (r1 + r2 + r3) * (self.Target.d-1)
@@ -174,32 +174,34 @@ class Sampler:
 
 
 
-    def dynamics_bounces(self, x, u, g, key, time):
+    def dynamics_bounces(self, x, u, g, L, eps, key, time):
         """One step of the dynamics (with bounces)"""
 
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, eps, key)
 
         # bounce
         u_bounce, key = self.random_unit_vector(key)
-        time += self.eps
-        do_bounce = time > self.L
+        time += eps
+        do_bounce = time > L
         time = time * (1 - do_bounce)  # reset time if the bounce is done
         u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
 
         return xx, u_return, ll, gg, kinetic_change, key, time
 
 
-    def dynamics_generalized(self, x, u, g, key, time):
+    def dynamics_generalized(self, x, u, g, L, eps, key, time):
         """One step of the generalized dynamics."""
 
+
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, eps, key)
 
-        # bounce
-        uu, key = self.partially_refresh_momentum(uu, key)
+        # Langevin-like noise
+        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
+        uu, key = self.partially_refresh_momentum(uu, nu, key)
 
-        return xx, uu, ll, gg, kinetic_change, key, time + self.eps
+        return xx, uu, ll, gg, kinetic_change, key, time + eps
 
 
 
@@ -306,7 +308,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', adaptive = True, thinning= 1):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -345,7 +347,7 @@ class Sampler:
         """
 
         if num_chains == 1:
-            return self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
+            return self.single_chain_sample(num_steps, x_initial, random_key, output, adaptive, thinning) #the function which actually does the sampling
 
         else:
             num_cores = jax.local_device_count()
@@ -367,7 +369,7 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, adaptive, thinning)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
@@ -390,16 +392,56 @@ class Sampler:
 
 
 
-    def single_chain_sample(self, num_steps, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
+    def single_chain_sample(self, num_steps, x_initial = 'prior', random_key= None, output = 'normal', adaptive = True, thinning= 1):
+
+
+
+        def nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kk):
+            """if there are nans, let's reduce the stepsize, and not update the state"""
+
+            tru = jnp.all(jnp.isfinite(xx))
+            false = (1 - tru)
+            return tru,\
+                   jnp.nan_to_num(xx) * tru + x * false,\
+                   jnp.nan_to_num(uu) * tru + u * false,\
+                   jnp.nan_to_num(ll) * tru + l * false,\
+                   jnp.nan_to_num(gg) * tru + g * false,\
+                   jnp.nan_to_num(tt) * tru + t * false,\
+                   eps_max * tru + 0.8 * eps * false,\
+                   jnp.nan_to_num(kk) * tru
+
+
+        def adaptive_step(state, useless):
+            """Tracks transform(x) as a function of number of iterations"""
+
+            x, u, l, g, E, yA, yB, eps_max, key, t = state
+            y= yA/yB
+            eps = jnp.exp(y)
+            eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max
+
+            # dynamics
+            xx, uu, ll, gg, kinetic_change, key, tt = self.dynamics(x, u, g, self.L, eps, key, t)
+
+            # step updating
+            success, xx, uu, ll, gg, time, eps_max, kinetic_change = nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kinetic_change)
+            DE = kinetic_change + ll - l
+            EE = E + DE
+            xi = - jnp.log(((DE**2) / (self.Target.d * self.varEwanted)) + 1e-8) / 6.0  # var = 0 if there were nans, xi > 1 in this case (which suggests to further increase eps). However, the eps_max will be reduced and eps_new will be smaller than current eps
+            w = jnp.exp(-0.5 * (xi/self.sigma_xi)**2)
+            yA = self.gamma * yA + w * (xi + y)
+            yB = self.gamma * yB + w
+
+            return (xx, uu, ll, gg, EE, yA, yB, eps_max, key, time), (self.Target.transform(xx), ll, E, eps*success)
 
 
         def step(state, useless):
             """Tracks transform(x) as a function of number of iterations"""
 
             x, u, l, g, E, key, time = state
-            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time)
+            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, self.L, self.eps, key, time)
             EE = E + kinetic_change + ll - l
             return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), ll, EE)
+
 
 
         def step_full_track(state, useless):
@@ -445,6 +487,7 @@ class Sampler:
 
             return ess_cutoff_crossing(b) * no_nans * cutoff_reached / self.grad_evals_per_step #return 0 if there are nans, or if the bias cutoff was not reached
 
+
         elif output == 'full': #track everything
             state, track = jax.lax.scan(step_full_track, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
             x, L, E = track
@@ -454,20 +497,35 @@ class Sampler:
 
 
         else: # track the transform(x) and the energy
+            if adaptive:
+                state, track = jax.lax.scan(adaptive_step, init=(x, u, l, g, 0.0, 0.1 * np.log(self.eps), 0.1, jnp.inf, key, 0.0), xs=None, length=num_steps)
+                x, L, E, eps = track
 
-            state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
-            x, L, E = track
+                index_burnin = burn_in_ending(L)//thinning
 
-            index_burnin = burn_in_ending(L)
+                if output == 'final state':  # only return the final x
+                    return state[0]
+                elif output == 'energy':  # return the samples X and the energy E
+                    return x[::thinning, :], eps[::thinning], E[::thinning], index_burnin
+                elif output == 'normal':  # return the samples X
+                    return x[::thinning], eps[::thinning], index_burnin
+                else:
+                    raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
-            if output == 'final state': #only return the final x
-                return state[0]
-            elif output == 'energy': #return the samples X and the energy E
-                return x[::thinning, :], E[::thinning], index_burnin
-            elif output == 'normal': #return the samples X
-                return x[::thinning], index_burnin
             else:
-                raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
+                state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
+                x, L, E = track
+
+                index_burnin = burn_in_ending(L)//thinning
+
+                if output == 'final state': #only return the final x
+                    return state[0]
+                elif output == 'energy': #return the samples X and the energy E
+                    return x[::thinning, :], E[::thinning], index_burnin
+                elif output == 'normal': #return the samples X
+                    return x[::thinning], index_burnin
+                else:
+                    raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
 
 
