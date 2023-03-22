@@ -69,7 +69,7 @@ def full_bias():
 def ill_conditioned():
     condition_numbers = jnp.logspace(0, 5, 18)
     integrator= 'LF'
-    generalized = False
+    generalized = True
     name_sampler = integrator + ('_g' if generalized else '')
 
     targets = [IllConditionedGaussian(d = 100, condition_number= kappa) for kappa in condition_numbers]
@@ -78,11 +78,11 @@ def ill_conditioned():
 
     def ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
         sampler = mchmc.Sampler(target, alpha* np.sqrt(target.d), eps, integrator, generalized)
-        return jnp.average(sampler.sample(num_samples, 10, output = 'ess'))
+        return jnp.average(sampler.sample(num_samples, 12, output = 'ess'))
 
     def std_ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
         sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized)
-        return jnp.std(sampler.sample(num_samples, 10, output= 'ess'))
+        return jnp.std(sampler.sample(num_samples, 12, output= 'ess'))
 
 
     borders_eps = np.array([[8.0 / np.power(kappa, 0.25) / 1.5, 8.0 / np.power(kappa, 0.25) * 1.5] for kappa in condition_numbers])
@@ -91,13 +91,13 @@ def ill_conditioned():
         borders_eps *= np.sqrt(10.9)
 
     borders_alpha = np.array([[0.5 * np.power(kappa, 0.1), 2 * np.power(kappa, 0.1)] for kappa in condition_numbers])
-    results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), borders_alpha[i, 0], borders_alpha[i, 1], borders_eps[i, 0], borders_eps[i, 1]) for i in range(len(targets))])
+    results = np.array([grid_search.search_wrapper(lambda a, e: ESS(a, e, targets[i], num_samples[i]), borders_alpha[i, 0], borders_alpha[i, 1], borders_eps[i, 0], borders_eps[i, 1], save_name = 'kappa_num'+str(i)) for i in range(len(targets))])
 
     ess_errors = np.array([std_ESS(results[i, 1], results[i, 2], targets[i], num_samples[i]) for i in range(len(condition_numbers))])
 
     df = pd.DataFrame({'Condition number': condition_numbers, 'ESS': results[:, 0], 'err ESS': ess_errors, 'alpha': results[:, 1], 'eps': results[:, 2]})
 
-    df.to_csv('submission/Table_ICG_' + name_sampler + '.csv', index=False)
+    df.to_csv('submission/MCHMC/ICG/New__' + name_sampler + '.csv', index=False)
     print(df)
 
 
@@ -113,7 +113,7 @@ def ill_conditioned_tuning_free():
     def ESS(target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
         sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized)
         sampler.tune_hyperparameters()
-        ess = sampler.sample(num_samples, 10, output= 'ess')
+        ess = sampler.sample(num_samples, 12, output= 'ess')
         return jnp.average(ess), jnp.std(ess)
 
     results = np.array([ESS(targets[i], num_samples[i]) for i in range(len(targets))])
@@ -172,12 +172,12 @@ def table1():
     targets = [IllConditionedGaussian(100, 100.0), BiModal(), Rosenbrock(), Funnel(), german_credit.Target(), StochasticVolatility()]
 
 
-    # dimensions = [100, 300, 1000, 3000, 10000]
-    # names= [str(d) for d in dimensions]
-    # #targets= [StandardNormal(d) for d in dimensions]
-    # #targets = [IllConditionedGaussian(d, 100.0) for d in dimensions]
-    # targets= [Rosenbrock(d) for d in dimensions]
-    #
+    #dimensions = [100, 300, 1000, 3000, 10000]
+    #names= [str(d) for d in dimensions]
+    #targets= [StandardNormal(d) for d in dimensions]
+    #targets = [IllConditionedGaussian(d, 100.0) for d in dimensions]
+    #targets= [Rosenbrock(d) for d in dimensions]
+
     key = jax.random.PRNGKey(0)
 
     if HMC:
@@ -270,7 +270,7 @@ def table1():
 
     #df.to_csv('data/dimensions_dependence/Rossenbrockg.csv', index=False)
 
-    df.to_csv('submission/Table ' + name_sampler + '.csv', index=False)
+    df.to_csv('submission/MCHMC/NewTable ' + name_sampler + '.csv', index=False)
     print(df)
 
 
@@ -381,7 +381,6 @@ def plot_energy_time_chains():
 
 
 if __name__ == '__main__':
-    #energy_time_chains()
-    #plot_energy_time_chains()
+    #ill_conditioned()
     table1()
 

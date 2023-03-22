@@ -109,16 +109,17 @@ class Sampler:
 
         z = x / self.sigma # go to the latent space
 
+        epss = self.eps #* (x[-1]/3.0)
         # half step in momentum
-        uu, delta_r1 = self.update_momentum(self.eps * 0.5, g * self.sigma, u)
+        uu, delta_r1 = self.update_momentum(epss * 0.5, g * self.sigma, u)
 
         # full step in x
-        zz = z + self.eps * uu
+        zz = z + epss * uu
         xx = self.sigma * zz # go back to the configuration space
         l, gg = self.Target.grad_nlogp(xx)
 
         # half step in momentum
-        uu, delta_r2 = self.update_momentum(self.eps * 0.5, gg * self.sigma, uu)
+        uu, delta_r2 = self.update_momentum(epss * 0.5, gg * self.sigma, uu)
         kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
 
         return xx, uu, l, gg, kinetic_change, key

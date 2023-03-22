@@ -43,22 +43,22 @@ class Theory:
         return (links[0] + jnp.roll(links[1], -1, 0) - jnp.roll(links[0], -1, 1) - links[1])
 
 
-    # def topo_charge(self, links):
-    #     """Topological charge, an integer. Equation 30 in reference [1]."""
-    #
-    #     x = self.plaquete(links.reshape(self.link_shape)) / (2 * jnp.pi)
-    #     x = jnp.remainder(x + 0.5, 1.0) - 0.5
-    #
-    #     return jnp.sum(x)
-
-
     def topo_charge(self, links):
-        """Topological charge, not an integer"""
+        """Topological charge, an integer. Equation 30 in reference [1]."""
 
-        x = self.plaquete(links.reshape(self.link_shape))
+        x = self.plaquete(links.reshape(self.link_shape)) / (2 * jnp.pi)
+        x = jnp.remainder(x + 0.5, 1.0) - 0.5
 
-        return jnp.sum(jnp.sin(x)) / (2 * np.pi)
+        return jnp.sum(x)
 
+
+    # def topo_charge(self, links):
+    #     """Topological charge, not an integer"""
+    #
+    #     x = self.plaquete(links.reshape(self.link_shape))
+    #
+    #     return jnp.sum(jnp.sin(x)) / (2 * np.pi)
+    #
 
     def prior_draw(self, key):
         """uniform angles [0, 2pi)"""

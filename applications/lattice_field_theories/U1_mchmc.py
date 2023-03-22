@@ -86,6 +86,24 @@ def plot_topo_sus():
     plt.show()
 
 
+
+side = 16
+beta = 7.0
+target = u1.Theory(side, beta)
+alpha = 1.0
+beta_eps= 0.1
+sampler = Sampler(target, L= np.sqrt(target.d) * alpha, eps= np.sqrt(target.d) * beta_eps, integrator='LF')
+#sampler.tune_hyperparameters(dialog= True)
+
+Q, E, burnin = sampler.sample(100000, output= 'energy')
+Q = Q[burnin:]
+E = E[burnin:]
+
+plt.hist(Q, bins = 10)
+plt.show()
+
+
+
 #plot_topo_sus()
 plot_mixing()
 #print(np.average(topo_sus(8, 1.0)))
