@@ -397,7 +397,7 @@ class Sampler:
 
 
         def nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kk):
-            """if there are nans, let's reduce the stepsize, and not update the state"""
+            """if there are nans, let's reduce the stepsize, and not update the state. The function returns the old state in this case."""
 
             tru = jnp.all(jnp.isfinite(xx))
             false = (1 - tru)
@@ -412,30 +412,31 @@ class Sampler:
 
 
         def adaptive_step(state, useless):
-            """Tracks transform(x) as a function of number of iterations"""
+            """Tracks transform(x) as a function of number of iterations. It uses the adaptive stepsiye"""
 
             x, u, l, g, E, yA, yB, eps_max, key, t = state
-            y= yA/yB
+            y= yA/yB # = log eps
             eps = jnp.exp(y)
-            eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max
+            eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max #if the proposed stepsize is above the stepsize where we have seen divergences
 
             # dynamics
             xx, uu, ll, gg, kinetic_change, key, tt = self.dynamics(x, u, g, self.L, eps, key, t)
 
             # step updating
             success, xx, uu, ll, gg, time, eps_max, kinetic_change = nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kinetic_change)
-            DE = kinetic_change + ll - l
-            EE = E + DE
-            xi = - jnp.log(((DE**2) / (self.Target.d * self.varEwanted)) + 1e-8) / 6.0  # var = 0 if there were nans, xi > 1 in this case (which suggests to further increase eps). However, the eps_max will be reduced and eps_new will be smaller than current eps
-            w = jnp.exp(-0.5 * (xi/self.sigma_xi)**2)
-            yA = self.gamma * yA + w * (xi + y)
+            DE = kinetic_change + ll - l #energy difference
+            EE = E + DE # energy
+            # Warning: var = 0 if there were nans, xi > 1 in this case (which suggests to further increase eps). However, the eps_max will be reduced and eps_new will be smaller than current eps
+            xi = - jnp.log(((DE**2) / (self.Target.d * self.varEwanted)) + 1e-8) / 6.0  #the current sample would suggest that the optimal stepsize is y(optimal) = xi + y(current). We use the Var[E] = O(eps^6) relation here.
+            w = jnp.exp(-0.5 * (xi/self.sigma_xi)**2) #the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
+            yA = self.gamma * yA + w * (xi + y) # Kalman update the linear combinations
             yB = self.gamma * yB + w
 
             return (xx, uu, ll, gg, EE, yA, yB, eps_max, key, time), (self.Target.transform(xx), ll, E, eps*success)
 
 
         def step(state, useless):
-            """Tracks transform(x) as a function of number of iterations"""
+            """Tracks transform(x) as a function of number of iterations. Static stepsize."""
 
             x, u, l, g, E, key, time = state
             xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, self.L, self.eps, key, time)
@@ -531,6 +532,7 @@ class Sampler:
 
 
     def tune_hyperparameters(self, x_initial = 'prior', random_key= None, varE_wanted = 0.0005, dialog = False, initial_eps= 0.6):
+        """Outdated."""
 
         varE_wanted = 0.0005             # targeted energy variance per dimension
         burn_in, samples = 2000, 1000
