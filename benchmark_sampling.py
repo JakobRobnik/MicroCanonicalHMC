@@ -105,22 +105,23 @@ def ill_conditioned():
 def ill_conditioned_tuning_free():
     condition_numbers = jnp.logspace(0, 5, 18)
     integrator= 'LF'
-    generalized = False
+    generalized = True
 
     targets = [IllConditionedGaussian(d= 100, condition_number= kappa) for kappa in condition_numbers]
-    num_samples = [5000 * (int)(np.power(kappa, 0.3)) for kappa in condition_numbers]
+    num_samples = [2000 * (int)(np.power(kappa, 0.4)) for kappa in condition_numbers]
+    print([k//40 for k in num_samples])
 
     def ESS(target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
         sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized)
-        sampler.tune_hyperparameters()
-        ess = sampler.sample(num_samples, 12, output= 'ess')
+        sampler.num1, sampler.num2 = 40, 40
+        ess = sampler.sample(num_samples, 12, output= 'ess', tune= 'cheap')
         return jnp.average(ess), jnp.std(ess)
 
     results = np.array([ESS(targets[i], num_samples[i]) for i in range(len(targets))])
 
     df = pd.DataFrame({'Condition number': condition_numbers, 'ESS': results[:, 0], 'err ESS': results[:, 1]})
 
-    df.to_csv('submission/Table_ICG_tuning_free'+('_g' if generalized else '')+'.csv', index=False)
+    df.to_csv('submission/MCHMC/ICG/NewTable_ICG_tuning_free'+('_g' if generalized else '')+'.csv', index=False)
     print(df)
 
 
@@ -381,6 +382,6 @@ def plot_energy_time_chains():
 
 
 if __name__ == '__main__':
-    #ill_conditioned()
-    table1()
+    ill_conditioned_tuning_free()
+    #table1()
 

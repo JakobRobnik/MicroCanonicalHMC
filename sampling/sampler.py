@@ -48,13 +48,11 @@ class Sampler:
 
         ### autotuning parameters ###
         self.varEwanted = 1e-3 #targeted energy variance Var[E]/d
-        neff = 50 #effective number of steps used to determine the stepsize in the adaptive step
+        neff = 100 #effective number of steps used to determine the stepsize in the adaptive step
         self.gamma = (neff - 1.0) / (neff + 1.0) #forgeting factor in the adaptive step
-        self.sigma_xi = 1.0 #determines how much do we trust the stepsize predictions from the too large and too small stepsizes
-        self.initial_weight = 0.1 #weight of the first stepsize.
-        self.num_steps1 = 40 #number of steps to determine the stepsize
-        self.num_steps2 = 40 #number of steps to determine the typical width of the posterior
-
+        self.sigma_xi = 1.5 #determines how much do we trust the stepsize predictions from the too large and too small stepsizes
+        self.num1 = 20 #num_samples/num1 steps will be used to autotune eps
+        self.num2 = 20 #num_samples/num2 steps will be used to autotune L
 
         if L != None:
             self.L = L
@@ -226,9 +224,9 @@ class Sampler:
     def dynamics_adaptive(self, state, L):
         """One step of the dynamics with the adaptive stepsize"""
 
-        x, u, l, g, E, yA, yB, eps_max, key, t = state
-        y = yA / yB  # = log eps
-        eps = jnp.exp(y)
+        x, u, l, g, E, Feps, Weps, eps_max, key, t = state
+
+        eps = jnp.power(Feps/Weps, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
         eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
 
         # dynamics
@@ -239,13 +237,13 @@ class Sampler:
 
         DE = kinetic_change + ll - l  # energy difference
         EE = E + DE  # energy
-        # Warning: var = 0 if there were nans, xi > 1 in this case (which suggests to further increase eps). However, the eps_max will be reduced and eps_new will be smaller than current eps
-        xi = - jnp.log(((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8) / 6.0  # the current sample would suggest that the optimal stepsize is y(optimal) = xi + y(current). We use the Var[E] = O(eps^6) relation here.
-        w = jnp.exp(-0.5 * (xi / self.sigma_xi) ** 2)  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
-        yA = self.gamma * yA + w * (xi + y)  # Kalman update the linear combinations
-        yB = self.gamma * yB + w
+        # Warning: var = 0 if there were nans, but we will give it a very small weight
+        xi = ((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
+        w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * self.sigma_xi)))  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
+        Feps = self.gamma * Feps + w * (xi/jnp.power(eps, 6.0))  # Kalman update the linear combinations
+        Weps = self.gamma * Weps + w
 
-        return xx, uu, ll, gg, EE, yA, yB, eps_max, key, time, eps * success
+        return xx, uu, ll, gg, EE, Feps, Weps, eps_max, key, time, eps * success
 
 
 
@@ -352,7 +350,7 @@ class Sampler:
     #     return total_steps, x, u, l, g, key
     #
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', tune = 'cheap', adaptive = True):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', tune = 'cheap', adaptive = False):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -445,7 +443,7 @@ class Sampler:
         if tune == 'none': #no tuning
             None
         else:
-            L, eps, x, u, l, g, key = self.tune1(x, u, l, g, key, L, eps) #the cheap tuning (100 steps)
+            L, eps, x, u, l, g, key = self.tune1(x, u, l, g, key, L, eps, num_steps//self.num1, num_steps//self.num2) #the cheap tuning (100 steps)
 
             if tune == 'cheap': # this is it
                 None
@@ -455,7 +453,7 @@ class Sampler:
                 raise ValueError('tune = ' + output + ' is not a valid argument for the Sampler.sample')
 
 
-        print(L, eps)
+        #print(L, eps)
 
         ### sampling ###
 
@@ -515,7 +513,7 @@ class Sampler:
     def sample_expectation(self, num_steps, x, u, l, g, key, L, eps):
         """Stores no history but keeps the expected value of transform(x)."""
         
-        def step_expected_value(self, state, useless):
+        def step_expected_value(state, useless):
             
             x, u, g, key, time = state[0]
             x, u, _, g, _, key, time = self.dynamics(x, u, g, key, time, L, eps,)
@@ -533,7 +531,7 @@ class Sampler:
     def sample_ess(self, num_steps, x, u, l, g, key, L, eps):
         """Stores the bias of the second moments for each step."""
         
-        def b_step(self, state_track, useless):
+        def b_step(state_track, useless):
             
             x, u, l, g, E, key, time = state_track[0]
             x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps)
@@ -561,24 +559,26 @@ class Sampler:
 
         def step(state, useless):
             
-            x, u, l, g, E, yA, yB, eps_max, key, time, eps = self.dynamics_adaptive(state, L)
+            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state, L)
 
-            return (x, u, l, g, E, yA, yB, eps_max, key, time), (self.Target.transform(x), l, E, eps)
+            return (x, u, l, g, E, Feps, Weps, eps_max, key, time), (self.Target.transform(x), l, E, eps)
 
-        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, self.initial_weight * np.log(eps), self.initial_weight, jnp.inf, key, 0.0), xs=None, length=num_steps)
-        X, L, E, eps = track
+        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, key, 0.0), xs=None, length=num_steps)
+        X, nlogp, E, eps = track
         W = jnp.concatenate((0.5 * (eps[1:] + eps[:-1]), 0.5 * eps[-1]))  # weights (because Hamiltonian time does not flow uniformly if the step size changes)
         
-        return X, W, L, E
+        return X, W, nlogp, E
 
 
     ### tuning phase: ###
 
-    def tune1(self, x, u, l, g, key, L, eps):
+    def tune1(self, x, u, l, g, key, L, eps, num_steps1, num_steps2):
         """cheap hyperparameter tuning"""
 
+        gamma_save = self.gamma
+        self.gamma = 1.0
         def step(state, outer_weight):
-            x, u, l, g, E, yA, yB, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L)
+            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L)
             W, F1, F2 = state[1]
             w = outer_weight * eps
             zero_prevention = 1-outer_weight
@@ -586,15 +586,22 @@ class Sampler:
             F2 = (W*F2 + w*jnp.square(x)) / (W + w + zero_prevention)  # Update <f(x)> with a Kalman filter
             W += w
 
-            return ((x, u, l, g, E, yA, yB, eps_max, key, time), (W, F1, F2)), (eps, )
+            return ((x, u, l, g, E, Feps, Weps, eps_max, key, time), (W, F1, F2)), (eps, E)
 
-        outer_weights = jnp.concatenate((jnp.zeros(self.num_steps1), jnp.ones(self.num_steps2))) # we use the last num_steps2 to compute the typical width of the posterior
-        state, eps = jax.lax.scan(step, init=((x, u, l, g, 0.0, self.initial_weight * np.log(eps), self.initial_weight, jnp.inf, key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x)))), xs= outer_weights, length= self.num_steps1 + self.num_steps2)
-
+        outer_weights = jnp.concatenate((jnp.zeros(num_steps1), jnp.ones(num_steps2))) # we use the last num_steps2 to compute the typical width of the posterior
+        state, track = jax.lax.scan(step, init=((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x)))), xs= outer_weights, length= num_steps1 + num_steps2)
+        eps, E = track
+        # import matplotlib.pyplot as plt
+        # plt.subplot(2, 1, 1)
+        # plt.plot(np.square(E[1:]-E[:-1])/self.Target.d, '.-')
+        # plt.yscale('log')
+        # plt.subplot(2, 1, 2)
+        # plt.plot(eps, '.-')
+        # plt.show()
         xx, uu, ll, gg, keyy = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2]
         F1, F2 = state[1][1], state[1][2]
         sigma2 = jnp.average(F2 - jnp.square(F1))
-
+        self.gamma = gamma_save
         return jnp.sqrt(sigma2 * self.Target.d), eps[-1], xx, uu, ll, gg, keyy
 
 
