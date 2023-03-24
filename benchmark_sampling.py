@@ -68,24 +68,24 @@ def full_bias():
 
 def ill_conditioned():
     condition_numbers = jnp.logspace(0, 5, 18)
-    integrator= 'LF'
+    integrator= 'MN'
     generalized = True
     name_sampler = integrator + ('_g' if generalized else '')
 
-    targets = [IllConditionedGaussian(d = 100, condition_number= kappa) for kappa in condition_numbers]
-    num_samples = [5000 * (int)(np.power(kappa, 0.3)) for kappa in condition_numbers]
+    targets = [IllConditionedGaussian(d= 100, condition_number= kappa) for kappa in condition_numbers]
+    num_samples = [2000 * (int)(np.power(kappa, 0.3)) for kappa in condition_numbers]
 
 
     def ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
         sampler = mchmc.Sampler(target, alpha* np.sqrt(target.d), eps, integrator, generalized)
-        return jnp.average(sampler.sample(num_samples, 12, output = 'ess'))
+        return jnp.average(sampler.sample(num_samples, 12, output = 'ess', tune= 'none'))
 
     def std_ESS(alpha, eps, target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
         sampler = mchmc.Sampler(target, alpha * np.sqrt(target.d), eps, integrator, generalized)
-        return jnp.std(sampler.sample(num_samples, 12, output= 'ess'))
+        return jnp.std(sampler.sample(num_samples, 12, output= 'ess', tune = 'none'))
 
 
-    borders_eps = np.array([[8.0 / np.power(kappa, 0.25) / 1.5, 8.0 / np.power(kappa, 0.25) * 1.5] for kappa in condition_numbers])
+    borders_eps = np.array([[7.0 / np.power(kappa, 0.25) / 1.5, 7.0 / np.power(kappa, 0.25) * 1.5] for kappa in condition_numbers])
 
     if integrator == 'MN':
         borders_eps *= np.sqrt(10.9)
@@ -382,6 +382,7 @@ def plot_energy_time_chains():
 
 
 if __name__ == '__main__':
-    ill_conditioned_tuning_free()
+    ill_conditioned()
+    #ill_conditioned_tuning_free()
     #table1()
 
