@@ -129,7 +129,7 @@ class IllConditionedGaussianGamma():
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')#* 100
 
 
-class theoretical_worst_case_convex():
+class HardConvex():
 
     def __init__(self, d, kappa, theta = 0.1):
         """d is the dimension, kappa = condition number, 0 < theta < 1/4"""
