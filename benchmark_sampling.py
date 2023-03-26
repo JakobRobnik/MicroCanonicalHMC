@@ -113,7 +113,7 @@ def ill_conditioned_tuning_free():
 
     def ESS(target, num_samples):  #sequential mode. Only runs a handful of chains to average ESS over the initial conditions
         sampler = mchmc.Sampler(target, integrator= integrator, generalized= generalized)
-        sampler.num1, sampler.num2 = 40, 40
+        sampler.num = 40
         ess = sampler.sample(num_samples, 12, output= 'ess', tune= 'cheap')
         return jnp.average(ess), jnp.std(ess)
 
@@ -121,7 +121,7 @@ def ill_conditioned_tuning_free():
 
     df = pd.DataFrame({'Condition number': condition_numbers, 'ESS': results[:, 0], 'err ESS': results[:, 1]})
 
-    df.to_csv('submission/MCHMC/ICG/NewTable_ICG_tuning_free'+('_g' if generalized else '')+'.csv', index=False)
+    df.to_csv('submission/MCHMC/ICG/tuning_free'+'_'+integrator +('_g' if generalized else '')+'.csv', index=False)
     print(df)
 
 
@@ -382,7 +382,7 @@ def plot_energy_time_chains():
 
 
 if __name__ == '__main__':
-    ill_conditioned()
-    #ill_conditioned_tuning_free()
+    #ill_conditioned()
+    ill_conditioned_tuning_free()
     #table1()
 

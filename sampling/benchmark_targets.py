@@ -129,6 +129,40 @@ class IllConditionedGaussianGamma():
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')#* 100
 
 
+class theoretical_worst_case_convex():
+
+    def __init__(self, d, kappa, theta = 0.1):
+        """d is the dimension, kappa = condition number, 0 < theta < 1/4"""
+        self.d = d
+        self.theta, self.kappa = theta, kappa
+        C = jnp.power(d-1, 0.25 - theta)
+        self.nlogp = lambda x: 0.5 * jnp.sum(jnp.square(x[:-1])) + (0.75 / kappa)* x[-1]**2 - 0.5 * jnp.sum(jnp.cos(C * x[:-1])) / C**2
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+        self.transform = lambda x: x
+
+        # numerically precomputed variances
+        num_integration = [0.93295, 0.968802, 0.990595, 0.998002, 0.999819]
+        if d == 100:
+            self.variance = jnp.concatenate((jnp.ones(d-1) * num_integration[0], jnp.ones(1) * 2.0*kappa/3.0))
+        elif d == 300:
+            self.variance = jnp.concatenate((jnp.ones(d-1) * num_integration[1], jnp.ones(1) * 2.0*kappa/3.0))
+        elif d == 1000:
+            self.variance = jnp.concatenate((jnp.ones(d-1) * num_integration[2], jnp.ones(1) * 2.0*kappa/3.0))
+        elif d == 3000:
+            self.variance = jnp.concatenate((jnp.ones(d-1) * num_integration[3], jnp.ones(1) * 2.0*kappa/3.0))
+        elif d == 10000:
+            self.variance = jnp.concatenate((jnp.ones(d-1) * num_integration[4], jnp.ones(1) * 2.0*kappa/3.0))
+        else:
+            None
+
+
+    def prior_draw(self, key):
+        """Gaussian prior with approximately estimating the variance along each dimension"""
+        scale = jnp.concatenate((jnp.ones(self.d-1), jnp.ones(1) * jnp.sqrt(2.0 * self.kappa / 3.0)))
+        return jax.random.normal(key, shape=(self.d,), dtype='float64') * scale
+
+
+
 
 class BiModal():
     """A Gaussian mixture p(x) = f N(x | mu1, sigma1) + (1-f) N(x | mu2, sigma2)."""

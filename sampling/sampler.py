@@ -51,8 +51,7 @@ class Sampler:
         neff = 100 #effective number of steps used to determine the stepsize in the adaptive step
         self.gamma = (neff - 1.0) / (neff + 1.0) #forgeting factor in the adaptive step
         self.sigma_xi = 1.5 #determines how much do we trust the stepsize predictions from the too large and too small stepsizes
-        self.num1 = 20 #num_samples/num1 steps will be used to autotune eps
-        self.num2 = 20 #num_samples/num2 steps will be used to autotune L
+        self.num = 20 #num_samples/num2 steps will be used to autotune L
 
         if L != None:
             self.L = L
@@ -414,6 +413,16 @@ class Sampler:
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
+                if output == 'ess':
+                    bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
+                    import matplotlib.pyplot as plt
+                    plt.plot(jnp.sqrt(bsq))
+                    plt.yscale('log')
+                    plt.show()
+                    cutoff_reached = bsq[-1] < 0.01
+
+                    return (200.0 / (find_crossing(bsq, 0.01) *self.grad_evals_per_step) ) * cutoff_reached
+
                 ### reshape results ###
                 if type(results) is tuple: #each chain returned a tuple
                     results_reshaped =[]
@@ -443,7 +452,7 @@ class Sampler:
         if tune == 'none': #no tuning
             None
         else:
-            L, eps, x, u, l, g, key = self.tune1(x, u, l, g, key, L, eps, num_steps//self.num1, num_steps//self.num2) #the cheap tuning (100 steps)
+            L, eps, x, u, l, g, key = self.tune1(x, u, l, g, key, L, eps, num_steps//self.num, num_steps//self.num) #the cheap tuning (100 steps)
 
             if tune == 'cheap': # this is it
                 None
@@ -539,18 +548,17 @@ class Sampler:
         
             F2 = (W * F2 + jnp.square(self.Target.transform(x))) / (W + 1)  # Update <f(x)> with a Kalman filter
             W += 1
-            bias = jnp.sqrt(jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance)))
+            bias = jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance))
             # bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
         
             return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 
         
-        _, b = jax.lax.scan(b_step, init=((x, u, l, g, 0.0, key, 0.0), (1.0, jnp.square(x))), xs=None, length=num_steps)
-        
-        no_nans = 1 - jnp.any(jnp.isnan(b))
-        cutoff_reached = b[-1] < 0.1
-        
-        return ess_cutoff_crossing(b) * no_nans * cutoff_reached / self.grad_evals_per_step  # return 0 if there are nans, or if the bias cutoff was not reached
+        _, b = jax.lax.scan(b_step, init=((x, u, l, g, 0.0, key, 0.0), (1, jnp.square(self.Target.transform(x)))), xs=None, length=num_steps)
+
+        nans = jnp.any(jnp.isnan(b))
+
+        return b #+ nans * 1e5 #return a large bias if there were nans
 
 
 
@@ -577,6 +585,7 @@ class Sampler:
 
         gamma_save = self.gamma
         self.gamma = 1.0
+
         def step(state, outer_weight):
             x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L)
             W, F1, F2 = state[1]
