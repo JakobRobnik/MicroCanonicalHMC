@@ -415,10 +415,10 @@ class Sampler:
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
                 if output == 'ess':
                     bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
-                    import matplotlib.pyplot as plt
-                    plt.plot(jnp.sqrt(bsq))
-                    plt.yscale('log')
-                    plt.show()
+                    # import matplotlib.pyplot as plt
+                    # plt.plot(jnp.sqrt(bsq))
+                    # plt.yscale('log')
+                    # plt.show()
                     cutoff_reached = bsq[-1] < 0.01
 
                     return (200.0 / (find_crossing(bsq, 0.01) *self.grad_evals_per_step) ) * cutoff_reached
