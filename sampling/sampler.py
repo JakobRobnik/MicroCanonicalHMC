@@ -473,7 +473,8 @@ class Sampler:
 
             elif output == 'ess':  # return the samples X
                 return self.sample_adaptive_ess(num_steps, x, u, l, g, key, L, eps)
-
+            elif output == 'expectation':
+                raise ValueError('output = ' + output + ' is not yet implemented for the adaptive step-size. Let me know if you need it.')
             else:
                 raise ValueError('output = ' + output + ' is not a valid argument for the Sampler.sample')
 
@@ -487,6 +488,8 @@ class Sampler:
                     return X, E, L, eps
                 else:
                     return X
+            elif output == 'expectation':
+                return self.sample_expectation(num_steps, x, u, l, g, key, L, eps)
 
             elif output == 'ess':
                 return self.sample_ess(num_steps, x, u, l, g, key, L, eps)
