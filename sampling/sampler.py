@@ -463,10 +463,10 @@ class Sampler:
 
         if adaptive: #adaptive stepsize
 
-            if output == 'normal' or output == 'details':
+            if output == 'normal' or output == 'detailed':
                 X, W, _, E = self.sample_adaptive_normal(num_steps, x, u, l, g, key, L, eps)
 
-                if output == 'details':
+                if output == 'detailed':
                     return X, W, E, L
                 else:
                     return X, W
@@ -480,10 +480,10 @@ class Sampler:
 
         else: #fixed stepsize
 
-            if output == 'normal' or output == 'details':
+            if output == 'normal' or output == 'detailed':
                 X, _, E, L, eps = self.sample_normal(num_steps, x, u, l, g, key, L, eps)
 
-                if output == 'details':
+                if output == 'detailed':
                     return X, E, L, eps
                 else:
                     return X
