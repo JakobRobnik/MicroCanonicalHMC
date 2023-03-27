@@ -47,11 +47,12 @@ class Sampler:
         self.sigma = jnp.ones(self.Target.d) #diagonal preconditioning
 
         ### autotuning parameters ###
-        self.varEwanted = 1e-3 #targeted energy variance Var[E]/d
-        neff = 100 #effective number of steps used to determine the stepsize in the adaptive step
+        self.varEwanted = 5e-4#1e-3 #targeted energy variance Var[E]/d
+        neff = 50 #effective number of steps used to determine the stepsize in the adaptive step
         self.gamma = (neff - 1.0) / (neff + 1.0) #forgeting factor in the adaptive step
-        self.sigma_xi = 1.5 #determines how much do we trust the stepsize predictions from the too large and too small stepsizes
-        self.num = 20 #num_samples/num2 steps will be used to autotune L
+        self.sigma_xi= 1.5 # determines how much do we trust the stepsize predictions from the too large and too small stepsizes
+        self.frac_tune1 = 0.1 # num_samples/num2 steps will be used to autotune L
+        self.frac_tune2 = 0.1
 
         if L != None:
             self.L = L
@@ -420,7 +421,6 @@ class Sampler:
                     # plt.yscale('log')
                     # plt.show()
                     cutoff_reached = bsq[-1] < 0.01
-
                     return (200.0 / (find_crossing(bsq, 0.01) *self.grad_evals_per_step) ) * cutoff_reached
 
                 ### reshape results ###
@@ -452,7 +452,7 @@ class Sampler:
         if tune == 'none': #no tuning
             None
         else:
-            L, eps, x, u, l, g, key = self.tune1(x, u, l, g, key, L, eps, num_steps//self.num, num_steps//self.num) #the cheap tuning (100 steps)
+            L, eps, x, u, l, g, key = self.tune1(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
 
             if tune == 'cheap': # this is it
                 None
@@ -477,7 +477,7 @@ class Sampler:
                     return X, W
 
             elif output == 'ess':  # return the samples X
-                raise ValueError('output = ' + output + ' is currently not supported with the adaptive stepsize.')
+                return self.sample_adaptive_ess(num_steps, x, u, l, g, key, L, eps)
 
             else:
                 raise ValueError('output = ' + output + ' is not a valid argument for the Sampler.sample')
@@ -522,7 +522,7 @@ class Sampler:
     def sample_expectation(self, num_steps, x, u, l, g, key, L, eps):
         """Stores no history but keeps the expected value of transform(x)."""
         
-        def step_expected_value(state, useless):
+        def step(state, useless):
             
             x, u, g, key, time = state[0]
             x, u, _, g, _, key, time = self.dynamics(x, u, g, key, time, L, eps,)
@@ -533,14 +533,14 @@ class Sampler:
             return ((x, u, g, key, time), (W, F)), None
 
 
-        return jax.lax.scan(step_expected_value, init=(x, u, g, key, 0.0), xs=None, length=num_steps)[0][1][1]
+        return jax.lax.scan(step, init=(x, u, g, key, 0.0), xs=None, length=num_steps)[0][1][1]
 
 
 
     def sample_ess(self, num_steps, x, u, l, g, key, L, eps):
         """Stores the bias of the second moments for each step."""
         
-        def b_step(state_track, useless):
+        def step(state_track, useless):
             
             x, u, l, g, E, key, time = state_track[0]
             x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps)
@@ -554,7 +554,7 @@ class Sampler:
             return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 
         
-        _, b = jax.lax.scan(b_step, init=((x, u, l, g, 0.0, key, 0.0), (1, jnp.square(self.Target.transform(x)))), xs=None, length=num_steps)
+        _, b = jax.lax.scan(step, init=((x, u, l, g, 0.0, key, 0.0), (1, jnp.square(self.Target.transform(x)))), xs=None, length=num_steps)
 
         nans = jnp.any(jnp.isnan(b))
 
@@ -573,9 +573,32 @@ class Sampler:
 
         state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, key, 0.0), xs=None, length=num_steps)
         X, nlogp, E, eps = track
-        W = jnp.concatenate((0.5 * (eps[1:] + eps[:-1]), 0.5 * eps[-1]))  # weights (because Hamiltonian time does not flow uniformly if the step size changes)
+        W = jnp.concatenate((0.5 * (eps[1:] + eps[:-1]), 0.5 * eps[-1:]))  # weights (because Hamiltonian time does not flow uniformly if the step size changes)
         
         return X, W, nlogp, E
+
+
+    def sample_adaptive_ess(self, num_steps, x, u, l, g, key, L, eps):
+        """Stores the bias of the second moments for each step."""
+
+        def step(state, useless):
+            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L)
+
+            W, F2 = state[1]
+            w = eps
+            F2 = (W * F2 + w * jnp.square(self.Target.transform(x))) / (W + w)  # Update <f(x)> with a Kalman filter
+            W += w
+            bias = jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance))
+
+            return ((x, u, l, g, E, Feps, Weps, eps_max, key, time), (W, F2)), bias
+
+
+
+        _, b = jax.lax.scan(step, init= ((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, key, 0.0),
+                                                 (eps, jnp.square(self.Target.transform(x)))),
+                                    xs=None, length=num_steps)
+
+        return b  # + nans * 1e5 #return a large bias if there were nans
 
 
     ### tuning phase: ###
@@ -584,7 +607,8 @@ class Sampler:
         """cheap hyperparameter tuning"""
 
         gamma_save = self.gamma
-        self.gamma = 1.0
+        neff = 150.0
+        self.gamma = (neff - 1)/(neff + 1.0)
 
         def step(state, outer_weight):
             x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L)
