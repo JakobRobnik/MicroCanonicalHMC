@@ -481,7 +481,7 @@ class Sampler:
         else: #fixed stepsize
 
             if output == 'normal' or output == 'detailed':
-                X, _, E, L, eps = self.sample_normal(num_steps, x, u, l, g, key, L, eps)
+                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps)
 
                 if output == 'detailed':
                     return X, E, L, eps
