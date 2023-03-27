@@ -369,12 +369,7 @@ class Sampler:
                         'expectation': exepcted value of transform(x)
                             most memory efficient.
 
-                        'full': samples, energy, burn in steps.
-                            the samples are not transformed.
-
-                        'energy': transformed samples, energy, burn in steps
-
-                        'final state': final x of the chain
+                        'details': samples, energy, L, eps
 
                         'ess': Effective Sample Size per gradient evaluation, float.
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
@@ -468,11 +463,11 @@ class Sampler:
 
         if adaptive: #adaptive stepsize
 
-            if output == 'normal' or output == 'energy':
+            if output == 'normal' or output == 'details':
                 X, W, _, E = self.sample_adaptive_normal(num_steps, x, u, l, g, key, L, eps)
 
-                if output == 'energy':
-                    return X, W, E
+                if output == 'details':
+                    return X, W, E, L
                 else:
                     return X, W
 
@@ -485,11 +480,11 @@ class Sampler:
 
         else: #fixed stepsize
 
-            if output == 'normal' or output == 'energy':
-                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps)
+            if output == 'normal' or output == 'details':
+                X, _, E, L, eps = self.sample_normal(num_steps, x, u, l, g, key, L, eps)
 
-                if output == 'energy':
-                    return X, E
+                if output == 'details':
+                    return X, E, L, eps
                 else:
                     return X
 
