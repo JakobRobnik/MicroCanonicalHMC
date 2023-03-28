@@ -1,37 +1,74 @@
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import jax
+import jax.numpy as jnp
+import pandas as pd
+
+from sampling.sampler import Sampler
+from sampling.sampler import find_crossing
+from sampling.benchmark_targets import *
+from sampling.grid_search import search_wrapper
+
+
+num_cores = 6 #specific to my PC
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+
 
 target = Funnel(d=20)
 
-
-def full_b(X):
-    X_sq = jnp.average(jnp.square(X), axis=0)
-
-    def step(F2, index):
-        x_sq = X_sq[index, -1]
-        F2_new = (F2 * index + x_sq) / (index + 1)  # Update <f(x)> with a Kalman filter
-        b = jnp.abs((F2_new - target.variance) / target.variance)
-
-        return F2_new, b
-
-    return jax.lax.scan(step, jnp.zeros(1), xs=jnp.arange(len(X_sq)))[1]
+#eps = jnp.logspace(jnp.log10(0.25), jnp.log10(2.5), 10)
+eps = jnp.logspace(jnp.log10(2), jnp.log10(7), 10)
 
 
 
-def funnel_ess(alpha, eps):
+def f(e):
+    sampler = Sampler(target, 4.0 * np.sqrt(target.d), e)
+    return sampler.sample(240000, 120, tune= 'none', output= 'ess')
+
+def g(e):
+    sampler = Sampler(target, 4.0 * np.sqrt(target.d), e)
+    return sampler.sample(240000, 120, tune= 'none', output= 'ess funnel')
+
+def h(vare):
+    sampler = Sampler(target, 4.0 * np.sqrt(target.d), 1.0)
+    sampler.varEwanted = vare
+    return sampler.sample(240000, 120, tune= 'none', output= 'ess', adaptive = True)
 
 
-    sampler= Sampler(target, alpha*np.sqrt(target.d), eps, integrator= 'LF')
+#ess = jax.vmap(g)(eps)
+# vare = jnp.logspace(-4.5, -1.5, 10)
+# ess = jax.vmap(h)(vare)
+#
+# plt.plot(vare, ess, 'o-')
+# plt.xscale('log')
+# plt.savefig('adaptive_stepsize_alpha=4.png')
+# plt.show()
 
-    X, n = sampler.sample(5000, 60)
+sampler = Sampler(target, 4.0 * np.sqrt(target.d), 1.0)
+sampler.varEwanted = 1e-3
 
-    b2 = full_b(X)
+# plt.subplot(1, 2, 1)
+# X, E, L, eps = sampler.sample(100000, tune= 'cheap', output= 'detailed', adaptive = False)
+# theta = X[:-1, -1]
+# vare = jnp.log10(jnp.square(E[1:]-E[:-1]) / target.d)
+# plt.hexbin(theta, vare)
+# plt.ylim(0, -11)
+#
+# plt.subplot(1, 2, 2)
+# X, W, E, L = sampler.sample(100000, tune= 'cheap', output= 'detailed', adaptive = True)
+# theta = X[:-1, -1]
+# vare = jnp.log10(jnp.square(E[1:]-E[:-1]) / target.d)
+# plt.hexbin(theta, vare)
+# plt.ylim(0, -11)
+# plt.show()
 
-    return 200.0/find_crossing(b2, 0.1)
-
+X, W, E, L = sampler.sample(100000, tune= 'cheap', output= 'detailed', adaptive = True)
+theta = X[:, -1]
+#vare = jnp.log10(jnp.square(E[1:]-E[:-1]) / target.d)
+plt.hexbin(np.exp(0.5 * theta), W)
+plt.savefig('stepsize_adaptive')
+plt.show()
 #print(funnel_ess(1.0, 0.1))
 #search_wrapper(funnel_ess, 0.5, 3.0, 0.05, 1.5, save_name='show')
-
-
-
-df = pd.read_csv('submission/MCHMC/ICG/Table_ICG_MN_g.csv')
-print(df['alpha'].tolist())
-print(df['eps'].tolist())

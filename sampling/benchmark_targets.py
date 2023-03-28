@@ -256,16 +256,9 @@ class Funnel():
 
         return 0.5* jnp.square(theta / self.sigma_theta) + 0.5 * (self.d - 1) * theta + 0.5 * jnp.exp(-theta) * jnp.sum(jnp.square(X), axis = -1)
 
-    def draw(self, num_samples):
-        """direct sampler from a target"""
-        return self.inverse_transform(np.random.normal(size = (num_samples, self.d)))
-
-
     def inverse_transform(self, xtilde):
-        x= jnp.empty(jnp.shape(xtilde))
-        x[:, -1] = 3 * xtilde[:, -1]
-        x[:, :-1] = xtilde[:, -1] * jnp.exp(1.5*xtilde[:, -1])
-        return x
+        theta = 3 * xtilde[-1]
+        return jnp.concatenate((xtilde[:-1] * jnp.exp(0.5 * theta), jnp.ones(1)*theta))
 
 
     def transform(self, x):
@@ -277,7 +270,7 @@ class Funnel():
 
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        return self.inverse_transform(jax.random.normal(key, shape = (self.d, ), dtype = 'float64'))
 
 
 

@@ -409,7 +409,7 @@ class Sampler:
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
-                if output == 'ess':
+                if output == 'ess' or output == 'ess funnel':
                     bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
                     # import matplotlib.pyplot as plt
                     # plt.plot(jnp.sqrt(bsq))
@@ -494,6 +494,9 @@ class Sampler:
             elif output == 'ess':
                 return self.sample_ess(num_steps, x, u, l, g, key, L, eps)
 
+            elif output == 'ess funnel':
+                return self.sample_ess_funnel(num_steps, x, u, l, g, key, L, eps)
+
             else:
                 raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
@@ -558,6 +561,29 @@ class Sampler:
 
         return b #+ nans * 1e5 #return a large bias if there were nans
 
+
+    def sample_ess_funnel(self, num_steps, x, u, l, g, key, L, eps):
+        """Stores the bias of the second moments for each step."""
+
+        def step(state_track, useless):
+            x, u, l, g, E, key, time = state_track[0]
+            eps1 = eps * jnp.exp(0.5 * x[-1])
+            eps_max = eps *0.5#* jnp.exp(0.5)
+            too_large = eps1 > eps_max
+            eps_real = eps1 * (1-too_large) + eps_max * too_large
+            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps_real)
+            W, F2 = state_track[1]
+            F2 = (W * F2 + eps_real * jnp.square(self.Target.transform(x))) / (W + eps_real)  # Update <f(x)> with a Kalman filter
+            W += eps_real
+            bias = jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance))
+            # bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
+
+            return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
+
+        _, b = jax.lax.scan(step, init=((x, u, l, g, 0.0, key, 0.0), (eps * jnp.exp(0.5 * x[-1]), jnp.square(self.Target.transform(x)))),
+                            xs=None, length=num_steps)
+
+        return b  # + nans * 1e5 #return a large bias if there were nans
 
 
     def sample_adaptive_normal(self, num_steps, x, u, l, g, key, L, eps):
