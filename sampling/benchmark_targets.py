@@ -102,13 +102,10 @@ class IllConditionedGaussianGamma():
     """Richard's ICG"""
 
     def __init__(self):
-        self.d = 1000
+        self.d = 100
 
-        seed = 1234
-        np.random.seed(seed)
-
-        rng = np.random.RandomState(seed=10)
-        eigs = np.sort(rng.gamma(shape=1.0, scale=1., size=self.d)) #get the variance
+        rng = np.random.RandomState(seed=10 & (2 ** 32 - 1))
+        eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.d)) #get the variance
         D = np.diagonal(eigs)
         R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
         self.Hessian = R @ D @ R.T

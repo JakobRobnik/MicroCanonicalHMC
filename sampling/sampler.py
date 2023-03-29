@@ -44,21 +44,29 @@ class Sampler:
         ### decoherence mechanism ###
         self.dynamics = self.dynamics_generalized if generalized else self.dynamics_bounces
 
-        self.sigma = jnp.ones(self.Target.d) #diagonal preconditioning
+        self.sigma = jnp.ones(self.Target.d) # for diagonal preconditioning
+
 
         ### autotuning parameters ###
-        self.varEwanted = 5e-4#1e-3 #targeted energy variance Var[E]/d
-        neff = 50 #effective number of steps used to determine the stepsize in the adaptive step
-        self.gamma = (neff - 1.0) / (neff + 1.0) #forgeting factor in the adaptive step
-        self.sigma_xi= 1.5 # determines how much do we trust the stepsize predictions from the too large and too small stepsizes
-        self.frac_tune1 = 0.1 # num_samples/num2 steps will be used to autotune L
-        self.frac_tune2 = 0.1
 
+        # length of autotuning
+        self.frac_tune1 = 0.1 # num_samples * frac_tune1 steps will be used to autotune eps
+        self.frac_tune2 = 0.1 # num_samples * frac_tune2 steps will be used to approximately autotune L
+        self.frac_tune3 = 0.1 # num_samples * frac_tune3 steps will be used to improve L tuning.
+
+        self.varEwanted = 5e-4 # 1e-3 #targeted energy variance Var[E]/d
+        neff = 50 # effective number of steps used to determine the stepsize in the adaptive step
+        self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
+        self.sigma_xi= 1.5 # determines how much do we trust the stepsize predictions from the too large and too small stepsizes
+
+        self.Lfactor = 0.4 #in the third stage we set L = Lfactor * (configuration space distance bewteen independent samples)
+
+
+        ### default eps and L ###
         if L != None:
             self.L = L
         else: #default value (works if the target is well preconditioned). If you are not happy with the default value and have not run the grid search we suggest runing sample with the option tune= 'expensive'.
             self.L = jnp.sqrt(Target.d)
-
         if eps != None:
             self.eps = eps
         else: #defualt value (assumes preconditioned target and even then it might not work). Unless you have done a grid search to determine this value we suggest runing sample with the option tune= 'cheap' or tune= 'expensive'.
@@ -350,7 +358,7 @@ class Sampler:
     #     return total_steps, x, u, l, g, key
     #
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', tune = 'cheap', adaptive = False):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', tune = True, adaptive = False):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -369,10 +377,16 @@ class Sampler:
                         'expectation': exepcted value of transform(x)
                             most memory efficient.
 
-                        'details': samples, energy, L, eps
+                        'detailed': samples, energy, L, eps
 
                         'ess': Effective Sample Size per gradient evaluation, float.
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
+
+               tune: if True, autotuning of the hyperparameters is performed before starting the sampling.
+                              The autotuning has three stages (third is optional, but does generally improve the tuning. set Sampler.frac_num3 = 0 if you want to eliminate the stage 3).
+                              The length of each stage is controlled by parameters Sampler.frac_num1, Sampler.frac_num2 and Sampler.frac_num3 which can be changed before runing Sampler.sample.
+                              The number of steps spent in stage 1 is: Sampler.frac_num1 * num_steps, where num_steps is the first parameter of this function.
+
 
         Warning: for most purposes the burn-in samples should be removed. Example usage:
 
@@ -444,17 +458,11 @@ class Sampler:
         L, eps = self.L, self.eps #the initial values, given at the class initialization (or set to the default values)
 
         ### auto-tune the hyperparameters L and eps ###
-        if tune == 'none': #no tuning
-            None
-        else:
-            L, eps, x, u, l, g, key = self.tune1(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
+        if tune:
+            L, eps, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
 
-            if tune == 'cheap': # this is it
-                None
-            elif tune == 'full': #if we want to further improve L tuning we go to the second stage (which can cost up to 2500 steps)
-                L = self.tune2(x, u, l, g, key, L, eps)
-            else:
-                raise ValueError('tune = ' + output + ' is not a valid argument for the Sampler.sample')
+            if self.frac_tune3 != 0: #if we want to further improve L tuning we go to the second stage (which is a bit slower)
+                L = self.tune3(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune3))
 
 
         #print(L, eps)
@@ -627,7 +635,7 @@ class Sampler:
 
     ### tuning phase: ###
 
-    def tune1(self, x, u, l, g, key, L, eps, num_steps1, num_steps2):
+    def tune12(self, x, u, l, g, key, L, eps, num_steps1, num_steps2):
         """cheap hyperparameter tuning"""
 
         gamma_save = self.gamma
@@ -648,50 +656,23 @@ class Sampler:
         outer_weights = jnp.concatenate((jnp.zeros(num_steps1), jnp.ones(num_steps2))) # we use the last num_steps2 to compute the typical width of the posterior
         state, track = jax.lax.scan(step, init=((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x)))), xs= outer_weights, length= num_steps1 + num_steps2)
         eps, E = track
-        # import matplotlib.pyplot as plt
-        # plt.subplot(2, 1, 1)
-        # plt.plot(np.square(E[1:]-E[:-1])/self.Target.d, '.-')
-        # plt.yscale('log')
-        # plt.subplot(2, 1, 2)
-        # plt.plot(eps, '.-')
-        # plt.show()
         xx, uu, ll, gg, keyy = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2]
         F1, F2 = state[1][1], state[1][2]
         sigma2 = jnp.average(F2 - jnp.square(F1))
         self.gamma = gamma_save
+
         return jnp.sqrt(sigma2 * self.Target.d), eps[-1], xx, uu, ll, gg, keyy
 
 
 
-    def tune2(self, x, u, l, g, key, L, eps):
-        """more expensive hyperparameter tuning to improve L (5 effective samples or max 2500 samples)"""
+    def tune3(self, x, u, l, g, key, L, eps, num_steps):
+        """determine L by the autocorrelations (around 10 effective samples are needed for this to be accurate)"""
 
-        dialog = False
+        X = self.sample_full(num_steps, x, u, l, g, key, L, eps)
+        ESS = ess_corr(X)
+        Lnew = self.Lfactor * eps / ESS # = 0.4 * correlation length
 
-        n = np.logspace(2, np.log10(2500), 6).astype(int) # = [100, 190, 362, 689, 1313, 2499]
-        n = np.insert(n, [0, ], [1, ])
-        Xall = np.empty((n[-1] + 1, self.Target.d))
-        Xall[0] = x
-        for i in range(1, len(n)):
-            key, subkey, keyu = jax.random.split(key)
-            xx = Xall[n[i-1]-1]
-            uu = self.random_unit_vector(keyu)
-            ll, gg = self.Target.grad_nlogp(xx)
-            Xall[n[i-1]:n[i]] = self.sample_full(n[i] - n[i-1], xx, uu, ll, gg, subkey)
-
-            ESS = ess_corr(Xall[:n[i]])
-            if dialog:
-                print('n = {0}, ESS = {1}'.format(n[i], ESS))
-            if n[i] > 10.0 / ESS:
-                break
-
-        L = 0.4 * eps / ESS # = 0.4 * correlation length
-
-        if dialog:
-            print('L / sqrt(d) = {}, ESS(correlations) = {}'.format(L / np.sqrt(self.Target.d), ESS))
-            print('-------------')
-
-        return L
+        return Lnew
 
 
     def sample_full(self, num_steps, x, u, l, g, key, L, eps):
@@ -701,7 +682,7 @@ class Sampler:
             x, u, l, g, E, key, time = state
             xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps)
             EE = E + kinetic_change + ll - l
-            return (xx, uu, ll, gg, EE, key, time), (xx,)
+            return (xx, uu, ll, gg, EE, key, time), xx
 
         state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
 
