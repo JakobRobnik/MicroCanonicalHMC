@@ -320,6 +320,26 @@ class Funnel_with_Data():
         return jnp.concatenate((z, theta))
 
 
+class Banana():
+
+    def __init__(self, curvature = 0.03):
+        self.curvature = curvature
+        self.d = 2
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+        self.transform = lambda x: x
+        self.variance = jnp.array([100.0, 19.0]) #the first is analytic the second is by drawing 10^7 samples from the generative model. Relative accuracy is around 10^-5.
+
+
+    def nlogp(self, x):
+        mu2 = self.curvature * (x[0] ** 2 - 100)
+        return 0.5 * (jnp.square(x[0] / 10.0)**2 + jnp.square(x[1] - mu2))
+
+    def prior_draw(self, key):
+        z = jax.random.normal(key, shape = (2, ), dtype = 'float64')
+        x1 = 10.0 * z[0]
+        x2 = self.curvature * (x1 ** 2 - 100) + z[1]
+        return jnp.array([x1, x2])
+
 
 
 
@@ -513,17 +533,25 @@ def check_gradient(target, x):
 
 
 
+def plott():
+    xmin, xmax = -20.0, 20.0
+    ymin, ymax = -10.0, 10.0
+    X, Y, Z = get_contour_plot(Banana(), jnp.linspace(xmin, xmax, 100), jnp.linspace(ymin, ymax, 100))
+
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(10, 5))
+    plt.contourf(X, Y, jnp.exp(-Z))
+
+    x = np.linspace(xmin, xmax, 100)
+    plt.plot(x, 0.03 * (x ** 2 - 100), color='tab:red')
+    plt.savefig('banana.png')
+    plt.show()
+
 
 if __name__ == '__main__':
-    xmin, xmax = -3.0, 5.0
-    ymin, ymax = -2.0, 18.0
-    X, Y, Z = get_contour_plot(Rosenbrock(d= 2), jnp.linspace(xmin, xmax, 100), jnp.linspace(ymin, ymax, 100))
 
+    target = Banana()
 
+    x = jax.vmap(target.prior_draw)(jax.random.split(jax.random.PRNGKey(0), 100000000))
 
-    #target.compute_moments()
-
-    #check_gradient(target, x)
-    #target.compute_variance()
-    # d = 36
-
+    print(jnp.average(jnp.square(x), axis = 0))
