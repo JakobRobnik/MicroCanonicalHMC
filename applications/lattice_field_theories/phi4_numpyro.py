@@ -71,7 +71,6 @@ def sample(L, lam, num_samples, key, num_warmup=500, thinning=1, full=True, psd=
 
 
         
-        
 def ground_truth():
     
     psd = False
@@ -116,8 +115,8 @@ def ground_truth():
 
     
 def compute_ess():
-    nuts = False
-    index = 0
+    nuts = True
+    index = 2
     side = ([8, 16, 32, 64])[index]
     thinning = ([1, 1, 1, 1])[index]
     num_samples= 5000
@@ -125,7 +124,7 @@ def compute_ess():
     #We run multiple independent chains to average ESS over them. Each of the 4 GPUs simulatanously runs repeat1 chains for each lambda
     #This is repeated sequentially repeat2 times. In total we therefore get 4 * repeat1 * repeat2 chains.
     repeat1 = ([120, 120, 60, 10])[index]
-    repeat2 = ([1, 1, 2, 12])[index]
+    repeat2 = ([1, 1, 1, 1])[index]
     
     
     lam = phi4.unreduce_lam(phi4.reduced_lam, side)
@@ -162,7 +161,14 @@ def compute_ess():
     ess = (200.0 / (num_steps)) * (index != 0)
     ess_with_warmup = (200.0 / (num_steps + burn)) * (index != 0)
     df = pd.DataFrame(np.array([phi4.reduced_lam, ess, ess_with_warmup]).T, columns=['reduced lam', 'ESS', 'ESS (with warmup)'])
-    df.to_csv(folder + '/L' + str(side) + '.csv')
+    df.to_csv(folder + '/LL' + str(side) + '.csv')
+
+
+def large_lattice():
+    side = 2**10
+    lam = phi4.unreduce_lam(phi4.reduced_lam, side)[-1]
+    thin = 10
+    sample(side, lam, 500*thin, jax.random.PRNGKey(0), num_warmup=500, thinning=thin, full=True, psd= True, nuts = False)
 
 
 
@@ -170,6 +176,7 @@ t0 = time.time()
 
 #ground_truth()
 compute_ess()
+#large_lattice()
 
 t1 = time.time()
 print(time.strftime('%H:%M:%S', time.gmtime(t1 - t0)))
