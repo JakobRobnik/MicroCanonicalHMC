@@ -128,7 +128,7 @@ def load_data(index):
     return side, integrator, lam, PSD0
 
 
-def sample(lamb, side, tune, alpha, beta, integrator, num_samples, remove, chains, PSD0):
+def sample(lamb, side, tune, alpha, beta, integrator, num_samples, remove, chains, x, PSD0):
     
     grads_per_step = 2.0 if integrator == 'MN' else 1.0
     target = phi4.Theory(side, lamb)
@@ -136,21 +136,25 @@ def sample(lamb, side, tune, alpha, beta, integrator, num_samples, remove, chain
     sampler = Sampler(target, alpha * jnp.sqrt(target.d), beta * jnp.sqrt(target.d), integrator= integrator)
     sampler.frac_num1 = 0.1
     sampler.frac_num1 = 0.1
-    sampler.varEwanted = 3e-2#1e-3 #targeted energy variance Var[E]/d
+    sampler.varEwanted = 2e-2#1e-3 #targeted energy variance Var[E]/d
 
-    phi1, E, L, eps = sampler.sample(num_samples, chains, tune = tune, output = 'detailed')
+    phi, E, L, eps = sampler.sample(num_samples, chains, x_initial= x, tune = tune, output = 'detailed')
 
     vare= jnp.average(jnp.square(E[:, 1:]-E[:, :-1]), axis = 1)/target.d
     varavg, varstd = jnp.average(vare), jnp.std(vare)
     Lavg, Lstd, epsavg, epsstd = jnp.average(L), jnp.std(L), jnp.average(eps), jnp.std(eps)
 
-    phi = phi1.reshape(chains, num_samples, side, side)[:, remove:, :, :]
-    P = jax.vmap(jax.vmap(target.psd))(phi)
+    phi_reshaped = phi.reshape(chains, num_samples, side, side)[:, remove:, :, :]
+    P = jax.vmap(jax.vmap(target.psd))(phi_reshaped)
     PSD = jnp.cumsum(P, axis= 1) / jnp.arange(1, 1 + num_samples-remove)[None, :, None, None] #shape = (chains, samples, L, L)
 
     b2_sq = jnp.average(jnp.square(1 - (PSD / PSD0[None, None, :, :])), axis=(0, 2, 3))  # shape = (samples,)
     num_steps = jnp.argmax(b2_sq < 0.01)
-    return (200.0 / (num_steps * grads_per_step)) * (num_steps != 0), Lavg, Lstd, epsavg, epsstd, varavg, varstd
+    
+    final_state = phi[:, -1, :]
+    props = np.array([(200.0 / (num_steps * grads_per_step)) * (num_steps != 0), Lavg, Lstd, epsavg, epsstd, varavg, varstd])
+    
+    return final_state, props
 
     
 def tuning_free():
@@ -158,26 +162,30 @@ def tuning_free():
     index = 2
     side, integrator, lam, PSD0 = load_data(index)
     
-    tune = 'cheap'
-    
-    chains = ([100, 100, 12, 4])[index]
+    chains = ([100, 100, 24, 4])[index]
+    tune = True
+    num_samples= 2500
+    remove= 0
 
-    if tune == 'cheap':
-        num_samples= 5000
-        remove= 2000
-    else:
-        num_samples = 3000
-        remove = 1000
-    
-    if index < 2:
-        data_tuple = jax.vmap(jax.vmap(lambda i_lam: sample(lam[i_lam], side, tune, 0.6, 0.3, integrator, num_samples, remove, chains, PSD0[i_lam])))(jnp.arange(16).reshape(4, 4))
-        data = np.array([np.concatenate(dd) for dd in data_tuple]).T
+#     if index < 2:
+#         data_tuple = jax.vmap(jax.vmap(lambda i_lam: sample(lam[i_lam], side, tune, 0.6, 0.3, integrator, num_samples, remove, chains, PSD0[i_lam])))(jnp.arange(16).reshape(4, 4))
+#         data = np.array([np.concatenate(dd) for dd in data_tuple]).T
         
-    else: #there is not enough space on the GPU, we do lambda sequentially
-        data = [sample(lam[i_lam], side, tune, 0.6, 0.3, integrator, num_samples, remove, chains, PSD0[i_lam]) for i_lam in range(16)]
+    data = np.empty((16, 7))
+    
+    #draw from the prior
+    target = phi4.Theory(side, lam[15])
+    x = jax.vmap(target.prior_draw)(jax.random.split(jax.random.PRNGKey(123), chains))
+    
+    #do the high temperature (like a burn-in)
+    x = sample(lam[15], side, tune, 0.6, 0.3, integrator, num_samples, remove, chains, x, PSD0[15])[0] 
+    
+    #annealing: use the final state as an initial state at the next temperature level (temperature = lambda)
+    for i_lam in range(15, -1, -1):
+        x, data[i_lam] = sample(lam[i_lam], side, tune, 0.6, 0.3, integrator, num_samples, remove, chains, x, PSD0[i_lam])
             
     df = pd.DataFrame(data, columns = ['ESS', 'L', 'L err', 'eps', 'eps err', 'Var[E]/d', 'Var[E]/d err'])
-    df.to_csv(dir + '/phi4results/mchmc/ess/psd/autotune/' + tune + '_LL' + str(side) + '.csv', index =False)
+    df.to_csv(dir + '/phi4results/mchmc/ess/psd/autotune/L' + str(side) + '.csv', index =False)
 
     
 
