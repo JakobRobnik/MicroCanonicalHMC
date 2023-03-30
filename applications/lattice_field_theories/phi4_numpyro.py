@@ -114,13 +114,13 @@ def ground_truth():
         
     
 def compute_ess():
+    index = 3
     nuts = True
-    index = 0
     side = ([8, 16, 32, 64])[index]
 
     #We run multiple independent chains to average ESS over them. Each of the 4 GPUs simulatanously runs repeat1 chains for each lambda
     #This is repeated sequentially repeat2 times. In total we therefore get 4 * repeat1 * repeat2 chains.
-    chains = ([60, 60, 60, 10])[index]
+    chains = ([60, 60, 12, 10])[index]
     
     lam = phi4.unreduce_lam(phi4.reduced_lam, side)
     folder = dir + '/phi4results/'+('nuts' if nuts else 'hmc')+'/ess/psd/'   
@@ -160,6 +160,8 @@ def compute_ess():
     #x_initial = jax.vmap(lambda ichain: f(15, ichain, x_initial[ichain]))(chain_range)[2] #do the high temperature once as a burn-in
 
     x = jax.vmap(phi4.Theory(side, lam[15]).prior_draw)(keys[chains:]) #prior draw
+    
+    _, _, x = temp_level(lam[15], side, chains, PSD0[15], x)
 
     for i_lam in range(15, -1, -1):
         ess[i_lam], ess_with_warmup[i_lam], x = temp_level(lam[i_lam], side, chains, PSD0[i_lam], x)
