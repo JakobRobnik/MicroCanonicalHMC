@@ -20,103 +20,11 @@ dir = os.path.dirname(os.path.realpath(__file__))
 #params_critical_line = pd.read_csv(dir + '/theories/phi4_parameters.csv')
 
 
-def parallel_run(function, values):
-    parallel_function= jax.pmap(jax.vmap(function))
-    results = jnp.array(parallel_function(values.reshape(num_cores, len(values) // num_cores)))
-    return results.reshape([len(values), ] + [results.shape[i] for i in range(2, len(results.shape))])
-
-
 
 def get_params(side):
     """parameters from https://arxiv.org/pdf/2207.00283.pdf"""
     return np.array(params_critical_line[params_critical_line['L'] == side][['lambda']])[0][0] # = lambda
 
-
-
-def ground_truth():
-    
-    index = 3
-    side = ([8, 16, 32, 64])[index]
-
-    lam = phi4.unreduce_lam(phi4.reduced_lam, side)
-    keys = jax.random.split(jax.random.PRNGKey(42), 8)  # we run 8 independent chains
-            
-    folder = dir + '/phi4results/mchmc/ground_truth/chi/'
-    
-    def f(i_lam, i_repeat):
-        return sample_chi(side, lam[i_lam], 5000000, keys[i_repeat], 0.6, 0.05)
-
-
-    
-    fvmap = lambda x, y: jax.pmap(jax.vmap(lambda xx: jax.vmap(f, (None, 0))(xx, y)))(x.reshape(4, 4))
-
-    data = fvmap(jnp.arange(len(lam)), jnp.arange(8))
-
-    np.save(folder+'L' + str(side) + '.npy', data.reshape(16, 8))
-
-    
-
-# def sample(side, lam, num_samples, key, alpha, beta, integrator):
-    
-#     target = phi4.Theory(side, lam)
-#     target.transform = lambda x: x
-#     sampler = Sampler(target, L=jnp.sqrt(target.d) * alpha, eps= jnp.sqrt(target.d) * beta, integrator= integrator)
-
-#     phi = sampler.sample(num_samples, tune = 'none', random_key = key)
-#     burnin = 1000
-#     phi_reshaped = phi.reshape(num_samples, target.L, target.L)[burnin:]
-    
-#     P = jax.vmap(target.psd)(phi_reshaped)
-#     Pchain = jnp.cumsum(P, axis= 0) / jnp.arange(1, 1 + num_samples-burnin)[:, None, None]
-#     return Pchain
-
-
-
-def sample_chi(side, lam, num_samples, key, alpha, beta):
-    
-    target = phi4.Theory(side, lam)
-    sampler = Sampler(target, L=jnp.sqrt(target.d) * alpha, eps= jnp.sqrt(target.d) * beta, integrator='MN')
-
-    phibar = sampler.sample(num_samples)
-    burnin = 1000
-    return phi4.reduce_chi(target.susceptibility2(phibar[burnin:, 0]), side)
-    
-    
-
-# def grid_search():
-    
-#     index = 1
-#     side = ([8, 16, 32, 64])[index]
-#     folder = dir + '/phi4results/mchmc/ess/psd/grid_search/'
-    
-#     integrator = 'MN'
-#     grads_per_step = 2.0 if integrator == 'MN' else 1.0
-    
-#     num_samples= 2000
-#     burnin = 500
-
-#     lam = phi4.unreduce_lam(phi4.reduced_lam, side)
-#     PSD0 = jnp.array(np.median(np.load(dir + '/phi4results/nuts/ground_truth/psd/L' + str(side) + '.npy').reshape(len(lam), 8, side, side), axis =1))
-
-#     #We run multiple independent chains to average ESS over them. Each of the 4 GPUs simulatanously runs repeat1 chains for each lambda
-#     #This is repeated sequentially repeat2 times. In total we therefore get 4 * repeat1 * repeat2 chains.
-#     repeat1 = ([20, 10, 100, 100])[index]
-#     keys = jax.random.split(jax.random.PRNGKey(42), repeat1)
-
-
-#     def f(i_lam, i_repeat):
-#         PSD = jax.vmap(jax.vmap(lambda a, b: sample(side, lam[i_lam], num_samples, keys[i_repeat], a, b, integrator)))(Alpha.T, Beta.T)
-#         b2_sq = jnp.average(jnp.square(1 - (PSD / PSD0[None, None, i_lam, :, :])), axis=(-2, -1))  # shape = (n_samples,)
-#         return b2_sq
-    
-#     fvmap = lambda x, y: jax.pmap(jax.vmap(lambda xx: jax.vmap(f, (None, 0))(xx, y)))(x.reshape(4, 4))
-
-#     _b2_sq = fvmap(jnp.arange(len(lam)), jnp.arange(repeat1)).reshape(len(lam), repeat1, len(alpha), len(beta), num_samples-burnin)
-#     b2_sq = jnp.average(_b2_sq, axis=1)
-#     num_steps = np.argmax(b2_sq < 0.01, axis = -1)
-        
-#     ess = (200.0 / (grads_per_step * num_steps)) * (num_steps != 0)
-#     np.save(folder + 'L' + str(side) + '.npy', ess)
 
 
 def load_data(index):
@@ -128,6 +36,48 @@ def load_data(index):
     return side, integrator, lam, PSD0
 
 
+
+def sample_chi(lamb, side, num_samples, chains, x):
+    
+    target = phi4.Theory(side, lamb)
+    sampler = Sampler(target, 0.6 * jnp.sqrt(target.d), 0.3 * jnp.sqrt(target.d))
+    sampler.varEwanted = 5e-3 #targeted energy variance Var[E]/d
+
+    phibar = sampler.sample(num_samples, chains, x_initial= x, tune = tune, output = 'normal')
+                      
+    chi = phi4.reduce_chi(target.susceptibility2(phibar), side)
+    
+    return sampler.x_final, chi
+
+
+                      
+def ground_truth():
+    
+    index = 0
+
+    side = ([8, 16, 32, 64])[index]
+    lam = phi4.unreduce_lam(phi4.reduced_lam, side)   
+    
+    chains = ([12, 12, 4, 4])[index]
+    num_samples= ([50000, 50000, 50000, 50000])[index]
+
+    data = np.empty(16)
+    
+    #draw from the prior
+    x = jax.vmap(phi4.Theory(side, lam[15]).prior_draw)(jax.random.split(jax.random.PRNGKey(123), chains))
+    
+    #do the high temperature (like a burn-in)
+    x = sample(lam[15], side, num_samples, chains, x)[0] 
+    
+    #annealing: use the final state as an initial state at the next temperature level (temperature = lambda)
+    for i_lam in range(15, -1, -1):
+        x, data[i_lam] = sample(lam[i_lam], side, integrator, num_samples, chains, x)
+     
+    np.save(dir+'/phi4results/mchmc/ground_truth/chi/L'+str(side)+'.npy', data)
+
+                      
+                      
+                      
 def sample(lamb, side, tune, alpha, beta, integrator, num_samples, remove, chains, x, PSD0):
     
     grads_per_step = 2.0 if integrator == 'MN' else 1.0
@@ -136,7 +86,7 @@ def sample(lamb, side, tune, alpha, beta, integrator, num_samples, remove, chain
     sampler = Sampler(target, alpha * jnp.sqrt(target.d), beta * jnp.sqrt(target.d), integrator= integrator)
     sampler.frac_num1 = 0.1
     sampler.frac_num1 = 0.1
-    sampler.varEwanted = 2e-2#1e-3 #targeted energy variance Var[E]/d
+    sampler.varEwanted = 2e-2 #targeted average single step squared energy error per dimension Var[E]/d
 
     phi, E, L, eps = sampler.sample(num_samples, chains, x_initial= x, tune = tune, output = 'detailed')
 
@@ -167,10 +117,6 @@ def tuning_free():
     num_samples= 2500
     remove= 0
 
-#     if index < 2:
-#         data_tuple = jax.vmap(jax.vmap(lambda i_lam: sample(lam[i_lam], side, tune, 0.6, 0.3, integrator, num_samples, remove, chains, PSD0[i_lam])))(jnp.arange(16).reshape(4, 4))
-#         data = np.array([np.concatenate(dd) for dd in data_tuple]).T
-        
     data = np.empty((16, 7))
     
     #draw from the prior
@@ -214,18 +160,26 @@ def grid_search():
     np.save(dir + '/phi4results/mchmc/ess/psd/grid_search/L' + str(side) + '.npy', data)
     
     
-def timing():
-    side = 2**12
-    lam = phi4.unreduce_lam(phi4.reduced_lam, side)
-    target = phi4.Theory(side, lam[-1])
-    sampler = Sampler(target, L=jnp.sqrt(target.d) * 0.6, eps= jnp.sqrt(target.d) * 0.3, integrator= 'MN')
-    phi = sampler.sample(250, tune = 'none', output = 'expectation')
+def large_lattice():
+    side = 2**10
+    lamb = phi4.unreduce_lam(phi4.reduced_lam, side)[-1]
     
+    target = phi4.Theory(side, lamb)
+    sampler = Sampler(target, 0.6 * jnp.sqrt(target.d), 0.3 * jnp.sqrt(target.d))
+    sampler.varEwanted = 5e-3 #targeted energy variance Var[E]/d
+
+    phibar = sampler.sample(num_samples, 4, tune = tune, output = 'normal')
+                      
+    chi = phi4.reduce_chi(jax.vmap(target.susceptibility2_full, (0, None))(phibar, side))
+    
+    np.save(dir + '/phi4results/mchmc/large_lattice/L' + str(side) + '.npy', chi)
+
     
 t0 = time.time()
 
 #timing()
-tuning_free()
+ground_truth()
+
 #grid_search()
 #compute_ess()
 #ground_truth()
