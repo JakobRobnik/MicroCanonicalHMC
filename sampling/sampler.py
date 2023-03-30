@@ -74,17 +74,17 @@ class Sampler:
 
 
 
-    def random_unit_vector(self, key):
+    def random_unit_vector(self, random_key):
         """Generates a random (isotropic) unit vector."""
-        key, subkey = jax.random.split(key)
+        key, subkey = jax.random.split(random_key)
         u = jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
         u /= jnp.sqrt(jnp.sum(jnp.square(u)))
         return u, key
 
 
-    def partially_refresh_momentum(self, u, nu, key):
+    def partially_refresh_momentum(self, u, nu, random_key):
         """Adds a small noise to u and normalizes."""
-        key, subkey = jax.random.split(key)
+        key, subkey = jax.random.split(random_key)
         z = nu * jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
 
         return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
@@ -117,7 +117,7 @@ class Sampler:
         return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r
 
 
-    def leapfrog(self, x, u, g, key, eps):
+    def leapfrog(self, x, u, g, random_key, eps):
         """leapfrog"""
 
         z = x / self.sigma # go to the latent space
@@ -134,10 +134,10 @@ class Sampler:
         uu, delta_r2 = self.update_momentum(eps * 0.5, gg * self.sigma, uu)
         kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
 
-        return xx, uu, l, gg, kinetic_change, key
+        return xx, uu, l, gg, kinetic_change, random_key
 
 
-    def minimal_norm(self, x, u, g, key, eps):
+    def minimal_norm(self, x, u, g, random_key, eps):
         """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
         # V T V T V
@@ -165,7 +165,7 @@ class Sampler:
         #kinetic energy change
         kinetic_change = (r1 + r2 + r3) * (self.Target.d-1)
 
-        return xx, uu, ll, gg, kinetic_change, key
+        return xx, uu, ll, gg, kinetic_change, random_key
 
 
     #
@@ -186,11 +186,11 @@ class Sampler:
 
 
 
-    def dynamics_bounces(self, x, u, g, key, time, L, eps):
+    def dynamics_bounces(self, x, u, g, random_key, time, L, eps):
         """One step of the dynamics (with bounces)"""
 
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key, eps)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps)
 
         # bounce
         u_bounce, key = self.random_unit_vector(key)
@@ -202,11 +202,11 @@ class Sampler:
         return xx, u_return, ll, gg, kinetic_change, key, time
 
 
-    def dynamics_generalized(self, x, u, g, key, time, L, eps):
+    def dynamics_generalized(self, x, u, g, random_key, time, L, eps):
         """One step of the generalized dynamics."""
 
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key, eps)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps)
 
         # Langevin-like noise
         nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
@@ -281,82 +281,7 @@ class Sampler:
 
         return x, u, l, g, key
 
-    #
-    # def burn_in(self, x0, u0, l0, g0, key0):
-    #     """assuming the prior is wider than the posterior"""
-    #
-    #     #adam = Adam(g0)
-    #
-    #     maxsteps = 250
-    #     maxsteps_per_level = 50
-    #
-    #     Ls = []
-    #     #self.sigma = np.load('simga.npy')
-    #     #self.sigma = jnp.sqrt(self.Target.variance)
-    #
-    #
-    #     def nan_reject(x, u, l, g, xx, uu, ll, gg):
-    #         """if there are nans, let's reduce the stepsize, and not update the state"""
-    #         no_nans = jnp.all(jnp.isfinite(xx))
-    #         tru = no_nans
-    #         false = (1 - tru)
-    #         new_eps = self.eps * (false * 0.5 + tru * 1.0)
-    #         X = jnp.nan_to_num(xx) * tru + x * false
-    #         U = jnp.nan_to_num(uu) * tru + u * false
-    #         L = jnp.nan_to_num(ll) * tru + l * false
-    #         G = jnp.nan_to_num(gg) * tru + g * false
-    #         return new_eps,X, U, L, G
-    #
-    #     def burn_in_step(state):
-    #
-    #         index, stationary, x, u, l, g, key, time = state
-    #         #self.sigma = adam.sigma_estimate()  # diagonal conditioner
-    #
-    #         xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time)
-    #         #energy_change = kinetic_change + ll - l
-    #         #energy_condition = energy_change**2 / self.Target.d < 10000
-    #         new_eps, xx, uu, ll, gg = nan_reject(x, u, l, g, xx, uu, ll, gg)
-    #         self.set_hyperparameters(self.L, new_eps)
-    #
-    #         #adam.step(gg)
-    #         Ls.append(ll)
-    #
-    #         if len(Ls) > 10:
-    #             stationary = np.std(Ls[-10:]) / np.sqrt(self.Target.d * 0.5) < 1.2
-    #         else:
-    #             stationary = False
-    #
-    #         return index + 1, stationary, xx, uu, ll, gg, key, time
-    #
-    #
-    #     condition = lambda state: (state[0] < maxsteps_per_level) and not state[1] # false if the burn-in should be ended
-    #
-    #
-    #     x, u, l, g, key = x0, u0, l0, g0, key0
-    #     total_steps = 0
-    #     new_level = True
-    #     l_plateau = np.inf
-    #     while new_level and total_steps < maxsteps:
-    #         steps, stationary, x, u, l, g, key, time = my_while(condition, burn_in_step, (0, False, x, u, l, g, key, 0.0))
-    #         total_steps += steps
-    #         l_plateau_new = np.average(Ls[-10:])
-    #         diff = np.abs(l_plateau_new - l_plateau) / np.sqrt(self.Target.d * 0.5)
-    #         new_level = diff > 1.0
-    #         l_plateau = l_plateau_new
-    #         self.eps = self.eps * 0.5
-    #
-    #     # plt.plot(Ls)
-    #     # plt.yscale('log')
-    #     # plt.show()
-    #     # after you are done with developing, replace, my_while with jax.lax.while_loop
-    #     #self.sigma = adam.sigma_estimate()  # diagonal conditioner
-    #     #np.save('simga.npy', self.sigma)
-    #     # plt.plot(self.sigma/np.sqrt(self.Target.variance), 'o')
-    #     # plt.yscale('log')
-    #     # plt.show()
-    #
-    #     return total_steps, x, u, l, g, key
-    #
+
 
     def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', tune = True, adaptive = False):
         """Args:
@@ -462,7 +387,7 @@ class Sampler:
             L, eps, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
 
             if self.frac_tune3 != 0: #if we want to further improve L tuning we go to the second stage (which is a bit slower)
-                L = self.tune3(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune3))
+                L, x, u, l, g, key = self.tune3(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune3))
 
 
         #print(L, eps)
@@ -511,7 +436,7 @@ class Sampler:
 
     ### for loops which do the sampling steps: ###
 
-    def sample_normal(self, num_steps, x, u, l, g, key, L, eps):
+    def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps):
         """Stores transform(x) for each step."""
         
         def step(state, useless):
@@ -521,16 +446,14 @@ class Sampler:
             EE = E + kinetic_change + ll - l
             return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), ll, EE)
 
-        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
-
-        self.x_final = state[0] #store the final state
+        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length=num_steps)
 
         return track
         # index_burnin = burn_in_ending(L)//thinning
 
 
 
-    def sample_expectation(self, num_steps, x, u, l, g, key, L, eps):
+    def sample_expectation(self, num_steps, x, u, l, g, random_key, L, eps):
         """Stores no history but keeps the expected value of transform(x)."""
         
         def step(state, useless):
@@ -544,11 +467,11 @@ class Sampler:
             return ((x, u, g, key, time), (W, F)), None
 
 
-        return jax.lax.scan(step, init=(x, u, g, key, 0.0), xs=None, length=num_steps)[0][1][1]
+        return jax.lax.scan(step, init=(x, u, g, random_key, 0.0), xs=None, length=num_steps)[0][1][1]
 
 
 
-    def sample_ess(self, num_steps, x, u, l, g, key, L, eps):
+    def sample_ess(self, num_steps, x, u, l, g, random_key, L, eps):
         """Stores the bias of the second moments for each step."""
         
         def step(state_track, useless):
@@ -565,14 +488,14 @@ class Sampler:
             return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 
         
-        _, b = jax.lax.scan(step, init=((x, u, l, g, 0.0, key, 0.0), (1, jnp.square(self.Target.transform(x)))), xs=None, length=num_steps)
+        _, b = jax.lax.scan(step, init=((x, u, l, g, 0.0, random_key, 0.0), (1, jnp.square(self.Target.transform(x)))), xs=None, length=num_steps)
 
         nans = jnp.any(jnp.isnan(b))
 
         return b #+ nans * 1e5 #return a large bias if there were nans
 
 
-    def sample_ess_funnel(self, num_steps, x, u, l, g, key, L, eps):
+    def sample_ess_funnel(self, num_steps, x, u, l, g, random_key, L, eps):
         """Stores the bias of the second moments for each step."""
 
         def step(state_track, useless):
@@ -590,13 +513,13 @@ class Sampler:
 
             return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 
-        _, b = jax.lax.scan(step, init=((x, u, l, g, 0.0, key, 0.0), (eps * jnp.exp(0.5 * x[-1]), jnp.square(self.Target.transform(x)))),
+        _, b = jax.lax.scan(step, init=((x, u, l, g, 0.0, random_key, 0.0), (eps * jnp.exp(0.5 * x[-1]), jnp.square(self.Target.transform(x)))),
                             xs=None, length=num_steps)
 
         return b  # + nans * 1e5 #return a large bias if there were nans
 
 
-    def sample_adaptive_normal(self, num_steps, x, u, l, g, key, L, eps):
+    def sample_adaptive_normal(self, num_steps, x, u, l, g, random_key, L, eps):
         """Stores transform(x) for each iteration. It uses the adaptive stepsize."""
 
         def step(state, useless):
@@ -605,14 +528,14 @@ class Sampler:
 
             return (x, u, l, g, E, Feps, Weps, eps_max, key, time), (self.Target.transform(x), l, E, eps)
 
-        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, key, 0.0), xs=None, length=num_steps)
+        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0), xs=None, length=num_steps)
         X, nlogp, E, eps = track
         W = jnp.concatenate((0.5 * (eps[1:] + eps[:-1]), 0.5 * eps[-1:]))  # weights (because Hamiltonian time does not flow uniformly if the step size changes)
         
         return X, W, nlogp, E
 
 
-    def sample_adaptive_ess(self, num_steps, x, u, l, g, key, L, eps):
+    def sample_adaptive_ess(self, num_steps, x, u, l, g, random_key, L, eps):
         """Stores the bias of the second moments for each step."""
 
         def step(state, useless):
@@ -628,7 +551,7 @@ class Sampler:
 
 
 
-        _, b = jax.lax.scan(step, init= ((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, key, 0.0),
+        _, b = jax.lax.scan(step, init= ((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0),
                                                  (eps, jnp.square(self.Target.transform(x)))),
                                     xs=None, length=num_steps)
 
@@ -637,7 +560,7 @@ class Sampler:
 
     ### tuning phase: ###
 
-    def tune12(self, x, u, l, g, key, L, eps, num_steps1, num_steps2):
+    def tune12(self, x, u, l, g, random_key, L, eps, num_steps1, num_steps2):
         """cheap hyperparameter tuning"""
 
         gamma_save = self.gamma
@@ -656,28 +579,28 @@ class Sampler:
             return ((x, u, l, g, E, Feps, Weps, eps_max, key, time), (W, F1, F2)), (eps, E)
 
         outer_weights = jnp.concatenate((jnp.zeros(num_steps1), jnp.ones(num_steps2))) # we use the last num_steps2 to compute the typical width of the posterior
-        state, track = jax.lax.scan(step, init=((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x)))), xs= outer_weights, length= num_steps1 + num_steps2)
+        state, track = jax.lax.scan(step, init=((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x)))), xs= outer_weights, length= num_steps1 + num_steps2)
         eps, E = track
-        xx, uu, ll, gg, keyy = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2]
+        xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2]
         F1, F2 = state[1][1], state[1][2]
         sigma2 = jnp.average(F2 - jnp.square(F1))
         self.gamma = gamma_save
 
-        return jnp.sqrt(sigma2 * self.Target.d), eps[-1], xx, uu, ll, gg, keyy
+        return jnp.sqrt(sigma2 * self.Target.d), eps[-1], xx, uu, ll, gg, key
 
 
 
-    def tune3(self, x, u, l, g, key, L, eps, num_steps):
+    def tune3(self, x, u, l, g, random_key, L, eps, num_steps):
         """determine L by the autocorrelations (around 10 effective samples are needed for this to be accurate)"""
 
-        X = self.sample_full(num_steps, x, u, l, g, key, L, eps)
+        X, xx, uu, ll, gg, key = self.sample_full(num_steps, x, u, l, g, random_key, L, eps)
         ESS = ess_corr(X)
         Lnew = self.Lfactor * eps / ESS # = 0.4 * correlation length
 
-        return Lnew
+        return Lnew, xx, uu, ll, gg, key
 
 
-    def sample_full(self, num_steps, x, u, l, g, key, L, eps):
+    def sample_full(self, num_steps, x, u, l, g, random_key, L, eps):
         """Stores full x for each step. Used in tune2."""
 
         def step(state, useless):
@@ -686,9 +609,9 @@ class Sampler:
             EE = E + kinetic_change + ll - l
             return (xx, uu, ll, gg, EE, key, time), xx
 
-        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
-
-        return track  # index_burnin = burn_in_ending(L)//thinning
+        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length=num_steps)
+        xx, uu, ll, gg, key = state[0], state[1], state[2], state[3], state[5]
+        return track, xx, uu, ll, gg, key
 
 
 
