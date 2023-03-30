@@ -4,8 +4,8 @@ from scipy.stats import special_ortho_group
 from jax import random
 from numpyro.infer import MCMC, NUTS
 
-import benchmark_targets_HMC as targets
-import benchmark_targets
+import sampling.benchmark_targets_HMC as targets
+import sampling.benchmark_targets
 
 import pandas as pd
 
@@ -468,11 +468,28 @@ def dimension_scaling():
 
 
 if __name__ == '__main__':
-    X = np.load('data/dimensions_dependence/HMC_kappa100.npy')
-    a = np.array([0.003069791714632162, 0.001534978318431252])
+    target = targets.ill_conditioned_gaussian()
+    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)  # originally: nuts_kernel
+    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=num_samples, num_chains=1, progress_bar=False)
 
-    Y = np.concatenate((X, a[:, None]), axis = 1)
-    np.save('data/dimensions_dependence/HMC_kappa100.npy', Y)
+    # prior
+    if key_num != 0:
+        key = random.PRNGKey(key_num)
+        key, prior_key = random.split(key)
+        x0 = random.normal(prior_key, shape=(d,), dtype='float64')
+
+        # run
+        sampler.run(key, *target_params, init_params=x0, extra_fields=['num_steps'])
+
+    else:
+        # run
+        sampler.run(random.PRNGKey(0), *target_params, extra_fields=['num_steps'])
+
+    # get results
+    numpyro_samples = sampler.get_samples()
+    if names_output == None:
+        X = np.array(numpyro_samples['x'])
+
 
     # ess, ess2 = np.load('data/dimensions_dependence/HMC_rosenbrock.npy')
     # print(ess)

@@ -523,6 +523,8 @@ class Sampler:
 
         state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, key, 0.0), xs=None, length=num_steps)
 
+        self.x_final = state[0] #store the final state
+
         return track
         # index_burnin = burn_in_ending(L)//thinning
 
