@@ -21,7 +21,6 @@ class Sampler:
                 L: momentum decoherence scale
                 eps: integration step-size
                 integrator: 'LF' (leapfrog) or 'MN' (minimal norm). Typically MN performs better.
-                generalized: True (Langevin-like momentum decoherence) or False (bounces).
         """
 
         self.Target = Target
@@ -42,10 +41,11 @@ class Sampler:
 
 
         ### decoherence mechanism ###
+        generalized = True
         self.dynamics = self.dynamics_generalized if generalized else self.dynamics_bounces
 
-        self.sigma = jnp.ones(self.Target.d) # for diagonal preconditioning
-
+        ### preconditioning ###
+        self.diagonal_preconditioning = True
 
         ### autotuning parameters ###
 
@@ -117,46 +117,46 @@ class Sampler:
         return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r
 
 
-    def leapfrog(self, x, u, g, random_key, eps):
+    def leapfrog(self, x, u, g, random_key, eps, sigma):
         """leapfrog"""
 
-        z = x / self.sigma # go to the latent space
+        z = x / sigma # go to the latent space
 
         # half step in momentum
-        uu, delta_r1 = self.update_momentum(eps * 0.5, g * self.sigma, u)
+        uu, delta_r1 = self.update_momentum(eps * 0.5, g * sigma, u)
 
         # full step in x
         zz = z + eps * uu
-        xx = self.sigma * zz # go back to the configuration space
+        xx = sigma * zz # go back to the configuration space
         l, gg = self.Target.grad_nlogp(xx)
 
         # half step in momentum
-        uu, delta_r2 = self.update_momentum(eps * 0.5, gg * self.sigma, uu)
+        uu, delta_r2 = self.update_momentum(eps * 0.5, gg * sigma, uu)
         kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
 
         return xx, uu, l, gg, kinetic_change, random_key
 
 
-    def minimal_norm(self, x, u, g, random_key, eps):
+    def minimal_norm(self, x, u, g, random_key, eps, sigma):
         """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
         # V T V T V
-        z = x / self.sigma # go to the latent space
+        z = x / sigma # go to the latent space
 
         #V (momentum update)
-        uu, r1 = self.update_momentum(eps * lambda_c, g * self.sigma, u)
+        uu, r1 = self.update_momentum(eps * lambda_c, g * sigma, u)
 
         #T (postion update)
         zz = z + 0.5 * eps * uu
-        xx = self.sigma * zz # go back to the configuration space
+        xx = sigma * zz # go back to the configuration space
         ll, gg = self.Target.grad_nlogp(xx)
 
         #V (momentum update)
-        uu, r2 = self.update_momentum(eps * (1 - 2 * lambda_c), gg * self.sigma, uu)
+        uu, r2 = self.update_momentum(eps * (1 - 2 * lambda_c), gg * sigma, uu)
 
         #T (postion update)
         zz = zz + 0.5 * eps * uu
-        xx = self.sigma * zz  # go back to the configuration space
+        xx = sigma * zz  # go back to the configuration space
         ll, gg = self.Target.grad_nlogp(xx)
 
         #V (momentum update)
@@ -186,11 +186,11 @@ class Sampler:
 
 
 
-    def dynamics_bounces(self, x, u, g, random_key, time, L, eps):
+    def dynamics_bounces(self, x, u, g, random_key, time, L, eps, sigma):
         """One step of the dynamics (with bounces)"""
 
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
 
         # bounce
         u_bounce, key = self.random_unit_vector(key)
@@ -202,11 +202,11 @@ class Sampler:
         return xx, u_return, ll, gg, kinetic_change, key, time
 
 
-    def dynamics_generalized(self, x, u, g, random_key, time, L, eps):
+    def dynamics_generalized(self, x, u, g, random_key, time, L, eps, sigma):
         """One step of the generalized dynamics."""
 
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
 
         # Langevin-like noise
         nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
@@ -229,7 +229,7 @@ class Sampler:
                jnp.nan_to_num(kk) * tru
 
 
-    def dynamics_adaptive(self, state, L):
+    def dynamics_adaptive(self, state, L, sigma):
         """One step of the dynamics with the adaptive stepsize"""
 
         x, u, l, g, E, Feps, Weps, eps_max, key, t = state
@@ -238,7 +238,7 @@ class Sampler:
         eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
 
         # dynamics
-        xx, uu, ll, gg, kinetic_change, key, tt = self.dynamics(x, u, g, key, t, L, eps)
+        xx, uu, ll, gg, kinetic_change, key, tt = self.dynamics(x, u, g, key, t, L, eps, sigma)
 
         # step updating
         success, xx, uu, ll, gg, time, eps_max, kinetic_change = self.nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kinetic_change)
@@ -382,22 +382,21 @@ class Sampler:
         x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
         L, eps = self.L, self.eps #the initial values, given at the class initialization (or set to the default values)
 
+        sigma = jnp.ones(self.Target.d)  # no diagonal preconditioning
+
         ### auto-tune the hyperparameters L and eps ###
         if tune:
-            L, eps, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
+            L, eps, sigma, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, sigma, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
 
             if self.frac_tune3 != 0: #if we want to further improve L tuning we go to the second stage (which is a bit slower)
-                L, x, u, l, g, key = self.tune3(x, u, l, g, key, L, eps, (int)(num_steps * self.frac_tune3))
-
-
-        #print(L, eps)
+                L, x, u, l, g, key = self.tune3(x, u, l, g, key, L, eps, sigma, (int)(num_steps * self.frac_tune3))
 
         ### sampling ###
 
         if adaptive: #adaptive stepsize
 
             if output == 'normal' or output == 'detailed':
-                X, W, _, E = self.sample_adaptive_normal(num_steps, x, u, l, g, key, L, eps)
+                X, W, _, E = self.sample_adaptive_normal(num_steps, x, u, l, g, key, L, eps, sigma)
 
                 if output == 'detailed':
                     return X, W, E, L
@@ -405,7 +404,7 @@ class Sampler:
                     return X, W
 
             elif output == 'ess':  # return the samples X
-                return self.sample_adaptive_ess(num_steps, x, u, l, g, key, L, eps)
+                return self.sample_adaptive_ess(num_steps, x, u, l, g, key, L, eps, sigma)
             elif output == 'expectation':
                 raise ValueError('output = ' + output + ' is not yet implemented for the adaptive step-size. Let me know if you need it.')
             else:
@@ -415,20 +414,20 @@ class Sampler:
         else: #fixed stepsize
 
             if output == 'normal' or output == 'detailed':
-                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps)
+                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma)
 
                 if output == 'detailed':
                     return X, E, L, eps
                 else:
                     return X
             elif output == 'expectation':
-                return self.sample_expectation(num_steps, x, u, l, g, key, L, eps)
+                return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
 
             elif output == 'ess':
-                return self.sample_ess(num_steps, x, u, l, g, key, L, eps)
+                return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
 
             elif output == 'ess funnel':
-                return self.sample_ess_funnel(num_steps, x, u, l, g, key, L, eps)
+                return self.sample_ess_funnel(num_steps, x, u, l, g, key, L, eps, sigma)
 
             else:
                 raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
@@ -436,13 +435,13 @@ class Sampler:
 
     ### for loops which do the sampling steps: ###
 
-    def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps):
+    def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
         """Stores transform(x) for each step."""
         
         def step(state, useless):
 
             x, u, l, g, E, key, time = state
-            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps)
+            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
             EE = E + kinetic_change + ll - l
             return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), ll, EE)
 
@@ -453,13 +452,13 @@ class Sampler:
 
 
 
-    def sample_expectation(self, num_steps, x, u, l, g, random_key, L, eps):
+    def sample_expectation(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
         """Stores no history but keeps the expected value of transform(x)."""
         
         def step(state, useless):
             
             x, u, g, key, time = state[0]
-            x, u, _, g, _, key, time = self.dynamics(x, u, g, key, time, L, eps,)
+            x, u, _, g, _, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
             W, F = state[1]
         
             F = (W * F + self.Target.transform(x)) / (W + 1)  # Update <f(x)> with a Kalman filter
@@ -471,13 +470,13 @@ class Sampler:
 
 
 
-    def sample_ess(self, num_steps, x, u, l, g, random_key, L, eps):
+    def sample_ess(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
         """Stores the bias of the second moments for each step."""
         
         def step(state_track, useless):
             
             x, u, l, g, E, key, time = state_track[0]
-            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps)
+            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
             W, F2 = state_track[1]
         
             F2 = (W * F2 + jnp.square(self.Target.transform(x))) / (W + 1)  # Update <f(x)> with a Kalman filter
@@ -495,7 +494,7 @@ class Sampler:
         return b #+ nans * 1e5 #return a large bias if there were nans
 
 
-    def sample_ess_funnel(self, num_steps, x, u, l, g, random_key, L, eps):
+    def sample_ess_funnel(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
         """Stores the bias of the second moments for each step."""
 
         def step(state_track, useless):
@@ -504,7 +503,7 @@ class Sampler:
             eps_max = eps *0.5#* jnp.exp(0.5)
             too_large = eps1 > eps_max
             eps_real = eps1 * (1-too_large) + eps_max * too_large
-            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps_real)
+            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps_real, sigma)
             W, F2 = state_track[1]
             F2 = (W * F2 + eps_real * jnp.square(self.Target.transform(x))) / (W + eps_real)  # Update <f(x)> with a Kalman filter
             W += eps_real
@@ -519,12 +518,12 @@ class Sampler:
         return b  # + nans * 1e5 #return a large bias if there were nans
 
 
-    def sample_adaptive_normal(self, num_steps, x, u, l, g, random_key, L, eps):
+    def sample_adaptive_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
         """Stores transform(x) for each iteration. It uses the adaptive stepsize."""
 
         def step(state, useless):
             
-            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state, L)
+            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state, L, sigma)
 
             return (x, u, l, g, E, Feps, Weps, eps_max, key, time), (self.Target.transform(x), l, E, eps)
 
@@ -535,11 +534,11 @@ class Sampler:
         return X, W, nlogp, E
 
 
-    def sample_adaptive_ess(self, num_steps, x, u, l, g, random_key, L, eps):
+    def sample_adaptive_ess(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
         """Stores the bias of the second moments for each step."""
 
         def step(state, useless):
-            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L)
+            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L, sigma)
 
             W, F2 = state[1]
             w = eps
@@ -560,15 +559,18 @@ class Sampler:
 
     ### tuning phase: ###
 
-    def tune12(self, x, u, l, g, random_key, L, eps, num_steps1, num_steps2):
+    def tune12(self, x, u, l, g, random_key, L_given, eps, sigma_given, num_steps1, num_steps2):
         """cheap hyperparameter tuning"""
 
-        gamma_save = self.gamma
+        # during the tuning we will be using a different gamma
+        gamma_save = self.gamma # save the old value
         neff = 150.0
         self.gamma = (neff - 1)/(neff + 1.0)
+        sigma = sigma_given
 
         def step(state, outer_weight):
-            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L)
+            """one adaptive step of the dynamics"""
+            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L, sigma)
             W, F1, F2 = state[1]
             w = outer_weight * eps
             zero_prevention = 1-outer_weight
@@ -576,36 +578,68 @@ class Sampler:
             F2 = (W*F2 + w*jnp.square(x)) / (W + w + zero_prevention)  # Update <f(x)> with a Kalman filter
             W += w
 
-            return ((x, u, l, g, E, Feps, Weps, eps_max, key, time), (W, F1, F2)), (eps, E)
+            return ((x, u, l, g, E, Feps, Weps, eps_max, key, time), (W, F1, F2)), eps
 
-        outer_weights = jnp.concatenate((jnp.zeros(num_steps1), jnp.ones(num_steps2))) # we use the last num_steps2 to compute the typical width of the posterior
-        state, track = jax.lax.scan(step, init=((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x)))), xs= outer_weights, length= num_steps1 + num_steps2)
-        eps, E = track
-        xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2]
+        L = L_given
+
+        # we use the last num_steps2 to compute the diagonal preconditioner
+        outer_weights = jnp.concatenate((jnp.zeros(num_steps1), jnp.ones(num_steps2)))
+
+        #initial state
+        state = ((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x))))
+
+        # run the steps
+        state, eps = jax.lax.scan(step, init=state, xs= outer_weights, length= num_steps1 + num_steps2)
+
+        # determine L
         F1, F2 = state[1][1], state[1][2]
-        sigma2 = jnp.average(F2 - jnp.square(F1))
-        self.gamma = gamma_save
+        variances = F2 - jnp.square(F1)
+        sigma2 = jnp.average(variances)
 
-        return jnp.sqrt(sigma2 * self.Target.d), eps[-1], xx, uu, ll, gg, key
+        # optionally we do the diagonal preconditioning (and readjust the stepsize)
+        if self.diagonal_preconditioning:
+
+            # diagonal preconditioning
+            sigma = jnp.sqrt(variances)
+            L = 1.0
+
+            #state = ((state[0][0], state[0][1], state[0][2], state[0][3], 0.0, jnp.power(eps[-1], -6.0) * 1e-5, 1e-5, jnp.inf, state[0][-2], 0.0),
+            #         (0.0, jnp.zeros(len(x)), jnp.zeros(len(x))))
+
+            print(eps[-1])
+            print(sigma**2 / self.Target.variance)
+
+            # readjust the stepsize
+            steps = num_steps1 #we do some small number of steps
+            state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
+
+
+        else:
+            L = jnp.sqrt(sigma2 * self.Target.d)
+
+        xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2] # the final state
+        self.gamma = gamma_save #set gamma to the previous value
+        print(eps[-1])
+        return L, eps[-1], sigma, xx, uu, ll, gg, key #return the tuned hyperparameters and the final state
 
 
 
-    def tune3(self, x, u, l, g, random_key, L, eps, num_steps):
+    def tune3(self, x, u, l, g, random_key, L, eps, sigma, num_steps):
         """determine L by the autocorrelations (around 10 effective samples are needed for this to be accurate)"""
 
-        X, xx, uu, ll, gg, key = self.sample_full(num_steps, x, u, l, g, random_key, L, eps)
+        X, xx, uu, ll, gg, key = self.sample_full(num_steps, x, u, l, g, random_key, L, eps, sigma)
         ESS = ess_corr(X)
         Lnew = self.Lfactor * eps / ESS # = 0.4 * correlation length
 
         return Lnew, xx, uu, ll, gg, key
 
 
-    def sample_full(self, num_steps, x, u, l, g, random_key, L, eps):
+    def sample_full(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
         """Stores full x for each step. Used in tune2."""
 
         def step(state, useless):
             x, u, l, g, E, key, time = state
-            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps)
+            xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
             EE = E + kinetic_change + ll - l
             return (xx, uu, ll, gg, EE, key, time), xx
 
