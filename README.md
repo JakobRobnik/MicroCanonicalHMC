@@ -8,4 +8,6 @@ You can check out the tutorials:
 - [getting started](intro_tutorial.ipynb): sampling from a standard Gaussian (sequential sampling)
 - [ensamble](Ensamble_tutorial.ipynb): sampling from the Rosenbrock function (ensamble sampling)
 
+Julia implementation is available [here](https://github.com/JaimeRZP/MicroCanonicalHMC.jl).
+
 If you have any questions do not hesitate to contact me at jakob_robnik@berkeley.edu
