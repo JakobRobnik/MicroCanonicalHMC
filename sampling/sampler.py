@@ -606,8 +606,8 @@ class Sampler:
             # state = ((state[0][0], state[0][1], state[0][2], state[0][3], 0.0, jnp.power(eps[-1], -6.0) * 1e-5, 1e-5, jnp.inf, state[0][-2], 0.0),
             #         (0.0, jnp.zeros(len(x)), jnp.zeros(len(x))))
 
-            print(eps[-1])
-            print(sigma**2 / self.Target.variance)
+            # print(eps[-1])
+            # print(sigma**2 / self.Target.variance)
 
             # readjust the stepsize
             steps = num_steps2 // 3 #we do some small number of steps
@@ -619,7 +619,7 @@ class Sampler:
 
         xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2] # the final state
         self.gamma = gamma_save #set gamma to the previous value
-        print(eps[-1])
+        #print(eps[-1])
         return L, eps[-1], sigma, xx, uu, ll, gg, key #return the tuned hyperparameters and the final state
 
 
