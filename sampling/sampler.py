@@ -489,7 +489,7 @@ class Sampler:
         
         _, b = jax.lax.scan(step, init=((x, u, l, g, 0.0, random_key, 0.0), (1, jnp.square(self.Target.transform(x)))), xs=None, length=num_steps)
 
-        nans = jnp.any(jnp.isnan(b))
+        #nans = jnp.any(jnp.isnan(b))
 
         return b #+ nans * 1e5 #return a large bias if there were nans
 
@@ -603,14 +603,14 @@ class Sampler:
             sigma = jnp.sqrt(variances)
             L = 1.0
 
-            #state = ((state[0][0], state[0][1], state[0][2], state[0][3], 0.0, jnp.power(eps[-1], -6.0) * 1e-5, 1e-5, jnp.inf, state[0][-2], 0.0),
+            # state = ((state[0][0], state[0][1], state[0][2], state[0][3], 0.0, jnp.power(eps[-1], -6.0) * 1e-5, 1e-5, jnp.inf, state[0][-2], 0.0),
             #         (0.0, jnp.zeros(len(x)), jnp.zeros(len(x))))
 
             print(eps[-1])
             print(sigma**2 / self.Target.variance)
 
             # readjust the stepsize
-            steps = num_steps1 #we do some small number of steps
+            steps = num_steps2 // 3 #we do some small number of steps
             state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
 
 
