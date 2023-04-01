@@ -300,9 +300,9 @@ class Sampler:
                             samples were transformed by the Target.transform to save memory and have shape: (num_samples, len(Target.transform(x)))
 
                         'expectation': exepcted value of transform(x)
-                            most memory efficient.
+                            most memory efficient. If you are after memory it might be usefull to turn off the third tuning stage
 
-                        'detailed': samples, energy, L, eps
+                        'detailed': samples, energy for each step, L and eps used for sampling
 
                         'ess': Effective Sample Size per gradient evaluation, float.
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
@@ -312,17 +312,16 @@ class Sampler:
                               The length of each stage is controlled by parameters Sampler.frac_num1, Sampler.frac_num2 and Sampler.frac_num3 which can be changed before runing Sampler.sample.
                               The number of steps spent in stage 1 is: Sampler.frac_num1 * num_steps, where num_steps is the first parameter of this function.
 
-
-        Warning: for most purposes the burn-in samples should be removed. Example usage:
-
-        all_samples, burnin = Sampler.sample(10000)
-        samples = all_samples[burnin:, :]
-
+               adaptive: use the adaptive step size for sampling. This is experimental and not well developed yet.
         """
 
         if num_chains == 1:
-            return self.single_chain_sample(num_steps, x_initial, random_key, output, tune, adaptive) #the function which actually does the sampling
-
+            results = self.single_chain_sample(num_steps, x_initial, random_key, output, tune, adaptive) #the function which actually does the sampling
+            if output == 'ess':
+                cutoff_reached = results[-1] < 0.01
+                return (200.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached
+            else:
+                return results
         else:
             num_cores = jax.local_device_count()
             if random_key is None:
@@ -601,25 +600,25 @@ class Sampler:
 
             # diagonal preconditioning
             sigma = jnp.sqrt(variances)
-            L = 1.0
+            L = jnp.sqrt(self.Target.d)
 
             # state = ((state[0][0], state[0][1], state[0][2], state[0][3], 0.0, jnp.power(eps[-1], -6.0) * 1e-5, 1e-5, jnp.inf, state[0][-2], 0.0),
             #         (0.0, jnp.zeros(len(x)), jnp.zeros(len(x))))
 
-            # print(eps[-1])
+            # print(L, eps[-1])
             # print(sigma**2 / self.Target.variance)
 
-            # readjust the stepsize
+            #readjust the stepsize
             steps = num_steps2 // 3 #we do some small number of steps
             state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
 
 
         else:
             L = jnp.sqrt(sigma2 * self.Target.d)
-
+        #print(L, eps[-1])
         xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2] # the final state
         self.gamma = gamma_save #set gamma to the previous value
-        #print(eps[-1])
+        #print(L, eps[-1])
         return L, eps[-1], sigma, xx, uu, ll, gg, key #return the tuned hyperparameters and the final state
 
 
@@ -638,7 +637,7 @@ class Sampler:
         """Stores full x for each step. Used in tune2."""
 
         def step(state, useless):
-            x, u, l, g, E, key, time = state
+            x, u, l, g, E, key,   time = state
             xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
             EE = E + kinetic_change + ll - l
             return (xx, uu, ll, gg, EE, key, time), xx
