@@ -37,7 +37,7 @@ class IllConditionedGaussian():
     """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber^1/2 to condition_number^1/2."""
 
 
-    def __init__(self, d, condition_number, numpy_seed=None):
+    def __init__(self, d, condition_number, numpy_seed=None, prior= 'prior'):
         """numpy_seed is used to generate a random rotation for the covariance matrix.
             If None, the covariance matrix is diagonal."""
 
@@ -46,7 +46,7 @@ class IllConditionedGaussian():
         eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
 
         if numpy_seed == None:  # diagonal
-            self.variance = eigs
+            self.second_moment = eigs
             self.R = jnp.eye(d)
             self.Hessian = jnp.diag(1 / eigs)
 
@@ -57,20 +57,24 @@ class IllConditionedGaussian():
             R, _ = jnp.array(np.linalg.qr(rng.randn(self.d, self.d)))  # random rotation
             self.R = R
             self.Hessian = R @ inv_D @ R.T
-            self.variance = jnp.diagonal(R @ D @ R.T)
+            self.second_moment = jnp.diagonal(R @ D @ R.T)
 
+        self.variance_second_moment = 2 * jnp.square(self.second_moment)
+
+
+        self.nlogp = lambda x: 0.5 * x.T @ self.Hessian @ x
+        self.transform = lambda x: x
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
 
-    def nlogp(self, x):
-        """- log p of the target distribution"""
-        return 0.5 * x.T @ self.Hessian @ x
+        if prior == 'map':
+            self.prior_draw = lambda key: jnp.zeros(self.d)
 
-    def transform(self, x):
-        return x
+        elif prior == 'posterior':
+            self.prior_draw = lambda key: R @ (jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.sqrt(eigs))
 
-    def prior_draw(self, key):
-        return jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.sqrt(self.variance)#* np.power(self.condition_number, 0.25) * 2
+        else: # N(0, sigma_true_max)
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(jnp.sqrt(eigs))
 
 
 
@@ -98,21 +102,35 @@ class IllConditionedESH():
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
 
 
-class IllConditionedGaussianGamma():
-    """Richard's ICG"""
 
-    def __init__(self):
+class IllConditionedGaussianGamma():
+    """Inference gym's Ill conditioned Gaussian"""
+
+    def __init__(self, prior = 'map'):
         self.d = 100
 
+        # define the Hessian
         rng = np.random.RandomState(seed=10 & (2 ** 32 - 1))
-        eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.d)) #get the variance
-        D = np.diagonal(eigs)
+        eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.d)) #eigenvalues of the Hessian
+        eigs *= jnp.average(1.0/eigs)
         R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
-        self.Hessian = R @ D @ R.T
+        self.Hessian = R @ np.diag(eigs) @ R.T
 
-        self.variance = jnp.diagonal(R @ (1/D) @ R.T)
+        # analytic ground truth moments
+        self.second_moment = jnp.diagonal(R @ np.diag(1.0/eigs) @ R.T)
+        self.variance_second_moment = 2 * jnp.square(self.second_moment)
+
+        # gradient
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
+        if prior == 'map':
+            self.prior_draw = lambda key: jnp.zeros(self.d)
+
+        elif prior == 'posterior':
+            self.prior_draw = lambda key: R @ (jax.random.normal(key, shape=(self.d,), dtype='float64') / jnp.sqrt(eigs))
+
+        else: # N(0, sigma_true_max)
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(1.0/jnp.sqrt(eigs))
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -121,9 +139,37 @@ class IllConditionedGaussianGamma():
     def transform(self, x):
         return x
 
-    def prior_draw(self, key):
 
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')#* 100
+class Banana():
+    """Banana target fromm the Inference Gym"""
+
+    def __init__(self, prior = 'map'):
+        self.curvature = 0.03
+        self.d = 2
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+        self.transform = lambda x: x
+        self.variance = jnp.array([100.0, 19.0]) #the first is analytic the second is by drawing 10^8 samples from the generative model. Relative accuracy is around 10^-5.
+        self.variance_second_moment = jnp.array([20000.0, 4600.898])
+
+        if prior == 'map':
+            self.prior_draw = lambda key: jnp.array([0, -100.0 * self.curvature])
+        elif prior == 'posterior':
+            self.prior_draw = lambda key: self.posterior_draw(key)
+        else:
+            raise ValueError('prior = '+prior +' is not defined.')
+
+    def nlogp(self, x):
+        mu2 = self.curvature * (x[0] ** 2 - 100)
+        return 0.5 * (jnp.square(x[0] / 10.0)**2 + jnp.square(x[1] - mu2))
+
+    def posterior_draw(self, key):
+        z = jax.random.normal(key, shape = (2, ), dtype = 'float64')
+        x1 = 10.0 * z[0]
+        x2 = self.curvature * (x1 ** 2 - 100) + z[1]
+        return jnp.array([x1, x2])
+
+
+
 
 
 class HardConvex():
@@ -315,27 +361,6 @@ class Funnel_with_Data():
         theta = jax.random.normal(key1, dtype= 'float64') * self.sigma_theta
         z = jax.random.normal(key2, shape = (self.d-1, ), dtype = 'float64') * jnp.exp(theta * 0.5)
         return jnp.concatenate((z, theta))
-
-
-class Banana():
-
-    def __init__(self, curvature = 0.03):
-        self.curvature = curvature
-        self.d = 2
-        self.grad_nlogp = jax.value_and_grad(self.nlogp)
-        self.transform = lambda x: x
-        self.variance = jnp.array([100.0, 19.0]) #the first is analytic the second is by drawing 10^7 samples from the generative model. Relative accuracy is around 10^-5.
-
-
-    def nlogp(self, x):
-        mu2 = self.curvature * (x[0] ** 2 - 100)
-        return 0.5 * (jnp.square(x[0] / 10.0)**2 + jnp.square(x[1] - mu2))
-
-    def prior_draw(self, key):
-        z = jax.random.normal(key, shape = (2, ), dtype = 'float64')
-        x1 = 10.0 * z[0]
-        x2 = self.curvature * (x1 ** 2 - 100) + z[1]
-        return jnp.array([x1, x2])
 
 
 
@@ -550,5 +575,7 @@ if __name__ == '__main__':
     target = Banana()
 
     x = jax.vmap(target.prior_draw)(jax.random.split(jax.random.PRNGKey(0), 100000000))
-
+    print(x.shape)
     print(jnp.average(jnp.square(x), axis = 0))
+
+    print(jnp.std(jnp.square(x[:, 0]))**2, jnp.std(jnp.square(x[:, 1]))**2)

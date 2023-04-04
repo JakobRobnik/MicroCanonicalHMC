@@ -69,7 +69,7 @@ class pmap_target:
 class Sampler:
     """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, alpha = 1.0, varE_wanted =  5e-4, pmap = False):
+    def __init__(self, Target, alpha = 1.0, pmap = False):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -86,10 +86,11 @@ class Sampler:
             self.Target = vmap_target(Target)
 
         self.L = jnp.sqrt(self.Target.d) * alpha
-        self.varE_wanted = varE_wanted
+        self.varE_wanted = 1e-3
 
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
 
+        self.isotropic_u0 = False
 
         ### Hyperparameters of the burn in. The value of those parameters typically will not have large impact on the performance ###
         ### Can be changed after initializing the Sampler class. Example: ###
@@ -106,35 +107,20 @@ class Sampler:
 
 
 
-
-    def random_unit_vector(self, key, num_chains):
+    def random_unit_vector(self, key_given, num_chains):
         """Generates a random (isotropic) unit vector."""
-        key, subkey = jax.random.split(key)
+        key, subkey = jax.random.split(key_given)
         u = jax.random.normal(subkey, shape = (num_chains, self.Target.d), dtype = 'float64')
         normed_u = u / jnp.sqrt(jnp.sum(jnp.square(u), axis = 1))[:, None]
         return normed_u, key
 
 
-    def partially_refresh_momentum(self, u, key, nu):
+    def partially_refresh_momentum(self, u, key_given, nu):
         """Adds a small noise to u and normalizes."""
-        key, subkey = jax.random.split(key)
+        key, subkey = jax.random.split(key_given)
         noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
 
         return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
-
-    #naive
-    # def update_momentum(self, eps, g, u):
-    #     """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
-    #     g_norm = jnp.sqrt(jnp.sum(jnp.square(g), axis = 1)).T
-    #     e = - g / g_norm[:, None]
-    #     ue = jnp.sum(u*e, axis = 1)
-    #     sh = jnp.sinh(eps * g_norm / (self.Target.d - 1))
-    #     ch = jnp.cosh(eps * g_norm / (self.Target.d - 1))
-    #     th = jnp.tanh(eps * g_norm / (self.Target.d-1))
-    #     delta_r = jnp.log(ch) + jnp.log1p(ue * th)
-    #
-    #     return (u + e * (sh + ue * (ch - 1))[:, None]) / (ch + ue * sh)[:, None], delta_r
-    #
 
     def update_momentum(self, eps, g, u):
         """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
@@ -170,11 +156,11 @@ class Sampler:
         return xx, uu, l, gg, kinetic_change, key
 
 
-    def dynamics(self, x, u, g, key, L, eps, sigma):
+    def dynamics(self, x, u, g, key_given, L, eps, sigma):
         """One step of the generalized dynamics."""
 
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key, eps, sigma)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, key_given, eps, sigma)
 
         # bounce
         nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
@@ -226,20 +212,22 @@ class Sampler:
 
 
         l, g = self.Target.grad_nlogp(x)
-
-        ### initial velocity ###
         virials = jnp.average(x * g, axis=0)
         loss = self.virial_loss(x, g)
-        sgn = -2.0 * (virials < 1.0) + 1.0
-        u = - g / jnp.sqrt(jnp.sum(jnp.square(g), axis = 1))[:, None] # initialize momentum in the direction of the gradient of log p
-        u = u * sgn[None, :] #if the virial in that direction is smaller than 1, we flip the direction of the momentum in that direction
 
-        # u, key = self.random_unit_vector(key, num_chains) #random velocity orientations
+        ### initial velocity ###
+        if self.isotropic_u0:
+            u, key = self.random_unit_vector(key, num_chains)  # random velocity orientations
+
+        else: # align the initial velocity with the gradient, with the sign depending on the virial condition
+            sgn = -2.0 * (virials < 1.0) + 1.0
+            u = - g / jnp.sqrt(jnp.sum(jnp.square(g), axis = 1))[:, None] # initialize momentum in the direction of the gradient of log p
+            u = u * sgn[None, :] #if the virial in that direction is smaller than 1, we flip the direction of the momentum in that direction
 
         return loss, x, u, l, g, key
 
 
-    def burn_in(self, loss, x, u, l, g, key):
+    def burn_in(self, loss, x, u, l, g, key_given):
         """Initial stage of the burn-in. Here the goal is to get to the typical set as quickly as possible (as measured by the virial conditions)."""
 
         L = self.L
@@ -273,34 +261,36 @@ class Sampler:
 
             #will we accept the step?
             accept, loss, x, u, l, g, varE = accept_reject_step(loss, x, u, l, g, varE, loss_new, xx, uu, ll, gg, varE_new)
-            #Ls.append(loss)
-            #X.append(x)
+            Ls.append(loss)
+            X.append(x)
             never_rejected *= accept #True if no step has been rejected so far
             fail_count = (fail_count + 1) * (1-accept) #how many rejected steps did we have in a row
 
                             #reduce eps if rejected    #increase eps if never rejected        #keep the same
             eps = eps * ((1-accept) * self.reduce + accept * (never_rejected * self.increase + (1-never_rejected) * 1.0))
-            #epss.append(eps)
+            epss.append(eps)
 
             return steps + 1, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE
 
-        #Ls = []
-        #epss = []
-        # X = []
+        Ls = []
+        epss = []
+        X = []
 
         condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * (state[2] < self.max_fail)  # true during the burn-in
 
-        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
+        #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
+        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key_given, L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
+        
         # if you want to debug, replace jax.lax.while_loop with my_while
 
         #jax.lax.while_loop
 
-        # plt.plot(Ls, '.-', label = 'loss')
-        # plt.plot(epss, 'o', label = 'epsilon')
-        # plt.legend()
-        # plt.yscale('log')
-        # plt.xlabel('burn-in steps')
-        # plt.show()
+        plt.plot(Ls, '.-', label = 'loss')
+        plt.plot(epss, 'o', label = 'epsilon')
+        plt.legend()
+        plt.yscale('log')
+        plt.xlabel('burn-in steps')
+        plt.show()
 
 
         ### determine the epsilon for sampling ###
@@ -336,7 +326,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, output = 'full', remove_burn_in= True):
+    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, remove_burn_in= True):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
 
@@ -346,13 +336,9 @@ class Sampler:
 
                random_key: jax random seed, defaults to jax.random.PRNGKey(0)
 
-               output: determines the output of the function. Currently supported:
-                        'full': returns the samples, shape: (num_chains, num_samples, d)
-                        'ess': the number gradient calls per chain needed to get the bias b2 bellow 0.1. In this case, self.Target.variance = <x_i^2>_true should be defined.
-
                remove_burn_in: removes the samples during the burn-in phase. The output shape is (num_chains, num_samples - num_burnin, d).
                                The end of burn-in is determined based on settling of the expected value of f(x) = x^T x.
-                               Specifically, when the instantaneous expected values start to fluctuate by less than 10%.
+                               (instantaneous expected values start to fluctuate by less than 10%)
         """
 
         state = self.initialize(random_key, x_initial, num_chains) #initialize
@@ -378,23 +364,18 @@ class Sampler:
 
         ### return results ###
 
-        if output == 'ess': #we return the number of sampling steps (needed for b2 < 0.1) and the number of burn-in steps
-            b2 = self.full_b(self.Target.transform(X[:, burnin2_steps:, :]))
-            # plt.plot(b2)
-            # plt.xlabel('# sampling steps')
-            # plt.ylabel('b2')
-            # plt.show()
-            no_nans = 1-jnp.any(jnp.isnan(b2))
-            cutoff_reached = b2[-1] < 0.1
-            return (find_crossing(b2, 0.1), burnin_steps + burnin2_steps) if (no_nans and cutoff_reached) else (np.inf, burnin_steps + burnin2_steps)
+        # if output == 'ess': #we return the number of sampling steps (needed for b2 < 0.1) and the number of burn-in steps
+        #     b2 = self.full_b(self.Target.transform(X[:, burnin2_steps:, :]))
+        #     # plt.plot(b2)
+        #     # plt.xlabel('# sampling steps')
+        #     # plt.ylabel('b2')
+        #     # plt.show()
+        #     no_nans = 1-jnp.any(jnp.isnan(b2))
+        #     cutoff_reached = b2[-1] < 0.1
+        #     return (find_crossing(b2, 0.1), burnin_steps + burnin2_steps) if (no_nans and cutoff_reached) else (np.inf, burnin_steps + burnin2_steps)
 
 
-        else:
-            if output == 'full': #return the samples X
-                return X[:, burnin2_steps:, :]
-
-            else:
-                raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
+        return X[:, burnin2_steps:, :], burnin_steps + burnin2_steps
 
 
     def remove_burn_in(self, X):
@@ -415,6 +396,18 @@ class Sampler:
         # plt.show()
 
         return burnin2_steps
+
+
+    def ess(self, X):
+        """X.shape = (chains, samples, d).
+            returns the number of steps to low bias (= 0.1)
+            Bias is computed according to the definition from Hoffman: Tuning-free Generalized HMC"""
+        second_moments = jnp.average(jnp.square(X), axis = (0, 1))
+        bias = jnp.max(jnp.square(second_moments - self.second_moment)) / self.variance_second_moment
+
+        num_steps = jnp.argmax(bias < 0.01)
+
+        return num_steps
 
 
 def linfit(x, y):
@@ -452,13 +445,13 @@ def eps_fit(eps, var, var0):
     x_predict = (y_predict - intercept) / slope
     y_predict_err = jnp.sqrt(x_predict**2 * Cov[0, 0] + 2 * Cov[0, 1] * x_predict + Cov[1, 1])
 
-    # plt.plot(eps, var, 'o', color='blue')
-    # plt.plot(eps, jnp.exp(slope * jnp.log(eps) + intercept), '-', color = 'black', alpha = 0.5)
-    # plt.plot(jnp.exp(x_predict), jnp.exp(y_predict), 'o', color ='tab:red')
-    # plt.yscale('log')
-    # plt.xscale('log')
-    # plt.xlabel('epsilon')
-    # plt.ylabel('Var[E] / d')
-    # plt.show()
+    plt.plot(eps, var, 'o', color='blue')
+    plt.plot(eps, jnp.exp(slope * jnp.log(eps) + intercept), '-', color = 'black', alpha = 0.5)
+    plt.plot(jnp.exp(x_predict), jnp.exp(y_predict), 'o', color ='tab:red')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.xlabel('epsilon')
+    plt.ylabel('Var[E] / d')
+    plt.show()
 
     return jnp.exp(x_predict), y_predict_err < 2.3 # = log(10)
