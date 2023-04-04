@@ -38,6 +38,11 @@ class vmap_target:
             self.variance = target.variance
 
 
+        if hasattr(target, 'name'):
+            self.name = target.name
+
+
+
 class pmap_target:
     """A wrapper target class, where jax.pmap has been applied to the functions of a given target"""
 
@@ -103,7 +108,6 @@ class Sampler:
         self.max_fail = 6                             # if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
         self.loss_wanted = 0.1                        # if the virial loss is lower, we stop the initial stage of burn-in
         self.increase, self.reduce = 2.0, 0.5         # if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
-        self.num_energy_points = 5                    # how many points will we use to determine Var[E] (epsilon)  dependence.
 
 
 
@@ -279,54 +283,51 @@ class Sampler:
         condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * (state[2] < self.max_fail)  # true during the burn-in
 
         #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key, L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
-        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key_given, L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
+        steps, loss, fail_count, never_rejected, xx, uu, ll, gg, key, L, eps, sigma, varE = my_while(condition, burn_in_step, (0, loss, 0, True, x, u, l, g, key_given, L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
         
         # if you want to debug, replace jax.lax.while_loop with my_while
 
         #jax.lax.while_loop
 
-        plt.plot(Ls, '.-', label = 'loss')
-        plt.plot(epss, 'o', label = 'epsilon')
+        ### determine the epsilon for sampling ###
+        eps = eps * (1.0/self.reduce)**fail_count #the epsilon before the row of failures, we will take this as a baseline
+
+        Ls2 = []
+        eps2 = []
+
+        for i in range(20):
+            lold = ll
+            xx, uu, ll, gg, kinetic_change, key = self.dynamics(xx, uu, gg, key, L, eps, sigma)  # update particles by one step
+            vare = jnp.average(jnp.square(kinetic_change + ll - lold)) / self.Target.d
+            eps = jnp.power(vare / self.varE_wanted, 1.0/6.0) / eps
+
+
+            Ls2.append(self.virial_loss(xx, gg))
+            eps2.append(eps)
+
+
+        n1 = np.arange(len(Ls))
+        n2 = np.arange(len(Ls), len(Ls) + len(Ls2))
+        plt.plot(n1, Ls, 'o-', label = 'loss', color = 'tab:blue', alpha = 0.5)
+        plt.plot(n1, epss, 'o', label = 'epsilon', color = 'tab:red', alpha = 0.5)
+
+        plt.plot(n2, Ls2, 's-',  color = 'tab:blue')
+        plt.plot(n2, eps2, 's',  color = 'tab:red')
         plt.legend()
         plt.yscale('log')
         plt.xlabel('burn-in steps')
-        plt.show()
-
-
-        ### determine the epsilon for sampling ###
-        eps = eps * (1.0/self.reduce)**fail_count #the epsilon before the row of failures, we will take this as a baseline
-        energy_range = self.varE_wanted * jnp.logspace(-jnp.log10(200), jnp.log10(100), self.num_energy_points) #some range around the wanted energy error
-        epsilon = eps * jnp.power(energy_range / varE, 1.0/6.0) # assume Var[E] ~ eps^6 and use the already computed point to set out the grid for extrapolation
-
-        def energy_error(eps):
-            """detemrine Var[E]/d at given epsilon"""
-            xx, uu, ll, gg, kinetic_change, kkey = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
-            energy_change = kinetic_change + ll - l
-            return jnp.average(jnp.square(energy_change)) / self.Target.d
-
-        vars= jax.vmap(energy_error)(epsilon) #energy error at those eps
-        mask = vars < 1e3
-        if np.sum(mask) < 2:
-            raise ValueError('Step-size for sampling cannot be determined, the energy errors are too large.')
-
-        mask_picky = vars < 5e-2 # ideally we don't even use Var[E]/d > 0.05 as the power law there is different
-        if np.sum(mask_picky) > 1: #can we afford to be so picky?
-            mask = mask_picky
-        eps, success = eps_fit(epsilon[mask], vars[mask], self.varE_wanted) #fit a power law and determine the epsilon with the wanted energy error
-
+        plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in.png')
+        plt.close()
 
         ### let's do some checks and print warnings ###
         if steps == self.max_burn_in:
             print('Burn-in exceeded the predescribed number of iterations, loss = {0} but we aimed for 0.1'.format(loss))
-        if not success:
-            print('The determination of the step-size for sampling may be unreliable (the energy fluctuations may be more than a factor of 10 off the typical optimum).')
 
-
-        return steps + self.num_energy_points, x, u, l, g, key, L, eps, sigma
+        return steps, xx, uu, ll, gg, key, L, eps, sigma
 
 
 
-    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, remove_burn_in= True):
+    def sample(self, num_steps, num_chains, x_initial='prior', random_key= None, output = 'normal', remove_burn_in= True):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
 
@@ -353,29 +354,32 @@ class Sampler:
             x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
             return (x, u, g, key), x
 
-        X = jax.lax.scan(step, init=(x, u, g, key), xs=None, length=num_steps)[1] #do the sampling
-        X = jnp.swapaxes(X, 0, 1)
+        def step_ess(state, useless):
+            x, u, g, key = state[0]
+            x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
+            W, F2= state[1]
 
-        if remove_burn_in: #optionally remove the secondary burn-in
-            burnin2_steps = self.remove_burn_in(X)
-        else:
-            burnin2_steps = 0
+            F2 = (W * F2 + jnp.square(self.Target.transform(x))) / (W+w)
+            W += 1
+            return ((x, u, g, key), (W, F2))
 
-
-        ### return results ###
-
-        # if output == 'ess': #we return the number of sampling steps (needed for b2 < 0.1) and the number of burn-in steps
-        #     b2 = self.full_b(self.Target.transform(X[:, burnin2_steps:, :]))
-        #     # plt.plot(b2)
-        #     # plt.xlabel('# sampling steps')
-        #     # plt.ylabel('b2')
-        #     # plt.show()
-        #     no_nans = 1-jnp.any(jnp.isnan(b2))
-        #     cutoff_reached = b2[-1] < 0.1
-        #     return (find_crossing(b2, 0.1), burnin_steps + burnin2_steps) if (no_nans and cutoff_reached) else (np.inf, burnin_steps + burnin2_steps)
+        if output == 'ess':
+            state = ((x, u, g, key), (1, jnp.square(self.Target.transform(x))))
+            state = jax.lax.scan(step, init= state, xs=None, length=num_steps)[0] #do the sampling
 
 
-        return X[:, burnin2_steps:, :], burnin_steps + burnin2_steps
+
+        elif output == 'normal':
+            X = jax.lax.scan(step, init= (x, u, g, key), xs=None, length=num_steps)[1]  # do the sampling
+            X = jnp.swapaxes(X, 0, 1)
+
+            if remove_burn_in: #optionally remove the secondary burn-in
+                burnin2_steps = self.remove_burn_in(X)
+            else:
+                burnin2_steps = 0
+
+            return X[:, burnin2_steps:, :], burnin_steps + burnin2_steps
+
 
 
     def remove_burn_in(self, X):
@@ -386,14 +390,15 @@ class Sampler:
         f_avg = jnp.average(f[-num_steps // 10])
         burnin2_steps = num_steps - find_crossing(-jnp.abs(f[::-1] - f_avg) / f_avg, -0.1)
 
-        # plt.plot(f, '.-')
-        # plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
-        # plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*1.1, color = 'black', alpha= 0.3)
-        # plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*0.9, color= 'black', alpha= 0.3)
-        #
-        # plt.xlabel('steps')
-        # plt.ylabel('f')
-        # plt.show()
+        plt.plot(f, '.-')
+        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
+        plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*1.1, color = 'black', alpha= 0.3)
+        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*0.9, color= 'black', alpha= 0.3)
+
+        plt.xlabel('steps')
+        plt.ylabel('f')
+        plt.savefig('tst_ensamble/' + self.Target.name + '/secondary_burn_in.png')
+        plt.close()
 
         return burnin2_steps
 

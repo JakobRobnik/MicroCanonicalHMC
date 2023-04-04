@@ -41,6 +41,7 @@ class IllConditionedGaussian():
         """numpy_seed is used to generate a random rotation for the covariance matrix.
             If None, the covariance matrix is diagonal."""
 
+        self.name = 'ICG_easy'
         self.d = d
         self.condition_number = condition_number
         eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
@@ -107,6 +108,7 @@ class IllConditionedGaussianGamma():
     """Inference gym's Ill conditioned Gaussian"""
 
     def __init__(self, prior = 'map'):
+        self.name = 'ICG'
         self.d = 100
 
         # define the Hessian
