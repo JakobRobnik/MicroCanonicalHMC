@@ -4,8 +4,8 @@ from scipy.stats import special_ortho_group
 from jax import random
 from numpyro.infer import MCMC, NUTS
 
-import sampling.benchmark_targets_HMC as targets
-import sampling.benchmark_targets
+import HMC.benchmarks_numpyro as targets
+import sampling.benchmark_targets as MCHMC_targets
 
 import pandas as pd
 
@@ -324,8 +324,8 @@ def rosenbrock(key_num, d = 36):
 
 def stochastic_volatility(key_num):
 
-    ground_truth = False
-    posterior_band = True
+    ground_truth = True
+    posterior_band = False
     #target setup
     #variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
 
@@ -340,7 +340,7 @@ def stochastic_volatility(key_num):
     # run
     key = random.PRNGKey(key_num)
     key, prior_key = random.split(key)
-    MCHMC_target = benchmark_targets.StochasticVolatility()
+    MCHMC_target = MCHMC_targets.StochasticVolatility()
 
     x0 = MCHMC_target.transform(MCHMC_target.prior_draw(prior_key))
 
@@ -366,14 +366,21 @@ def stochastic_volatility(key_num):
     #np.savez('data/stochastic_volatility/NUTS_samples.npz', s= s, sigma = sigma, nu= nu)
 
     if ground_truth:
-        var = np.empty(len(s[0]) + 2)
-        var[:-2] = np.average(np.square(s), axis=0)
-        var[-2] = np.average(np.square(sigma))
-        var[-1] = np.average(np.square(nu))
+        second_moment = np.empty(len(s[0]) + 2)
+        var_second_moment = np.empty(len(second_moment))
 
-        np.save('data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', var)
+        # estimate the second moments
+        second_moment[:-2] = np.average(np.square(s), axis=0)
+        second_moment[-2] = np.average(np.square(sigma))
+        second_moment[-1] = np.average(np.square(nu))
 
-        #np.savez('SVsamples.npz', s= s, sigma = sigma, nu= nu)
+        #estimate the variance of the second moments
+        var_second_moment[:-2] = np.std(np.square(s), axis=0)**2
+        var_second_moment[-2] = np.std(np.square(sigma))**2
+        var_second_moment[-1] = np.std(np.square(nu))**2
+
+        np.save('data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', [second_moment, var_second_moment])
+
 
     else:
         X = np.empty((len(nu), len(s[0]) + 2))
@@ -389,6 +396,8 @@ def stochastic_volatility(key_num):
         print(ess, ess / (1 + ess* warmup_calls / 200.0))
 
         return ess, ess / (1 + ess* warmup_calls / 200.0)
+
+
 
 
 def bimodal_plot():
@@ -467,45 +476,14 @@ def dimension_scaling():
     # print(ess)
 
 
+
 if __name__ == '__main__':
-    target = targets.ill_conditioned_gaussian()
-    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)  # originally: nuts_kernel
-    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=num_samples, num_chains=1, progress_bar=False)
-
-    # prior
-    if key_num != 0:
-        key = random.PRNGKey(key_num)
-        key, prior_key = random.split(key)
-        x0 = random.normal(prior_key, shape=(d,), dtype='float64')
-
-        # run
-        sampler.run(key, *target_params, init_params=x0, extra_fields=['num_steps'])
-
-    else:
-        # run
-        sampler.run(random.PRNGKey(0), *target_params, extra_fields=['num_steps'])
-
-    # get results
-    numpyro_samples = sampler.get_samples()
-    if names_output == None:
-        X = np.array(numpyro_samples['x'])
 
 
-    # ess, ess2 = np.load('data/dimensions_dependence/HMC_rosenbrock.npy')
-    # print(ess)
-
-    #dimension_scaling()
-    #stochastic_volatility(0)
-
+    stochastic_volatility(0)
+    #
     # var = np.array([np.load('ground_truth'+str(i)+'.npy') for i in range(3)])
     # var_avg = np.average(var, axis = 0)
     # np.save('StochasticVolatility_ground_truth_moments.npy', var_avg)
     # bias = [np.sqrt(np.average(np.square((var[i, :] - var_avg) / var_avg))) for i in range(3)]
     # print(bias)
-
-    #SVplot()
-
-    #table1()
-    #dimension_dependence()
-    #ill_conditioned_scan()
-    #bimodal_plot()

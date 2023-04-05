@@ -47,9 +47,10 @@ class IllConditionedGaussian():
         eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
 
         if numpy_seed == None:  # diagonal
-            self.second_moment = eigs
+            self.second_moments = eigs
             self.R = jnp.eye(d)
             self.Hessian = jnp.diag(1 / eigs)
+            self.Cov = jnp.diag(eigs)
 
         else:  # randomly rotate
             rng = np.random.RandomState(seed=numpy_seed)
@@ -58,9 +59,14 @@ class IllConditionedGaussian():
             R, _ = jnp.array(np.linalg.qr(rng.randn(self.d, self.d)))  # random rotation
             self.R = R
             self.Hessian = R @ inv_D @ R.T
-            self.second_moment = jnp.diagonal(R @ D @ R.T)
+            self.Cov = R @ D @ R.T
+            self.second_moments = jnp.diagonal(R @ D @ R.T)
 
-        self.variance_second_moment = 2 * jnp.square(self.second_moment)
+            #Cov_precond = jnp.diag(1 / jnp.sqrt(self.second_moments)) @ self.Cov @ jnp.diag(1 / jnp.sqrt(self.second_moments))
+
+            #print(jnp.linalg.cond(Cov_precond) / jnp.linalg.cond(self.Cov))
+
+        self.variance_second_moments = 2 * jnp.square(self.second_moments)
 
 
         self.nlogp = lambda x: 0.5 * x.T @ self.Hessian @ x
@@ -72,7 +78,7 @@ class IllConditionedGaussian():
             self.prior_draw = lambda key: jnp.zeros(self.d)
 
         elif prior == 'posterior':
-            self.prior_draw = lambda key: R @ (jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.sqrt(eigs))
+            self.prior_draw = lambda key: self.R @ (jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.sqrt(eigs))
 
         else: # N(0, sigma_true_max)
             self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(jnp.sqrt(eigs))
@@ -119,8 +125,8 @@ class IllConditionedGaussianGamma():
         self.Hessian = R @ np.diag(eigs) @ R.T
 
         # analytic ground truth moments
-        self.second_moment = jnp.diagonal(R @ np.diag(1.0/eigs) @ R.T)
-        self.variance_second_moment = 2 * jnp.square(self.second_moment)
+        self.second_moments = jnp.diagonal(R @ np.diag(1.0/eigs) @ R.T)
+        self.variance_second_moments = 2 * jnp.square(self.second_moments)
 
         # gradient
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
@@ -146,17 +152,20 @@ class Banana():
     """Banana target fromm the Inference Gym"""
 
     def __init__(self, prior = 'map'):
+        self.name = 'Banana'
         self.curvature = 0.03
         self.d = 2
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
         self.transform = lambda x: x
-        self.variance = jnp.array([100.0, 19.0]) #the first is analytic the second is by drawing 10^8 samples from the generative model. Relative accuracy is around 10^-5.
-        self.variance_second_moment = jnp.array([20000.0, 4600.898])
+        self.second_moments = jnp.array([100.0, 19.0]) #the first is analytic the second is by drawing 10^8 samples from the generative model. Relative accuracy is around 10^-5.
+        self.variance_second_moments = jnp.array([20000.0, 4600.898])
 
         if prior == 'map':
             self.prior_draw = lambda key: jnp.array([0, -100.0 * self.curvature])
         elif prior == 'posterior':
             self.prior_draw = lambda key: self.posterior_draw(key)
+        elif prior == 'prior':
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.array([10.0, 5.0]) * 2
         else:
             raise ValueError('prior = '+prior +' is not defined.')
 

@@ -595,6 +595,11 @@ class Sampler:
         variances = F2 - jnp.square(F1)
         sigma2 = jnp.average(variances)
 
+        #variances = self.Target.second_moments
+        resc = jnp.diag(1.0/jnp.sqrt(variances))
+        Sigma = resc @ self.Target.Cov @ resc
+        #print(jnp.linalg.cond(Sigma) / jnp.linalg.cond(self.Target.Cov))
+
         # optionally we do the diagonal preconditioning (and readjust the stepsize)
         if self.diagonal_preconditioning:
 
@@ -611,7 +616,6 @@ class Sampler:
             #readjust the stepsize
             steps = num_steps2 // 3 #we do some small number of steps
             state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
-
 
         else:
             L = jnp.sqrt(sigma2 * self.Target.d)
