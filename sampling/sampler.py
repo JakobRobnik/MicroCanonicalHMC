@@ -15,12 +15,29 @@ class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, L = None, eps = None,
-                 integrator = 'MN', generalized= True):
+                 integrator = 'MN', varEwanted = 5e-4,
+                 diagonal_preconditioning= True,
+                 frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
         """Args:
                 Target: the target distribution class
-                L: momentum decoherence scale
-                eps: integration step-size
+
+                L: momentum decoherence scale (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting frac_tune2 and 3 to zero (see below))
+
+                eps: initial integration step-size (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting all frac_tune1 and 2 to zero (see below))
+
                 integrator: 'LF' (leapfrog) or 'MN' (minimal norm). Typically MN performs better.
+
+                varEwanted: if your posteriors are biased try smaller values (or larger values: perhaps the convergence is too slow). This is perhaps the parameter whose default value is the least well determined.
+
+                diagonal_preconditioning: if you already have your own preconditioning or if you suspect diagonal preconditioning is not useful, turn this off as it can also make matters worse
+                                          (but it can also be very useful if you did not precondition the parameters (make their posterior variances close to 1))
+
+                frac_tune1: (num_samples * frac_tune1) steps will be used as a burn-in and to autotune the stepsize
+                
+                frac_tune2: (num_samples * frac_tune2) steps will be used to autotune L (should be around 10 effective samples long for optimal performance)
+
+                frac_tune3: (num_samples * frac_tune3) steps will be used to improve the L tuning (should be around 10 effective samples long for optimal performance). This stage is not neccessary if the posterior is close to a Gaussian and does not change much in general.
+                            It can be memory intensive in high dimensions so try turning it off if you have problems with the memory.
         """
 
         self.Target = Target
@@ -45,16 +62,16 @@ class Sampler:
         self.dynamics = self.dynamics_generalized if generalized else self.dynamics_bounces
 
         ### preconditioning ###
-        self.diagonal_preconditioning = True
+        self.diagonal_preconditioning = diagonal_preconditioning
 
         ### autotuning parameters ###
 
         # length of autotuning
-        self.frac_tune1 = 0.1 # num_samples * frac_tune1 steps will be used to autotune eps
-        self.frac_tune2 = 0.1 # num_samples * frac_tune2 steps will be used to approximately autotune L
-        self.frac_tune3 = 0.1 # num_samples * frac_tune3 steps will be used to improve L tuning.
+        self.frac_tune1 = frac_tune1 # num_samples * frac_tune1 steps will be used to autotune eps
+        self.frac_tune2 = frac_tune2 # num_samples * frac_tune2 steps will be used to approximately autotune L
+        self.frac_tune3 = frac_tune3 # num_samples * frac_tune3 steps will be used to improve L tuning.
 
-        self.varEwanted = 5e-4 # 1e-3 #targeted energy variance Var[E]/d
+        self.varEwanted = varEwanted # 1e-3 #targeted energy variance Var[E]/d
         neff = 50 # effective number of steps used to determine the stepsize in the adaptive step
         self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
         self.sigma_xi= 1.5 # determines how much do we trust the stepsize predictions from the too large and too small stepsizes
@@ -283,7 +300,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', tune = True, adaptive = False):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', adaptive = False):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -307,16 +324,11 @@ class Sampler:
                         'ess': Effective Sample Size per gradient evaluation, float.
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
 
-               tune: if True, autotuning of the hyperparameters is performed before starting the sampling.
-                              The autotuning has three stages (third is optional, but does generally improve the tuning. set Sampler.frac_num3 = 0 if you want to eliminate the stage 3).
-                              The length of each stage is controlled by parameters Sampler.frac_num1, Sampler.frac_num2 and Sampler.frac_num3 which can be changed before runing Sampler.sample.
-                              The number of steps spent in stage 1 is: Sampler.frac_num1 * num_steps, where num_steps is the first parameter of this function.
-
                adaptive: use the adaptive step size for sampling. This is experimental and not well developed yet.
         """
 
         if num_chains == 1:
-            results = self.single_chain_sample(num_steps, x_initial, random_key, output, tune, adaptive) #the function which actually does the sampling
+            results = self.single_chain_sample(num_steps, x_initial, random_key, output, adaptive) #the function which actually does the sampling
             if output == 'ess':
                 cutoff_reached = results[-1] < 0.01
                 return (200.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached
@@ -374,7 +386,7 @@ class Sampler:
 
 
 
-    def single_chain_sample(self, num_steps, x_initial, random_key, output, tune, adaptive):
+    def single_chain_sample(self, num_steps, x_initial, random_key, output, adaptive):
         """sampling routine. It is called by self.sample"""
 
         ### initial conditions ###
@@ -384,7 +396,7 @@ class Sampler:
         sigma = jnp.ones(self.Target.d)  # no diagonal preconditioning
 
         ### auto-tune the hyperparameters L and eps ###
-        if tune:
+        if self.frac_tune1 + self.frac_tune2 + self.frac_tune3 != 0.0:
             L, eps, sigma, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, sigma, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
 
             if self.frac_tune3 != 0: #if we want to further improve L tuning we go to the second stage (which is a bit slower)

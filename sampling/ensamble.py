@@ -105,7 +105,6 @@ class Sampler:
 
 
 
-
     def random_unit_vector(self, random_key, num_chains):
         """Generates a random (isotropic) unit vector."""
         key, subkey = jax.random.split(random_key)
