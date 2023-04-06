@@ -4,15 +4,16 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 
-from sampling import german_credit
 from sampling.benchmark_targets import *
 from sampling.ensamble import Sampler as EnsambleSampler
-from sampling.german_credit import Target as GermanCredit
-from sampling.brownian import Target as Brownian
-from sampling.IRT import Target as IRT
+
+#from sampling.german_credit import Target as GermanCredit
+#from sampling.brownian import Target as Brownian
+#from sampling.IRT import Target as IRT
 
 
-
+num_cores = jax.local_device_count()
+print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
 def virial_loss_calibration():
     """calibration with a Gaussian"""
@@ -81,17 +82,17 @@ def benchmarks():
 
 
 def problems():
-    imoprt time
+    import time
 
 
     def problem(num):
         t0 = time.time()
 
-        num_samples = [500, 1000, 2000, 1000, 1000, 2000][num]
+        num_samples = [500, 1000, 2000][num]
         target = [Banana(prior = 'prior'),
                   IllConditionedGaussianGamma(prior = 'prior'),
-                  GermanCredit(),
-                  Brownian(),
+                  #GermanCredit(),
+                  #Brownian(),
                   StochasticVolatility()][num]
 
 
@@ -103,6 +104,6 @@ def problems():
 
         return n2 + nburn
 
-    print(problem(0))
+    print(problem(2))
 
 problems()

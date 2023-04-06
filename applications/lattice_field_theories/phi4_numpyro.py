@@ -32,7 +32,7 @@ def sample(L, lam, x0, num_samples, key, num_warmup=500, thinning=1, full=True, 
     if nuts:
         hmc_setup = NUTS(phi4_model, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
     else:
-        hmc_setup = HMC(phi4_model, num_steps = 20, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
+        hmc_setup = HMC(phi4_model, num_steps = 30, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False)
     
     sampler = MCMC(hmc_setup, num_warmup=num_warmup, num_samples=num_samples, num_chains=1,
                    progress_bar=False, thinning=thinning)
@@ -120,7 +120,7 @@ def compute_ess():
 
     #We run multiple independent chains to average ESS over them. Each of the 4 GPUs simulatanously runs repeat1 chains for each lambda
     #This is repeated sequentially repeat2 times. In total we therefore get 4 * repeat1 * repeat2 chains.
-    chains = ([60, 60, 12, 10])[index]
+    chains = ([60, 60, 12, 4])[index]
     
     lam = phi4.unreduce_lam(phi4.reduced_lam, side)
     folder = dir + '/phi4results/'+('nuts' if nuts else 'hmc')+'/ess/psd/'   
@@ -139,6 +139,7 @@ def compute_ess():
             return burn, steps, xf, b2_sq
         
         _burn, _steps, x_final, _b2_sq = jax.vmap(lambda ichain: single_chain(ichain, x_initial[ichain]))(jnp.arange(chains))
+        #_burn, _steps, x_final, _b2_sq = jax.pmap(lambda ichain: single_chain(ichain, x_initial[ichain]))(jnp.arange(chains))
         
         burn =  jnp.average(_burn) #burn in steps
         steps = jnp.average(_steps, axis=0)
@@ -167,7 +168,7 @@ def compute_ess():
         ess[i_lam], ess_with_warmup[i_lam], x = temp_level(lam[i_lam], side, chains, PSD0[i_lam], x)
     
     df = pd.DataFrame(np.array([phi4.reduced_lam, ess, ess_with_warmup]).T, columns=['reduced lam', 'ESS', 'ESS (with warmup)'])
-    df.to_csv(folder + '/La' + str(side) + '.csv')
+    df.to_csv(folder + '/LL' + str(side) + '.csv')
 
 
     
