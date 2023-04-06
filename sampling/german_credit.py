@@ -15,12 +15,12 @@ from numpyro.infer import MCMC, NUTS
 
 import HMC.benchmarks_numpyro as targets
 import sampling.benchmark_targets as MCHMC_targets
+from HMC.mchmc_to_numpyro import mchmc_target_to_numpyro
+from NUTS import sample_nuts
 
-
-#to get ground truth, run the following from the source directory of inference-gym:
-#python -m inference_gym.tools.get_ground_truth --target= GermanCreditNumericSparseLogisticRegression
 
 target = gym.targets.GermanCreditNumericSparseLogisticRegression()
+name = 'german_credit'
 
 target = gym.targets.VectorModel(target, flatten_sample_transformations=True)
 
@@ -67,90 +67,36 @@ class Target():
 
     def __init__(self):
         self.d = 51
-        identity_fn = target.sample_transformations['identity']
-        self.variance = jnp.square(identity_fn.ground_truth_standard_deviation) + jnp.square(identity_fn.ground_truth_mean) #in the transformed coordinates
+        self.name = name
+
+        data = np.load('data/'+name+'/ground_truth.npy')
+        self.second_moments, self.variance_second_moments = data[0], data[1]
 
         xmap = map_solution()
         self.transform = lambda x: target.default_event_space_bijector(x + xmap)
         self.nlogp = lambda x: target_nlog_prob_fn(x + xmap)
         self.grad_nlogp = lambda x: (target_nlog_prob_fn(x + xmap), target_nlog_prob_grad_fn(x + xmap))
 
-    # def prior_draw(self, key):
-    #     return jnp.zeros(self.d)
 
     def prior_draw(self, key):
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 0.5
 
 
 
+
 def ground_truth(key_num):
+    key = jax.random.PRNGKey(key_num)
+    mchmc_target = Target()
+    numpyro_target = mchmc_target_to_numpyro(Target)
+    samples, steps, steps_warmup = sample_nuts(numpyro_target, mchmc_target, None, 10000, 10000, 20, random_key=key, progress_bar= True)
 
-    # setup
-    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
+    z = np.array(samples['x'])
+    x = jax.vmap(mchmc_target.transform)(z)
 
-    sampler = MCMC(nuts_setup, num_warmup= 10000, num_samples= 10000 * 10, num_chains= 1, progress_bar= True, thinning=10) #will return num_samples / thinning
+    second_moments = jnp.average(jnp.square(x), axis = 0)
+    variance_second_moments = jnp.std(jnp.square(x), axis = 0)**2
 
-    # run
-    key = random.PRNGKey(key_num)
-    key, prior_key = random.split(key)
-    MCHMC_target = Target()
-
-    x0 = MCHMC_target.transform(MCHMC_target.prior_draw(prior_key))
-
-
-    #run
-    sampler.warmup(key, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
-    warmup_calls = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
-    sampler.run(key, extra_fields=['num_steps'])
-
-    # get results
-    numpyro_samples = sampler.get_samples()
-
-    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
-
-    s= np.array(numpyro_samples['s'])
-    sigma= np.array(numpyro_samples['sigma'])
-    nu= np.array(numpyro_samples['nu'])
-
-    if posterior_band:
-        volatility = np.sort(np.exp(s), axis=0)
-        np.save('data/stochastic_volatility/NUTS_posterior_band.npy', [volatility[len(volatility) // 4, :], volatility[len(volatility) // 2, :], volatility[3 * len(volatility) // 4, :]])
-
-    #np.savez('data/stochastic_volatility/NUTS_samples.npz', s= s, sigma = sigma, nu= nu)
-
-    if ground_truth:
-        second_moment = np.empty(len(s[0]) + 2)
-        var_second_moment = np.empty(len(second_moment))
-
-        # estimate the second moments
-        second_moment[:-2] = np.average(np.square(s), axis=0)
-        second_moment[-2] = np.average(np.square(sigma))
-        second_moment[-1] = np.average(np.square(nu))
-
-        #estimate the variance of the second moments
-        var_second_moment[:-2] = np.std(np.square(s), axis=0)**2
-        var_second_moment[-2] = np.std(np.square(sigma))**2
-        var_second_moment[-1] = np.std(np.square(nu))**2
-
-        np.save('data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', [second_moment, var_second_moment])
-
-
-    else:
-        X = np.empty((len(nu), len(s[0]) + 2))
-        X[:, :-2] = s
-        X[:, -2] = sigma
-        X[:, -1] = nu
-
-        variance_true = np.load('data/stochastic_volatility/ground_truth_moments.npy')
-
-        B = bias(X, np.ones(len(X)), variance_true)
-
-        ess, n_crossing = ess_cutoff_crossing(B, steps)
-        print(ess, ess / (1 + ess* warmup_calls / 200.0))
-
-        return ess, ess / (1 + ess* warmup_calls / 200.0)
-
-
+    np.save('../data/'+name+'/ground_truth_'+str(key_num) +'.npy', [second_moments, variance_second_moments])
 
 
 
@@ -185,6 +131,18 @@ def richard_results():
     print('ESS = {0}, ESS (with tunning) = {1}'.format(np.average(ess), np.average(ess_with_tunning)))
 
 
+
 if __name__ == '__main__':
 
-    richard_results()
+    #ground_truth(2)
+
+    data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
+
+    truth = np.median(data, axis = 0)
+    np.save('../data/'+name+'/ground_truth.npy', truth)
+
+    for i in range(3):
+        bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
+        print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
+
+

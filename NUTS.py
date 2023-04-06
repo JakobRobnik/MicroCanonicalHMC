@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.stats import special_ortho_group
 
-from jax import random
+import jax
 from numpyro.infer import MCMC, NUTS
 
 import HMC.benchmarks_numpyro as targets
@@ -42,37 +42,36 @@ def ess_cutoff_crossing(b, step_cost):
 
 
 
-def sample_nuts(target, target_params, num_samples, key_num = 0, d= 1, names_output = None):
+def sample_nuts(target, mchmc_target, target_params, num_samples, num_warmup, thinning, random_key=None, progress_bar= False):
     """ 'default' nuts, tunes the step size with a prerun"""
 
-    # setup
-    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=True, dense_mass= False)  # originally: nuts_kernel
-    sampler = MCMC(nuts_setup, num_warmup=500, num_samples=num_samples, num_chains=1, progress_bar=False)
-
-    # prior
-    if key_num != 0:
-        key = random.PRNGKey(key_num)
-        key, prior_key = random.split(key)
-        x0 = random.normal(prior_key, shape=(d,), dtype='float64')
-
-        # run
-        sampler.run(key, *target_params, init_params=x0, extra_fields=['num_steps'])
-
+    if random_key is None:
+        key = jax.random.PRNGKey(0)
     else:
-        # run
-        sampler.run(random.PRNGKey(0), *target_params, extra_fields=['num_steps'])
+        key = random_key
+
+    # setup
+    key_sampling, key_warmup, key_prior = jax.random.split(key, 3)
+    nuts_setup = NUTS(target, adapt_step_size=True, adapt_mass_matrix=True, dense_mass= False)  # originally: nuts_kernel
+    sampler = MCMC(nuts_setup, num_warmup= num_warmup, num_samples=num_samples * thinning, num_chains=1, thinning= thinning, progress_bar= progress_bar)
+
+    #initial condition
+    x0 = mchmc_target.transform(mchmc_target.prior_draw(key_prior))
+
+    #run
+    sampler.warmup(key_warmup, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
+    warmup_steps = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
+    if target_params == None:
+        sampler.run(key_sampling, extra_fields=['num_steps'])
+    else:
+        sampler.run(key_sampling, *target_params, extra_fields=['num_steps'])
 
     # get results
     numpyro_samples = sampler.get_samples()
-    if names_output == None:
-        X = np.array(numpyro_samples['x'])
-
-    else:
-        X = {name: np.array(numpyro_samples[name]) for name in names_output}
 
     steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
 
-    return X, steps
+    return numpyro_samples, steps, warmup_steps
 
 
 
@@ -288,29 +287,10 @@ def rosenbrock(key_num, d = 36):
 
     variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
 
-    # setup
-    nuts_setup = NUTS(targets.rosenbrock, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
-    sampler = MCMC(nuts_setup, num_warmup= 1000, num_samples= 10000, num_chains= 1, progress_bar= True)
-
-    # run
-    key = random.PRNGKey(key_num)
-    key, prior_key = random.split(key)
-    x0 = random.normal(prior_key, shape = (d, ), dtype = 'float64')
-
-    #run
-    sampler.warmup(key, d, Q, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
-    warmup_calls = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
-    sampler.run(key, d, Q, extra_fields=['num_steps'])
-
-    # get results
-    numpyro_samples = sampler.get_samples()
-
-    #X = {name:  for name in ['x', 'y']}
-
-    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
+    samples, steps, warmup_calls = sample_nuts(targets.rosenbrock, MCHMC_targets.Rosenbrock(), (d, Q), 10000, 1000, 1)
 
 
-    X = np.concatenate((np.array(numpyro_samples['x']).T, np.array(numpyro_samples['y']).T)).T
+    X = np.concatenate((np.array(samples['x']).T, np.array(samples['y']).T)).T
 
     B = bias(X, np.ones(len(X)), variance_true)
 
@@ -318,113 +298,60 @@ def rosenbrock(key_num, d = 36):
 
     return ess, ess / (1 + ess* warmup_calls / 200.0)
 
-    #np.savez('data/rosenbrock_HMC', x = np.array(numpyro_samples['x']), y = np.array(numpyro_samples['y']), steps= steps)
 
 
+def stochastic_volatility_ground_truth(key_num):
 
-def stochastic_volatility(key_num):
+    samples, steps, warmup_calls = sample_nuts(targets.StochasticVolatility, MCHMC_targets.StochasticVolatility(), None, 10000, 10000, 50)
 
-    ground_truth = True
-    posterior_band = False
-    #target setup
-    #variance_true = np.concatenate((var_x * np.ones(d // 2), var_y * np.ones(d // 2)))
+    s= np.array(samples['s'])
+    sigma= np.array(samples['sigma'])
+    nu= np.array(samples['nu'])
 
-    # setup
-    nuts_setup = NUTS(targets.StochasticVolatility, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
+    second_moment = np.empty(len(s[0]) + 2)
+    var_second_moment = np.empty(len(second_moment))
 
-    if ground_truth:
-        sampler = MCMC(nuts_setup, num_warmup= 10000, num_samples= 10000 * 50, num_chains= 1, progress_bar= True, thinning=50) #will return num_samples / thinning
-    else:
-        sampler = MCMC(nuts_setup, num_warmup=500, num_samples=10000, num_chains=1, progress_bar=True)
+    # estimate the second moments
+    second_moment[:-2] = np.average(np.square(s), axis=0)
+    second_moment[-2] = np.average(np.square(sigma))
+    second_moment[-1] = np.average(np.square(nu))
 
-    # run
-    key = random.PRNGKey(key_num)
-    key, prior_key = random.split(key)
-    MCHMC_target = MCHMC_targets.StochasticVolatility()
+    #estimate the variance of the second moments
+    var_second_moment[:-2] = np.std(np.square(s), axis=0)**2
+    var_second_moment[-2] = np.std(np.square(sigma))**2
+    var_second_moment[-1] = np.std(np.square(nu))**2
 
-    x0 = MCHMC_target.transform(MCHMC_target.prior_draw(prior_key))
+    np.save('data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', [second_moment, var_second_moment])
 
-
-    #run
-    sampler.warmup(key, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)
-    warmup_calls = np.sum(np.array(sampler.get_extra_fields()['num_steps'], dtype=int))
-    sampler.run(key, extra_fields=['num_steps'])
-
-    # get results
-    numpyro_samples = sampler.get_samples()
-
-    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
-
-    s= np.array(numpyro_samples['s'])
-    sigma= np.array(numpyro_samples['sigma'])
-    nu= np.array(numpyro_samples['nu'])
-
-    if posterior_band:
-        volatility = np.sort(np.exp(s), axis=0)
-        np.save('data/stochastic_volatility/NUTS_posterior_band.npy', [volatility[len(volatility) // 4, :], volatility[len(volatility) // 2, :], volatility[3 * len(volatility) // 4, :]])
-
-    #np.savez('data/stochastic_volatility/NUTS_samples.npz', s= s, sigma = sigma, nu= nu)
-
-    if ground_truth:
-        second_moment = np.empty(len(s[0]) + 2)
-        var_second_moment = np.empty(len(second_moment))
-
-        # estimate the second moments
-        second_moment[:-2] = np.average(np.square(s), axis=0)
-        second_moment[-2] = np.average(np.square(sigma))
-        second_moment[-1] = np.average(np.square(nu))
-
-        #estimate the variance of the second moments
-        var_second_moment[:-2] = np.std(np.square(s), axis=0)**2
-        var_second_moment[-2] = np.std(np.square(sigma))**2
-        var_second_moment[-1] = np.std(np.square(nu))**2
-
-        np.save('data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', [second_moment, var_second_moment])
-
-
-    else:
-        X = np.empty((len(nu), len(s[0]) + 2))
-        X[:, :-2] = s
-        X[:, -2] = sigma
-        X[:, -1] = nu
-
-        variance_true = np.load('data/stochastic_volatility/ground_truth_moments.npy')
-
-        B = bias(X, np.ones(len(X)), variance_true)
-
-        ess, n_crossing = ess_cutoff_crossing(B, steps)
-        print(ess, ess / (1 + ess* warmup_calls / 200.0))
-
-        return ess, ess / (1 + ess* warmup_calls / 200.0)
+    # volatility = np.sort(np.exp(s), axis=0)
+    # np.save('data/stochastic_volatility/NUTS_posterior_band.npy', [volatility[len(volatility) // 4, :], volatility[len(volatility) // 2, :], volatility[3 * len(volatility) // 4, :]])
 
 
 
 
-def bimodal_plot():
+def stochastic_volatility_ess():
 
-    #target setup
-    d= 50
-    thinning = 100
-    # setup
-    nuts_setup = NUTS(targets.bimodal_hard, adapt_step_size=True, adapt_mass_matrix=True)#, step_size= stepsize)
-    sampler = MCMC(nuts_setup, num_warmup= 1000, num_samples= 2143000, thinning = thinning, num_chains= 1, progress_bar= True)
+    samples, steps, warmup_calls = sample_nuts(targets.StochasticVolatility, MCHMC_targets.StochasticVolatility(), None, 10000, 500, 1)
 
-    # run
-    key = random.PRNGKey(0)
-    key, subkey = random.split(key)
-    x0 = random.normal(subkey, shape = (d, ), dtype = 'float64')
-    sampler.run(key, init_params= x0, extra_fields=['num_steps'])
+    s= np.array(samples['s'])
+    sigma= np.array(samples['sigma'])
+    nu= np.array(samples['nu'])
 
-    # get results
-    X = np.array(sampler.get_samples()['x'])
+    X = np.empty((len(nu), len(s[0]) + 2))
+    X[:, :-2] = s
+    X[:, -2] = sigma
+    X[:, -1] = nu
 
-    steps = np.array(sampler.get_extra_fields()['num_steps'], dtype=int)
-    print(len(steps))
-    np.savez('data/bimodal_marginal/NUTS_hard.npz', x0 = X[:, 0], steps= np.cumsum(steps) * thinning)
-    print(np.cumsum(steps))
-    import matplotlib.pyplot as plt
-    plt.hist(X[:, 0], bins = 30, density=True)
-    plt.show()
+    variance_true = np.load('data/stochastic_volatility/ground_truth_moments.npy')
+
+    B = bias(X, np.ones(len(X)), variance_true)
+
+    ess, n_crossing = ess_cutoff_crossing(B, steps)
+    print(ess, ess / (1 + ess* warmup_calls / 200.0))
+
+    return ess, ess / (1 + ess* warmup_calls / 200.0)
+
+
 
 
 def table1():
@@ -480,7 +407,8 @@ def dimension_scaling():
 if __name__ == '__main__':
 
 
-    stochastic_volatility(0)
+    stochastic_volatility(1)
+
     #
     # var = np.array([np.load('ground_truth'+str(i)+'.npy') for i in range(3)])
     # var_avg = np.average(var, axis = 0)

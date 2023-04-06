@@ -171,16 +171,33 @@ class Banana():
 
     def nlogp(self, x):
         mu2 = self.curvature * (x[0] ** 2 - 100)
-        return 0.5 * (jnp.square(x[0] / 10.0)**2 + jnp.square(x[1] - mu2))
+        return 0.5 * (jnp.square(x[0] / 10.0) + jnp.square(x[1] - mu2))
 
     def posterior_draw(self, key):
         z = jax.random.normal(key, shape = (2, ), dtype = 'float64')
-        x1 = 10.0 * z[0]
-        x2 = self.curvature * (x1 ** 2 - 100) + z[1]
-        return jnp.array([x1, x2])
+        x0 = 10.0 * z[0]
+        x1 = self.curvature * (x0 ** 2 - 100) + z[1]
+        return jnp.array([x0, x1])
 
+    def ground_truth(self):
+        x = jax.vmap(self.posterior_draw)(jax.random.split(jax.random.PRNGKey(0), 100000000))
+        print(jnp.average(x, axis=0))
+        print(jnp.average(jnp.square(x), axis=0))
+        print(jnp.std(jnp.square(x[:, 0])) ** 2, jnp.std(jnp.square(x[:, 1])) ** 2)
 
+    def plott(self):
+        xmin, xmax = -20.0, 20.0
+        ymin, ymax = -10.0, 10.0
+        X, Y, Z = get_contour_plot(self, jnp.linspace(xmin, xmax, 100), jnp.linspace(ymin, ymax, 100))
 
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 5))
+        plt.contourf(X, Y, jnp.exp(-Z))
+
+        x = np.linspace(xmin, xmax, 100)
+        plt.plot(x, 0.03 * (x ** 2 - 100), color='tab:red')
+        plt.savefig('../tst_ensamble/Banana/banana.png')
+        plt.show()
 
 
 class HardConvex():
@@ -447,11 +464,14 @@ class StochasticVolatility():
         _, fetch = load_dataset(SP500, shuffle=False)
         SP500_dates, self.SP500_returns = fetch()
 
+        self.name = 'SV'
         self.d = 2429
 
         self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
 
-        self.variance = np.load('data/stochastic_volatility/ground_truth_moments.npy')
+        data = np.load('data/stochastic_volatility/ground_truth0.npy')
+        self.second_moments = data[0]
+        self.variance_second_moments = data[1]
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
 
@@ -566,27 +586,8 @@ def check_gradient(target, x):
 
 
 
-def plott():
-    xmin, xmax = -20.0, 20.0
-    ymin, ymax = -10.0, 10.0
-    X, Y, Z = get_contour_plot(Banana(), jnp.linspace(xmin, xmax, 100), jnp.linspace(ymin, ymax, 100))
-
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(10, 5))
-    plt.contourf(X, Y, jnp.exp(-Z))
-
-    x = np.linspace(xmin, xmax, 100)
-    plt.plot(x, 0.03 * (x ** 2 - 100), color='tab:red')
-    plt.savefig('banana.png')
-    plt.show()
-
 
 if __name__ == '__main__':
 
     target = Banana()
-
-    x = jax.vmap(target.prior_draw)(jax.random.split(jax.random.PRNGKey(0), 100000000))
-    print(x.shape)
-    print(jnp.average(jnp.square(x), axis = 0))
-
-    print(jnp.std(jnp.square(x[:, 0]))**2, jnp.std(jnp.square(x[:, 1]))**2)
+    target.ground_truth()

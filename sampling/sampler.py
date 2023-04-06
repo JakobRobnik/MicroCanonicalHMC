@@ -331,7 +331,7 @@ class Sampler:
             results = self.single_chain_sample(num_steps, x_initial, random_key, output, adaptive) #the function which actually does the sampling
             if output == 'ess':
                 cutoff_reached = results[-1] < 0.01
-                return (200.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached
+                return (100.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached
             else:
                 return results
         else:
@@ -354,19 +354,22 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, tune, adaptive)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, adaptive)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
                 if output == 'ess' or output == 'ess funnel':
                     bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
-                    # import matplotlib.pyplot as plt
-                    # plt.plot(jnp.sqrt(bsq))
-                    # plt.yscale('log')
-                    # plt.show()
+
+                    import matplotlib.pyplot as plt
+                    plt.plot(jnp.sqrt(bsq))
+                    plt.plot([0, len(bsq)], np.ones(2) * 0.1, '--', color = 'black', alpha= 0.5)
+                    plt.yscale('log')
+                    plt.show()
+
                     cutoff_reached = bsq[-1] < 0.01
-                    return (200.0 / (find_crossing(bsq, 0.01) *self.grad_evals_per_step) ) * cutoff_reached
+                    return (100.0 / (find_crossing(bsq, 0.01) *self.grad_evals_per_step) ) * cutoff_reached
 
                 ### reshape results ###
                 if type(results) is tuple: #each chain returned a tuple
@@ -492,9 +495,10 @@ class Sampler:
         
             F2 = (W * F2 + jnp.square(self.Target.transform(x))) / (W + 1)  # Update <f(x)> with a Kalman filter
             W += 1
-            bias = jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance))
-            # bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
-        
+            bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
+            bias = jnp.average(bias_d)
+            #bias = jnp.max(bias_d)
+
             return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 
         
@@ -606,6 +610,8 @@ class Sampler:
         F1, F2 = state[1][1], state[1][2]
         variances = F2 - jnp.square(F1)
         sigma2 = jnp.average(variances)
+        # print(F1)
+        # print(F2 / self.Target.second_moments)
 
         #variances = self.Target.second_moments
         #resc = jnp.diag(1.0/jnp.sqrt(variances))
@@ -678,12 +684,6 @@ def find_crossing(array, cutoff):
 
     return state[0]
     #return jnp.sum(track) #total number of indices for which array[m] < cutoff
-
-
-
-def ess_cutoff_crossing(bias):
-
-    return 200.0 / find_crossing(bias, 0.1)
 
 
 
