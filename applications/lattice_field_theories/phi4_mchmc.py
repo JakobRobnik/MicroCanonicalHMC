@@ -37,43 +37,77 @@ def load_data(index):
 
 
 
-def sample_chi(lamb, side, num_samples, chains, x):
+# def sample_chi(lamb, side, num_samples, chains, x):
+    
+#     target = phi4.Theory(side, lamb)
+#     target.transform = lambda x: x
+#     sampler = Sampler(target, 0.6 * jnp.sqrt(target.d), 0.3 * jnp.sqrt(target.d))
+#     sampler.varEwanted = 1e-2 #targeted energy variance Var[E]/d
+
+#     phi = sampler.sample(num_samples, chains, random_key = jax.random.PRNGKey(11), x_initial= x, tune = True, output = 'normal')
+#     phibar = jnp.average(phi, axis = -1)[len(phibar)//3, :]
+#     chi = jax.vmap(target.susceptibility2)(phibar)
+#     chi_reduced = phi4.reduce_chi(chi, side)
+
+#     return phi[:, -1, :], chi_reduced
+
+
+def sample_chi_2(lamb, side, num_samples, chains):
     
     target = phi4.Theory(side, lamb)
-    sampler = Sampler(target, 0.6 * jnp.sqrt(target.d), 0.3 * jnp.sqrt(target.d))
-    sampler.varEwanted = 5e-3 #targeted energy variance Var[E]/d
+    sampler = Sampler(target, 0.6 * jnp.sqrt(target.d), 0.02 * jnp.sqrt(target.d))
+    sampler.varEwanted = 1e-2 #targeted energy variance Var[E]/d
 
-    phibar = sampler.sample(num_samples, chains, x_initial= x, tune = tune, output = 'normal')
+    phibar = sampler.sample(num_samples, chains, random_key = jax.random.PRNGKey(0), tune = False, output = 'normal')[:, num_samples//4:, 0]
+    chi = jax.vmap(target.susceptibility2)(phibar)
+    chi_reduced = phi4.reduce_chi(chi, side)
+
+    return chi_reduced
                       
-    chi = phi4.reduce_chi(target.susceptibility2(phibar), side)
+# def ground_truth():
     
-    return sampler.x_final, chi
+#     index = 2
 
+#     side = ([8, 16, 32, 64])[index]
+#     lam = phi4.unreduce_lam(phi4.reduced_lam, side)
+    
+#     chains = ([12, 12, 4, 12])[index]
+#     num_samples= ([50000, 50000, 200000, 50000])[index]
 
-                      
+#     data = np.empty((16, chains))
+    
+#     #draw from the prior
+#     x = jax.vmap(phi4.Theory(side, lam[15]).prior_draw)(jax.random.split(jax.random.PRNGKey(42), chains))
+    
+#     #do the high temperature (like a burn-in)
+#     x = sample_chi(lam[15], side, num_samples, chains, x)[0] 
+    
+#     #annealing: use the final state as an initial state at the next temperature level (temperature = lambda)
+#     for i_lam in range(15, -1, -1):
+#         x, data[i_lam] = sample_chi(lam[i_lam], side, num_samples, chains, x)
+     
+#     np.save(dir+'/phi4results/mchmc/ground_truth/chi/L'+str(side)+'.npy', data)
+
+                          
 def ground_truth():
     
-    index = 0
+    index = 3
 
     side = ([8, 16, 32, 64])[index]
-    lam = phi4.unreduce_lam(phi4.reduced_lam, side)   
+    lam = phi4.unreduce_lam(phi4.reduced_lam, side)
     
-    chains = ([12, 12, 4, 4])[index]
-    num_samples= ([50000, 50000, 50000, 50000])[index]
+    chains = ([12, 12, 12, 12])[index]
+    num_samples= ([2000000, 2000000, 2000000, 8000000])[index]
 
-    data = np.empty(16)
+    data = np.empty((16, chains))
     
     #draw from the prior
-    x = jax.vmap(phi4.Theory(side, lam[15]).prior_draw)(jax.random.split(jax.random.PRNGKey(123), chains))
     
     #do the high temperature (like a burn-in)
-    x = sample(lam[15], side, num_samples, chains, x)[0] 
+    data = jax.vmap(lambda lamb: sample_chi_2(lamb, side, num_samples, chains))(lam)
     
-    #annealing: use the final state as an initial state at the next temperature level (temperature = lambda)
-    for i_lam in range(15, -1, -1):
-        x, data[i_lam] = sample(lam[i_lam], side, integrator, num_samples, chains, x)
      
-    np.save(dir+'/phi4results/mchmc/ground_truth/chi/L'+str(side)+'.npy', data)
+    np.save(dir+'/phi4results/mchmc/ground_truth/chi/LL'+str(side)+'.npy', data)
 
                       
                       
