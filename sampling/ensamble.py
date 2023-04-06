@@ -246,25 +246,26 @@ class Sampler:
 
             #will we accept the step?
             accept, loss, x, u, l, g, varE = accept_reject_step(loss_history[0], x, u, l, g, varE, loss, xx, uu, ll, gg, varE_new)
-            Ls.append(loss)
-            acc.append(accept)
-            vars.append(varE)
+            loss_arr.append(loss)
+            vare_arr.append(varE)
 
             loss_history_new = jnp.concatenate((jnp.ones(1) * loss, loss_history[:-1]))
 
-            sigma = jnp.std(x, axis=0)  # diagonal conditioner
-            sigma_ratio = 1.0#jnp.sqrt(jnp.average(jnp.square(sigma)) / sigma2)
-            factor = (self.lamb * jnp.power(loss, 0.25) * jnp.power(varE, -1./6.) * sigma_ratio) * accept + (1-accept) * 0.5
-            eps *= factor
+            sigma_new = jnp.std(x, axis=0)  # diagonal conditioner
 
-            epss.append(eps)
+            sigma_ratio = jnp.sqrt(jnp.average(jnp.square(sigma_new) / jnp.average(jnp.square(sigma))))
 
-            return steps + 1, loss_history_new, x, u, l, g, key, L, eps, sigma, varE
+            eps *= ((self.lamb * jnp.power(loss, 0.25) * jnp.power(varE, -1./6.) * sigma_ratio) * accept + (1-accept) * 0.5)
 
-        Ls = []
-        epss = []
-        acc = []
-        vars = []
+            eps_arr.append(eps)
+
+            return steps + 1, loss_history_new, x, u, l, g, key, L, eps, sigma_new, varE
+
+        loss_arr = []
+        eps_arr = []
+        vare_arr = []
+        #L_arr = []
+
 
         condition = lambda state: (self.loss_wanted < state[1][0]) * (state[0] < self.max_burn_in) * (jnp.log10(state[1][-1]/state[1][0]) / self.delay_check > self.required_decrease) # true during the burn-in
 
@@ -272,20 +273,18 @@ class Sampler:
         steps, loss_history, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, state)
         #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, (0, loss0, 0, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
         eps = eps * jnp.power(self.varEwanted / varE, 1./6.)
-        mask = np.array(acc, dtype = bool)
-        n1 = np.arange(len(Ls))
-        plt.plot(n1, Ls, 'o-', label = 'loss', color = 'tab:blue', alpha = 0.5)
+        n1 = np.arange(len(loss_arr))
+        plt.plot(n1, loss_arr, '.-', color = 'black', label = 'loss')
+        #plt.plot(n1, L_arr, '.-', color = 'tab:blue', label = 'L')
+        plt.plot(n1, eps_arr, '.-', color='tab:orange', label = 'eps')
+        plt.plot(np.ones(1) * len(loss_arr), jnp.ones(1) * eps, 'o', color = 'tab:red')
 
-        plt.plot(n1[mask], np.array(epss)[mask], 'o', label = 'epsilon', color = 'tab:orange', alpha = 1.0)
-        plt.plot(n1, epss, 'o', label='epsilon', color='tab:orange', alpha=0.5)
-        plt.plot(np.ones(1) * len(Ls), jnp.ones(1) * eps, 'o', color = 'tab:red')
-
-        plt.plot(n1, vars)
+        plt.plot(n1, vare_arr, '.-', color = 'magenta', label = 'Var[E]/d')
 
         plt.yscale('log')
         plt.xlabel('burn-in steps')
         plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in.png')
-        plt.show()
+        plt.close()
 
         return steps, x, u, l, g, key, L, eps, sigma
 
@@ -343,7 +342,7 @@ class Sampler:
             plt.plot(bias_max, '.-', color='tab:red', label = 'max')
             plt.yscale('log')
             plt.savefig('tst_ensamble/' + self.Target.name + '/bias.png')
-            plt.show()
+            plt.close()
 
             num_avg = find_crossing(bias_avg, 0.01)
             num_max = find_crossing(bias_max, 0.01)
