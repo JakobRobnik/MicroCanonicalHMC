@@ -84,24 +84,18 @@ class Sampler:
             self.Target = vmap_target(Target)
 
         self.L = jnp.sqrt(self.Target.d) * alpha
-        self.varE_wanted = varE_wanted
+        self.varEwanted = 1e-4
+        self.lamb = jnp.power(self.varEwanted, 1./6.) / jnp.power(2 * 0.1, 0.25)
 
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
 
         self.isotropic_u0 = False
 
         ### Hyperparameters of the burn in. The value of those parameters typically will not have large impact on the performance ###
-        ### Can be changed after initializing the Sampler class. Example: ###
-        # sampler = Sampler(target)
-        # sampler.max_burn_in = 400
-        # samples = sampler.sample(1000, 300)
 
         self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
-        self.max_burn_in = 200                        # we will not take more steps
-        self.max_fail = 6                             # if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
-        self.loss_wanted = 0.1                        # if the virial loss is lower, we stop the initial stage of burn-in
-        self.increase, self.reduce = 2.0, 0.5         # if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
-        self.num_energy_points = 5                    # how many points will we use to determine Var[E] (epsilon)  dependence.
+        self.max_burn_in = 1000                       # we will not take more steps
+        self.loss_wanted = 0.2                        # if the virial loss is lower, we stop the initial stage of burn-in
 
 
 
@@ -225,7 +219,7 @@ class Sampler:
             """if there are nans or the loss went up we don't want to update the state"""
 
             no_nans = jnp.all(jnp.isfinite(xx))
-            tru = (loss_new < loss) * no_nans  # loss went down and there were no nans
+            tru = no_nans  # loss went down and there were no nans
             false = (1 - tru)
             Loss = loss_new * tru + loss * false
             X = jnp.nan_to_num(xx) * tru + x * false
@@ -239,8 +233,8 @@ class Sampler:
         def burn_in_step(state):
             """one step of the burn-in"""
 
-            steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = state
-            sigma = jnp.std(x, axis=0)  # diagonal conditioner
+            steps, loss, x, u, l, g, key, L, eps, sigma, varE = state
+            sigma2 = jnp.average(jnp.square(sigma))
 
             xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
 
@@ -251,61 +245,40 @@ class Sampler:
             #will we accept the step?
             accept, loss, x, u, l, g, varE = accept_reject_step(loss, x, u, l, g, varE, loss_new, xx, uu, ll, gg, varE_new)
             Ls.append(loss)
-            #X.append(x)
-            never_rejected *= accept #True if no step has been rejected so far
-            fail_count = (fail_count + 1) * (1-accept) #how many rejected steps did we have in a row
+            acc.append(accept)
+            sigma = jnp.std(x, axis=0)  # diagonal conditioner
+            sigma_ratio = jnp.sqrt(jnp.average(jnp.square(sigma)) / sigma2)
+            factor = (self.lamb * jnp.power(loss, 0.25) * jnp.power(varE, -1./6.) * sigma_ratio) * accept + (1-accept) * 0.5
+            eps *= factor
 
-                            #reduce eps if rejected    #increase eps if never rejected        #keep the same
-            eps = eps * ((1-accept) * self.reduce + accept * (never_rejected * self.increase + (1-never_rejected) * 1.0))
             epss.append(eps)
 
-            return steps + 1, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE
+            return steps + 1, loss, x, u, l, g, key, L, eps, sigma, varE
 
         Ls = []
         epss = []
-        #X = []
+        acc = []
 
-        condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * (state[2] < self.max_fail)  # true during the burn-in
+        condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in)  # true during the burn-in
 
-        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, (0, loss0, 0, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
+        steps, loss, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, (0, loss0, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
         #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, (0, loss0, 0, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
-
-        #print(sigma / jnp.sqrt(self.Target.second_moments))
-        ### determine the epsilon for sampling ###
-        eps = eps * (1.0/self.reduce)**fail_count #the epsilon before the row of failures, we will take this as a baseline
-
-        Ls2 = []
-        eps2 = []
-
-        for i in range(20):
-            lold = l
-            x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
-            vare = jnp.average(jnp.square(kinetic_change + l - lold)) / self.Target.d
-            eps = jnp.power(self.varE_wanted / vare, 1.0 / 6.0) * eps
-
-            Ls2.append(self.virial_loss(x, g))
-            eps2.append(eps)
-
+        eps = eps * jnp.power(self.varEwanted / varE, 1./6.)
 
         n1 = np.arange(len(Ls))
-        n2 = np.arange(len(Ls), len(Ls) + len(Ls2))
         plt.plot(n1, Ls, 'o-', label = 'loss', color = 'tab:blue', alpha = 0.5)
-        plt.plot(n1, epss, 'o', label = 'epsilon', color = 'tab:red', alpha = 0.5)
+        plt.plot(n1, epss, 'o', label = 'epsilon', color = 'tab:orange', alpha = 0.5)
+        plt.plot(np.ones(1) * len(Ls), jnp.ones(1) * eps, 'o', color = 'tab:red')
 
-        plt.plot(n2, Ls2, 's-',  color = 'tab:blue')
-        plt.plot(n2, eps2, 's',  color = 'tab:red')
-        plt.legend()
+        plt.plot(n1, 1 + np.array(acc))
+
         plt.yscale('log')
         plt.xlabel('burn-in steps')
         plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in.png')
-        plt.close()
+        plt.show()
 
 
-        ### let's do some checks and print warnings ###
-        if steps == self.max_burn_in:
-            print('Burn-in exceeded the predescribed number of iterations, loss = {0} but we aimed for 0.1'.format(loss))
-
-        return steps + self.num_energy_points, x, u, l, g, key, L, eps, sigma
+        return steps, x, u, l, g, key, L, eps, sigma
 
 
 

@@ -33,10 +33,10 @@ class Sampler:
                                           (but it can also be very useful if you did not precondition the parameters (make their posterior variances close to 1))
 
                 frac_tune1: (num_samples * frac_tune1) steps will be used as a burn-in and to autotune the stepsize
-                
-                frac_tune2: (num_samples * frac_tune2) steps will be used to autotune L (should be around 10 effective samples long for optimal performance)
 
-                frac_tune3: (num_samples * frac_tune3) steps will be used to improve the L tuning (should be around 10 effective samples long for optimal performance). This stage is not neccessary if the posterior is close to a Gaussian and does not change much in general.
+                frac_tune2: (num_samples * frac_tune2) steps will be used to autotune L (should be around 10 effective samples long for the optimal performance)
+
+                frac_tune3: (num_samples * frac_tune3) steps will be used to improve the L tuning (should be around 10 effective samples long for the optimal performance). This stage is not neccessary if the posterior is close to a Gaussian and does not change much in general.
                             It can be memory intensive in high dimensions so try turning it off if you have problems with the memory.
         """
 
@@ -54,7 +54,7 @@ class Sampler:
         #     self.hamiltonian_dynamics = self.randomized_midpoint
         #     self.grad_evals_per_step = 1.0
         else:
-            print('integrator = ' + integrator + 'is not a valid option.')
+            raise ValueError('integrator = ' + integrator + 'is not a valid option.')
 
 
         ### decoherence mechanism ###
@@ -608,8 +608,8 @@ class Sampler:
         sigma2 = jnp.average(variances)
 
         #variances = self.Target.second_moments
-        resc = jnp.diag(1.0/jnp.sqrt(variances))
-        Sigma = resc @ self.Target.Cov @ resc
+        #resc = jnp.diag(1.0/jnp.sqrt(variances))
+        #Sigma = resc @ self.Target.Cov @ resc
         #print(jnp.linalg.cond(Sigma) / jnp.linalg.cond(self.Target.Cov))
 
         # optionally we do the diagonal preconditioning (and readjust the stepsize)
