@@ -4,8 +4,8 @@ from scipy.stats import special_ortho_group
 import jax
 from numpyro.infer import MCMC, NUTS
 
-import HMC.benchmarks_numpyro as targets
-import sampling.benchmark_targets as MCHMC_targets
+import benchmarks.benchmarks_numpyro as targets
+import benchmarks.benchmarks_mchmc as MCHMC_targets
 
 import pandas as pd
 
@@ -302,7 +302,7 @@ def rosenbrock(key_num, d = 36):
 
 def stochastic_volatility_ground_truth(key_num):
 
-    samples, steps, warmup_calls = sample_nuts(targets.StochasticVolatility, MCHMC_targets.StochasticVolatility(), None, 10000, 10000, 50)
+    samples, steps, warmup_calls = sample_nuts(targets.StochasticVolatility, MCHMC_targets.StochasticVolatility(), None, 10000, 10000, 50, progress_bar= True)
 
     s= np.array(samples['s'])
     sigma= np.array(samples['sigma'])
@@ -407,11 +407,15 @@ def dimension_scaling():
 if __name__ == '__main__':
 
 
-    stochastic_volatility(1)
+    #stochastic_volatility_ground_truth(1)
 
-    #
-    # var = np.array([np.load('ground_truth'+str(i)+'.npy') for i in range(3)])
-    # var_avg = np.average(var, axis = 0)
-    # np.save('StochasticVolatility_ground_truth_moments.npy', var_avg)
-    # bias = [np.sqrt(np.average(np.square((var[i, :] - var_avg) / var_avg))) for i in range(3)]
-    # print(bias)
+    name = 'stochastic_volatility'
+
+    data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
+
+    truth = np.median(data, axis = 0)
+    np.save('../data/'+name+'/ground_truth.npy', truth)
+
+    for i in range(3):
+        bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
+        print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))

@@ -2,10 +2,13 @@ import numpy as np
 from scipy.stats import norm
 import jax
 import jax.numpy as jnp
+import os
 
 from numpyro.examples.datasets import SP500, load_dataset
 from numpyro.distributions import StudentT
 from numpyro.distributions import Exponential
+
+dirr = os.path.dirname(os.path.realpath(__file__))
 
 
 ### Benchmark targets ###
@@ -113,7 +116,7 @@ class IllConditionedESH():
 class IllConditionedGaussianGamma():
     """Inference gym's Ill conditioned Gaussian"""
 
-    def __init__(self, prior = 'map'):
+    def __init__(self, prior = 'prior'):
         self.name = 'ICG'
         self.d = 100
 
@@ -138,7 +141,7 @@ class IllConditionedGaussianGamma():
             self.prior_draw = lambda key: R @ (jax.random.normal(key, shape=(self.d,), dtype='float64') / jnp.sqrt(eigs))
 
         else: # N(0, sigma_true_max)
-            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(1.0/jnp.sqrt(eigs))
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(1.0/jnp.sqrt(eigs)) * 1.5
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -146,6 +149,7 @@ class IllConditionedGaussianGamma():
 
     def transform(self, x):
         return x
+
 
 
 class Banana():
@@ -165,7 +169,7 @@ class Banana():
         elif prior == 'posterior':
             self.prior_draw = lambda key: self.posterior_draw(key)
         elif prior == 'prior':
-            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.array([10.0, 5.0]) * 2
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.array([10.0, 10.0]) * 3
         else:
             raise ValueError('prior = '+prior +' is not defined.')
 
@@ -184,6 +188,7 @@ class Banana():
         print(jnp.average(x, axis=0))
         print(jnp.average(jnp.square(x), axis=0))
         print(jnp.std(jnp.square(x[:, 0])) ** 2, jnp.std(jnp.square(x[:, 1])) ** 2)
+
 
     def plott(self):
         xmin, xmax = -20.0, 20.0
@@ -469,7 +474,7 @@ class StochasticVolatility():
 
         self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
 
-        data = np.load('data/stochastic_volatility/ground_truth0.npy')
+        data = np.load(dirr + '/ground_truth/stochastic_volatility/ground_truth_0.npy')
         self.second_moments = data[0]
         self.variance_second_moments = data[1]
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
@@ -589,5 +594,14 @@ def check_gradient(target, x):
 
 if __name__ == '__main__':
 
-    target = Banana()
-    target.ground_truth()
+    import matplotlib.pyplot as plt
+    target = Banana(prior= 'prior')
+    num = 300
+    x = jax.vmap(target.prior_draw)(jax.random.split(jax.random.PRNGKey(0), num))
+    plt.plot(x[:, 0], x[:, 1], '.', color = 'tab:blue')
+
+    target = Banana(prior='posterior')
+    x = jax.vmap(target.prior_draw)(jax.random.split(jax.random.PRNGKey(0), num))
+    plt.plot(x[:, 0], x[:, 1], '.', color='tab:red')
+
+    plt.show()

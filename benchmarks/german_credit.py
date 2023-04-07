@@ -3,27 +3,22 @@
 #We use the version implemented in the inference-gym: https://pypi.org/project/inference-gym/
 #In some part we directly use their tutorial: https://github.com/tensorflow/probability/blob/main/spinoffs/inference_gym/notebooks/inference_gym_tutorial.ipynb
 
-
 import inference_gym.using_jax as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
-import matplotlib.pyplot as plt
+import os
 
-from jax import random
-from numpyro.infer import MCMC, NUTS
-
-import HMC.benchmarks_numpyro as targets
-import sampling.benchmark_targets as MCHMC_targets
 from HMC.mchmc_to_numpyro import mchmc_target_to_numpyro
 from NUTS import sample_nuts
 
+dirr = os.path.dirname(os.path.realpath(__file__))
 
-target = gym.targets.GermanCreditNumericSparseLogisticRegression()
 name = 'german_credit'
+target_base = gym.targets.GermanCreditNumericSparseLogisticRegression()
+prior_distribution = target_base.prior_distribution()
 
-target = gym.targets.VectorModel(target, flatten_sample_transformations=True)
-
+target = gym.targets.VectorModel(target_base, flatten_sample_transformations=True)
 
 identity_fn = target.sample_transformations['identity']
 
@@ -32,6 +27,29 @@ def target_nlog_prob_fn(z):
     return -(target.unnormalized_log_prob(x) + target.default_event_space_bijector.forward_log_det_jacobian(z, event_ndims=1))
 
 target_nlog_prob_grad_fn = jax.grad(target_nlog_prob_fn)
+
+
+
+class Target():
+
+    def __init__(self):
+        self.d = 51
+        self.name = name
+
+        data = np.load(dirr+'/ground_truth/'+name+'/ground_truth.npy')
+        self.second_moments, self.variance_second_moments = data[0], data[1]
+
+        xmap = np.load(dirr+'/ground_truth/'+name+'/map.npy')
+        self.transform = lambda x: target.default_event_space_bijector(x + xmap)
+        self.nlogp = lambda x: target_nlog_prob_fn(x + xmap)
+        self.grad_nlogp = lambda x: (target_nlog_prob_fn(x + xmap), target_nlog_prob_grad_fn(x + xmap))
+
+
+    def prior_draw(self, key):
+        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 0.5
+
+
+
 
 
 def map_solution():
@@ -56,31 +74,15 @@ def map_solution():
 
     z_map, objective_trace = optimize(
         z_init=jnp.zeros(target.default_event_space_bijector.inverse_event_shape(target.event_shape)),
-        objective_fn=map_objective_fn, objective_grad_fn=map_objective_grad_fn, learning_rate=0.001, num_steps=200, )
+        objective_fn=map_objective_fn, objective_grad_fn=map_objective_grad_fn, learning_rate=0.001, num_steps=2000, )
 
+    import matplotlib.pyplot as plt
+    plt.plot(objective_trace - objective_trace[-1], '.-')
+    plt.ylabel('Loss')
+    plt.xlabel('Iteration')
+    plt.show()
 
-    return z_map
-
-
-
-class Target():
-
-    def __init__(self):
-        self.d = 51
-        self.name = name
-
-        data = np.load('data/'+name+'/ground_truth.npy')
-        self.second_moments, self.variance_second_moments = data[0], data[1]
-
-        xmap = map_solution()
-        self.transform = lambda x: target.default_event_space_bijector(x + xmap)
-        self.nlogp = lambda x: target_nlog_prob_fn(x + xmap)
-        self.grad_nlogp = lambda x: (target_nlog_prob_fn(x + xmap), target_nlog_prob_grad_fn(x + xmap))
-
-
-    def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 0.5
-
+    np.save('ground_truth/'+name+'/map.npy', z_map)
 
 
 
@@ -131,18 +133,22 @@ def richard_results():
     print('ESS = {0}, ESS (with tunning) = {1}'.format(np.average(ess), np.average(ess_with_tunning)))
 
 
-
 if __name__ == '__main__':
-
+    map_solution()
+    target = Target()
+    # x = prior_distribution.sample(seed=jax.random.PRNGKey(1))
+    # z = target.default_event_space_bijector(x)
+    # print(z)
+    #
     #ground_truth(2)
-
-    data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
-
-    truth = np.median(data, axis = 0)
-    np.save('../data/'+name+'/ground_truth.npy', truth)
-
-    for i in range(3):
-        bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
-        print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
+    #
+    # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
+    #
+    # truth = np.median(data, axis = 0)
+    # np.save('../data/'+name+'/ground_truth.npy', truth)
+    #
+    # for i in range(3):
+    #     bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
+    #     print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
 
 
