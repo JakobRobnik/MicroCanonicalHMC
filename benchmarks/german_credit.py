@@ -46,10 +46,11 @@ class Target():
 
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 0.5
-
-
-
+        x = prior_distribution.sample(seed= key)
+        w = x['unscaled_weights']
+        ls = x['local_scales']
+        gs = x['global_scale']
+        return jnp.concatenate((jnp.log(ls), jnp.ones(1) * jnp.log(gs), w))
 
 
 def map_solution():
@@ -133,13 +134,15 @@ def richard_results():
     print('ESS = {0}, ESS (with tunning) = {1}'.format(np.average(ess), np.average(ess_with_tunning)))
 
 
+
 if __name__ == '__main__':
-    map_solution()
+
+    #map_solution()
     target = Target()
-    # x = prior_distribution.sample(seed=jax.random.PRNGKey(1))
-    # z = target.default_event_space_bijector(x)
-    # print(z)
-    #
+    key = jax.random.PRNGKey(0)
+    x = target.prior_draw(key)
+    print(x)
+
     #ground_truth(2)
     #
     # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])

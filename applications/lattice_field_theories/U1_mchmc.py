@@ -24,17 +24,21 @@ def plot_mixing():
     side = 16
     beta = 7.0
     target = u1.Theory(side, beta)
+
+    #set up the hyperparameters
     alpha = 1.0
     beta_eps= 0.2
-    sampler = Sampler(target, L= np.sqrt(target.d) * alpha, eps= np.sqrt(target.d) * beta_eps, integrator='LF')
-    #sampler.tune_hyperparameters(dialog= True)
+    sampler = Sampler(target, L= np.sqrt(target.d) * alpha, eps= np.sqrt(target.d) * beta_eps, integrator='LF',
+                      frac_tune1 = 0, frac_tune2 = 0, frac_tune3= 0) #turn off the autotuning
 
-    Q, E, burnin = sampler.sample(100000, output= 'energy')
+
+    Q, E, L, eps = sampler.sample(100000, output= 'detailed')
+    burnin = 10000
     Q = Q[burnin:]
     E = E[burnin:]
 
     #topo_charge = jax.vmap(target.topo_charge)(x)
-    print(np.std(E)**2/target.d)
+    print(np.std(E[1:] - E[:-1])**2/target.d)
     plt.plot(Q, '.')
     plt.xlabel("gradient evaluations")
     plt.ylabel('topological charge')
@@ -85,22 +89,6 @@ def plot_topo_sus():
     plt.savefig('topo_sus_sin_definition.png')
     plt.show()
 
-
-
-side = 16
-beta = 7.0
-target = u1.Theory(side, beta)
-alpha = 1.0
-beta_eps= 0.1
-sampler = Sampler(target, L= np.sqrt(target.d) * alpha, eps= np.sqrt(target.d) * beta_eps, integrator='LF')
-#sampler.tune_hyperparameters(dialog= True)
-
-Q, E, burnin = sampler.sample(100000, output= 'energy')
-Q = Q[burnin:]
-E = E[burnin:]
-
-plt.hist(Q, bins = 10)
-plt.show()
 
 
 

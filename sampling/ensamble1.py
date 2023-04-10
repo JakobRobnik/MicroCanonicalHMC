@@ -98,7 +98,7 @@ class Sampler:
         # sampler.max_burn_in = 400
         # samples = sampler.sample(1000, 300)
 
-        self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
+        self.eps_initial = 0.2#jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
         self.max_burn_in = 200                        # we will not take more steps
         self.max_fail = 4                             # if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
         self.loss_wanted = 0.1                        # if the virial loss is lower, we stop the initial stage of burn-in
@@ -250,7 +250,7 @@ class Sampler:
         def burn_in_step(state):
             """one step of the burn-in"""
 
-            steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = state
+            steps, loss, fail_count, never_rejected, never_accepted, x, u, l, g, key, L, eps, sigma, varE = state
             sigma = jnp.std(x, axis=0)  # diagonal conditioner
 
             xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
@@ -263,6 +263,7 @@ class Sampler:
             accept, loss, x, u, l, g, varE = accept_reject_step(loss, x, u, l, g, varE, loss_new, xx, uu, ll, gg, varE_new)
             Ls.append(loss)
             #X.append(x)
+            never_accepted *= (1-accept)
             never_rejected *= accept #True if no step has been rejected so far
             fail_count = (fail_count + 1) * (1-accept) #how many rejected steps did we have in a row
 
@@ -270,16 +271,17 @@ class Sampler:
             eps = eps * ((1-accept) * self.reduce + accept * (never_rejected * self.increase + (1-never_rejected) * 1.0))
             epss.append(eps)
 
-            return steps + 1, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE
+            return steps + 1, loss, fail_count, never_rejected, never_accepted, x, u, l, g, key, L, eps, sigma, varE
 
         Ls = []
         epss = []
         #X = []
 
-        condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * (state[2] < self.max_fail)  # true during the burn-in
+        condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * ((state[2] < self.max_fail) or state[4])  # true during the burn-in
 
-        steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, (0, loss0, 0, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
-        #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, (0, loss0, 0, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
+        state=  (0, loss0, 0, True, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4)
+        steps, loss, fail_count, never_rejected, never_accepted, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, state)
+        #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, state)
 
         #print(sigma / jnp.sqrt(self.Target.second_moments))
         ### determine the epsilon for sampling ###

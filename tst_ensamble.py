@@ -42,6 +42,6 @@ def problems():
         print(dat)
         return dat
 
-    data = [problem(num) for num in [0, 1, 5]]
+    data = [problem(num) for num in [5]]
 
 problems()

@@ -9,13 +9,14 @@ from NUTS import sample_nuts
 
 dirr = os.path.dirname(os.path.realpath(__file__))
 
-target = gym.targets.SyntheticItemResponseTheory()
+target_base = gym.targets.SyntheticItemResponseTheory()
 name= 'IRT'
 
-target = gym.targets.VectorModel(target, flatten_sample_transformations=True)
-
+target = gym.targets.VectorModel(target_base, flatten_sample_transformations=True)
+prior_distribution = target_base.prior_distribution()
 
 identity_fn = target.sample_transformations['identity']
+
 
 def target_nlog_prob_fn(z):
     x = target.default_event_space_bijector(z)
@@ -42,8 +43,15 @@ class Target():
     # def prior_draw(self, key):
     #     return jnp.zeros(self.d)
 
+
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 0.5
+
+        x = prior_distribution.sample(seed=key)
+        question = x['question_difficulty']
+        meanstudent = x['mean_student_ability']
+        student = x['centered_student_ability']
+
+        return jnp.concatenate((question, meanstudent * jnp.ones(1), student))
 
 
 
@@ -99,14 +107,10 @@ def ground_truth(key_num):
     np.save('../data/'+name+'/ground_truth_'+str(key_num) +'.npy', [second_moments, variance_second_moments])
 
 
-
-
 if __name__ == '__main__':
 
+    Target().prior_draw(jax.random.PRNGKey(0))
     #ground_truth(2)
-    map_solution()
-
-    Target()
 
     # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
     #

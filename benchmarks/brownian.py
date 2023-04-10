@@ -26,9 +26,6 @@ def target_nlog_prob_fn(z):
     x = target.default_event_space_bijector(z)
     return -(target.unnormalized_log_prob(x) + target.default_event_space_bijector.forward_log_det_jacobian(z, event_ndims=1))
 
-target_nlog_prob_grad_fn = jax.grad(target_nlog_prob_fn)
-
-
 
 class Target():
 
@@ -39,17 +36,18 @@ class Target():
         data = np.load(dirr+'/ground_truth/'+name+'/ground_truth.npy')
         self.second_moments, self.variance_second_moments = data[0], data[1]
 
-        xmap = np.load(dirr+'/ground_truth/'+name+'/map.npy')
-        self.transform = lambda x: target.default_event_space_bijector(x + xmap)
-        self.nlogp = lambda x: target_nlog_prob_fn(x + xmap)
-        self.grad_nlogp = lambda x: (target_nlog_prob_fn(x + xmap), target_nlog_prob_grad_fn(x + xmap))
-
-    # def prior_draw(self, key):
-    #     return jnp.zeros(self.d)
+        #xmap = np.load(dirr+'/ground_truth/'+name+'/map.npy')
+        self.transform = lambda x: target.default_event_space_bijector(x)
+        self.nlogp = lambda x: target_nlog_prob_fn(x)
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 0.05
-
+        x = prior_distribution.sample(seed=key)
+        scale = jnp.log(jnp.exp(jnp.array([x.innovation_noise_scale, x.observation_noise_scale])) - 1.0) #inverse softplus
+        x1 = jnp.array([x.x_0, x.x_1, x.x_2, x.x_3, x.x_4, x.x_5, x.x_6, x.x_7, x.x_8, x.x_9,
+                        x.x_10, x.x_11, x.x_12, x.x_13, x.x_14, x.x_15, x.x_16, x.x_17, x.x_18, x.x_19,
+                        x.x_20, x.x_21, x.x_22, x.x_23, x.x_24, x.x_25, x.x_26, x.x_27, x.x_28, x.x_29])
+        return jnp.concatenate((scale, x1))
 
 
 
@@ -104,9 +102,10 @@ def ground_truth(key_num):
 
 
 
+
 if __name__ == '__main__':
-    map_solution()
-    Target()
+    key = jax.random.PRNGKey(0)
+    Target().prior_draw(key)
     #ground_truth(2)
     # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
     #
@@ -116,3 +115,4 @@ if __name__ == '__main__':
     # for i in range(3):
     #     bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
     #     print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
+
