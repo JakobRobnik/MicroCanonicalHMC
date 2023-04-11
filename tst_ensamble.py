@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 
-from sampling.ensamble1 import Sampler as EnsambleSampler
+from sampling.ensamble import Sampler as EnsambleSampler
 
 from benchmarks.benchmarks_mchmc import *
 from benchmarks.german_credit import Target as GermanCredit
@@ -42,6 +42,8 @@ def problems():
         print(dat)
         return dat
 
-    data = [problem(num) for num in [5]]
+    problem(0)
+    #data = [problem(num) for num in range(3)]
+
 
 problems()

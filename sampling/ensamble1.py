@@ -100,11 +100,11 @@ class Sampler:
 
         self.eps_initial = 0.2#jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
         self.max_burn_in = 200                        # we will not take more steps
-        self.max_fail = 4                             # if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
+        self.max_fail = 6                             # if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
         self.loss_wanted = 0.1                        # if the virial loss is lower, we stop the initial stage of burn-in
         self.increase, self.reduce = 2.0, 0.5         # if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
 
-        self.relative_accuracy = 0.1
+        self.relative_accuracy = 0.05
 
 
     def random_unit_vector(self, random_key, num_chains):
@@ -312,7 +312,7 @@ class Sampler:
         plt.yscale('log')
         plt.xlabel('burn-in steps')
         plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in.png')
-        plt.show()
+        plt.close()
 
 
         ### let's do some checks and print warnings ###
@@ -375,8 +375,8 @@ class Sampler:
             plt.plot(bias_avg, '.-', color='tab:orange', label = 'average')
             plt.plot(bias_max, '.-', color='tab:red', label = 'max')
             plt.yscale('log')
-            #plt.savefig('tst_ensamble/' + self.Target.name + '/bias.png')
-            plt.show()
+            plt.savefig('tst_ensamble/' + self.Target.name + '/bias.png')
+            plt.close()
 
             num_avg = find_crossing(bias_avg, 0.01)
             num_max = find_crossing(bias_max, 0.01)

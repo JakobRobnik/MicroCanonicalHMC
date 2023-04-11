@@ -85,7 +85,7 @@ class Sampler:
 
         self.L = jnp.sqrt(self.Target.d) * alpha
         self.varEwanted = 5e-4
-        self.lamb = 0.1*jnp.power(self.varEwanted, 1./6.) / jnp.power(2 * 0.1, 0.25)
+        self.lamb = jnp.power(self.varEwanted, 1./6.) / jnp.power(2 * 0.1, 0.25)
 
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
 
@@ -94,9 +94,9 @@ class Sampler:
 
         ### Hyperparameters of the burn in. The value of those parameters typically will not have large impact on the performance ###
 
-        self.eps_initial = 0.05*jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
+        self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
         self.max_burn_in = 200                       # we will not take more steps
-        self.required_decrease = 0.0#0.01 # if log10(change of virial loss) / steps if less than required decrease we start collecting samples
+        self.required_decrease = 0.01 # if log10(change of virial loss) / steps if less than required decrease we start collecting samples
         self.delay_check = 20
         self.loss_wanted = 0.2                        # if the virial loss is lower, we start collecting samples
 
@@ -170,21 +170,21 @@ class Sampler:
 
         return xx, uu, ll, gg, kinetic_change, key
 
-    #
-    # def virial_loss(self, x, g):
-    #     """loss^2 = (1/d) sum_i (virial_i - 1)^2"""
-    #
-    #     virials = jnp.average(x*g, axis=0) #should be all close to 1 if we have reached the typical set
-    #     return jnp.sqrt(jnp.average(jnp.square(virials - 1.0)))
 
     def virial_loss(self, x, g, key):
-        """loss^2 = Tr[(1 - V)^T (1 - V)] / d
-            where Vij = <xi gj> is the matrix of virials.
-            Loss is computed with the Hutchinson's trick."""
-        key, key_z = jax.random.split(key)
-        z = jax.random.rademacher(key_z, (self.hutchinson_repeat, self.Target.d)) # <z_i z_j> = delta_ij
-        X = z - (g @ z.T).T @ x / x.shape[0]
-        return jnp.sqrt(jnp.average(jnp.square(X))), key
+        """loss^2 = (1/d) sum_i (virial_i - 1)^2"""
+
+        virials = jnp.average(x*g, axis=0) #should be all close to 1 if we have reached the typical set
+        return jnp.sqrt(jnp.average(jnp.square(virials - 1.0))), key
+
+    # def virial_loss(self, x, g, random_key):
+    #     """loss^2 = Tr[(1 - V)^T (1 - V)] / d
+    #         where Vij = <xi gj> is the matrix of virials.
+    #         Loss is computed with the Hutchinson's trick."""
+    #     key, key_z = jax.random.split(key)
+    #     z = jax.random.rademacher(key_z, (self.hutchinson_repeat, self.Target.d)) # <z_i z_j> = delta_ij
+    #     X = z - (g @ z.T).T @ x / x.shape[0]
+    #     return jnp.sqrt(jnp.average(jnp.square(X))), key
 
 
     def initialize(self, random_key, x_initial, num_chains):
@@ -253,7 +253,7 @@ class Sampler:
             xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
 
             loss, key = self.virial_loss(xx, gg, key)
-            print(loss)
+            #print(loss)
             varE_new = jnp.average(jnp.square(kinetic_change + ll - l)) / self.Target.d
 
             #will we accept the step?
@@ -267,7 +267,7 @@ class Sampler:
 
             sigma_ratio = jnp.sqrt(jnp.average(jnp.square(sigma_new) / jnp.average(jnp.square(sigma))))
 
-            #eps *= ((self.lamb * jnp.power(loss, 0.25) * jnp.power(varE, -1./6.) * sigma_ratio) * accept + (1-accept) * 0.5)
+            eps *= ((self.lamb * jnp.power(loss, 0.25) * jnp.power(varE, -1./6.) * sigma_ratio) * accept + (1-accept) * 0.5)
             #print(eps)
             eps_arr.append(eps)
 
@@ -281,9 +281,9 @@ class Sampler:
 
         condition = lambda state: (self.loss_wanted < state[1][0]) * (state[0] < self.max_burn_in) * (jnp.log10(state[1][-1]/state[1][0]) / self.delay_check > self.required_decrease) # true during the burn-in
 
-        state = (0, jnp.concatenate((jnp.ones(1) * loss0, jnp.ones(self.delay_check-1) * jnp.inf)),  x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4)
+        state = (0, jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(self.delay_check-1) * jnp.inf)),  x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.std(x0, axis=0) , 1e4)
         steps, loss_history, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, state)
-        #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, (0, loss0, 0, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4))
+        #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, state)
         eps = eps * jnp.power(self.varEwanted / varE, 1./6.)
         n1 = np.arange(len(loss_arr))
         plt.plot(n1, loss_arr, '.-', color = 'black', label = 'loss')
@@ -295,7 +295,7 @@ class Sampler:
 
         plt.yscale('log')
         plt.xlabel('burn-in steps')
-        plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in.png')
+        plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in2.png')
         plt.show()
 
         return steps, x, u, l, g, key, L, eps, sigma
@@ -353,7 +353,7 @@ class Sampler:
             plt.plot(bias_avg, '.-', color='tab:orange', label = 'average')
             plt.plot(bias_max, '.-', color='tab:red', label = 'max')
             plt.yscale('log')
-            plt.savefig('tst_ensamble/' + self.Target.name + '/bias.png')
+            plt.savefig('tst_ensamble/' + self.Target.name + '/bias2.png')
             plt.show()
 
             num_avg = find_crossing(bias_avg, 0.01)
@@ -375,7 +375,8 @@ class Sampler:
 
         plt.xlabel('steps')
         plt.ylabel('f')
-        plt.savefig('tst_ensamble/' + self.Target.name + '/secondary_burn_in.png')
-        plt.show()
+        plt.savefig('tst_ensamble/' + self.Target.name + '/secondary_burn_in2.png')
+        plt.close()
 
         return burnin2_steps
+
