@@ -56,7 +56,7 @@ def sample_nuts(target, mchmc_target, target_params, num_samples, num_warmup, th
     sampler = MCMC(nuts_setup, num_warmup= num_warmup, num_samples=num_samples * thinning, num_chains=1, thinning= thinning, progress_bar= progress_bar)
 
     #initial condition
-    x0 = mchmc_target.transform(mchmc_target.prior_draw(key_prior))
+    x0 = mchmc_target.prior_draw(key_prior)
 
     #run
     sampler.warmup(key_warmup, init_params=x0, extra_fields=['num_steps'], collect_warmup=True)

@@ -124,6 +124,8 @@ class IllConditionedGaussianGamma():
         rng = np.random.RandomState(seed=10 & (2 ** 32 - 1))
         eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.d)) #eigenvalues of the Hessian
         eigs *= jnp.average(1.0/eigs)
+
+        self.entropy = 0.5 * self.d
         R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
         self.Hessian = R @ np.diag(eigs) @ R.T
 
@@ -560,23 +562,33 @@ class StochasticVolatility():
     def prior_draw(self, key):
         """draws x from the prior"""
 
-        key_walk, key_exp1, key_exp2 = jax.random.split(key, 3)
+        key_walk, key_exp = jax.random.split(key)
 
-        sigma = jax.random.exponential(key_exp1) * self.typical_sigma
+        scales = jnp.array([self.typical_sigma, self.typical_nu])
+        params = jax.random.exponential(key_exp1, shape = (2, )) * scales
+        walk = random_walk(key_walk, self.d - 2) * params[0]
+        return jnp.concatenate((walk, np.log(params/scales)))
 
-        def step(track, useless):
-            randkey, subkey = jax.random.split(track[1])
-            x = jax.random.normal(subkey, shape= track[0].shape, dtype = track[0].dtype) + track[0]
-            return (x, randkey), x
 
-        x = jnp.empty(self.d)
-        x = x.at[:-2].set(jax.lax.scan(step, init=(0.0, key_walk), xs=None, length=self.d - 2)[1] * sigma) # = s
-        x = x.at[-2].set(jnp.log(sigma / self.typical_sigma))
-        x = x.at[-1].set(jnp.log(jax.random.exponential(key_exp2)))
+def random_walk(key, num):
+    """ Genereting process for the standard normal walk:
+        x[0] ~ N(0, 1)
+        x[n+1] ~ N(x[n], 1)
 
-        return x
-        #return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        Args:
+            key: jax random key
+            num: number of points in the walk
+        Returns:
+            1 realization of the random walk (array of length num)
+    """
 
+    def step(track, useless):
+        x, key = track
+        randkey, subkey = jax.random.split(key)
+        x += jax.random.normal(subkey)
+        return (x, randkey), x
+
+    return jax.lax.scan(step, init=(0.0, key), xs=None, length=num)[1]
 
 
 class DiagonalPreconditioned():

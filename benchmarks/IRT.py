@@ -109,7 +109,16 @@ def ground_truth(key_num):
 
 if __name__ == '__main__':
 
-    Target().prior_draw(jax.random.PRNGKey(0))
+    kkey = jax.random.PRNGKey(0)
+    key = jax.random.split(kkey, 100)
+    t = Target()
+
+    x = jax.vmap(t.prior_draw)(key)
+    g = jax.vmap(lambda x: t.grad_nlogp(x)[1])(x)  ######   REPEAT FOR MULTIPLE CHAINS AND COMPUTE VIRIAL LOSS
+
+    print(jnp.average(x * g, axis=0))
+
+    #Target().prior_draw(jax.random.PRNGKey(0))
     #ground_truth(2)
 
     # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])

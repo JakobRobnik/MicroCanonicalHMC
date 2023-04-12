@@ -39,10 +39,10 @@ class Target():
         data = np.load(dirr+'/ground_truth/'+name+'/ground_truth.npy')
         self.second_moments, self.variance_second_moments = data[0], data[1]
 
-        xmap = np.load(dirr+'/ground_truth/'+name+'/map.npy')
-        self.transform = lambda x: target.default_event_space_bijector(x + xmap)
-        self.nlogp = lambda x: target_nlog_prob_fn(x + xmap)
-        self.grad_nlogp = lambda x: (target_nlog_prob_fn(x + xmap), target_nlog_prob_grad_fn(x + xmap))
+        #xmap = np.load(dirr+'/ground_truth/'+name+'/map.npy')
+        self.transform = lambda x: target.default_event_space_bijector(x)
+        self.nlogp = lambda x: target_nlog_prob_fn(x)
+        self.grad_nlogp = lambda x: (target_nlog_prob_fn(x), target_nlog_prob_grad_fn(x))
 
 
     def prior_draw(self, key):
@@ -99,7 +99,7 @@ def ground_truth(key_num):
     second_moments = jnp.average(jnp.square(x), axis = 0)
     variance_second_moments = jnp.std(jnp.square(x), axis = 0)**2
 
-    np.save('../data/'+name+'/ground_truth_'+str(key_num) +'.npy', [second_moments, variance_second_moments])
+    np.save('ground_truth/'+name+'/ground_truth_'+str(key_num) +'.npy', [second_moments, variance_second_moments])
 
 
 
@@ -134,24 +134,21 @@ def richard_results():
     print('ESS = {0}, ESS (with tunning) = {1}'.format(np.average(ess), np.average(ess_with_tunning)))
 
 
+def joint_ground_truth():
+
+    data = np.array([np.load('ground_truth/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
+
+    truth = np.median(data, axis = 0)
+    np.save('ground_truth/'+name+'/ground_truth.npy', truth)
+
+    for i in range(3):
+        bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
+        print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
+
+
 
 if __name__ == '__main__':
 
-    #map_solution()
-    target = Target()
-    key = jax.random.PRNGKey(0)
-    x = target.prior_draw(key)
-    print(x)
+    ground_truth(2)
 
-    #ground_truth(2)
-    #
-    # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
-    #
-    # truth = np.median(data, axis = 0)
-    # np.save('../data/'+name+'/ground_truth.npy', truth)
-    #
-    # for i in range(3):
-    #     bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
-    #     print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
-
-
+    #joint_ground_truth()

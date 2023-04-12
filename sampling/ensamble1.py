@@ -24,7 +24,7 @@ class vmap_target:
         # optional attributes
 
         if hasattr(target, 'transform'):
-            self.transform = jax.vmap(jax.vmap(target.transform))
+            self.transform = jax.vmap(target.transform)
         else:
             self.transform = lambda x: x #if not given, set it to the identity
 
@@ -98,13 +98,13 @@ class Sampler:
         # sampler.max_burn_in = 400
         # samples = sampler.sample(1000, 300)
 
-        self.eps_initial = 0.2#jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
+        self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
         self.max_burn_in = 200                        # we will not take more steps
         self.max_fail = 6                             # if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
         self.loss_wanted = 0.1                        # if the virial loss is lower, we stop the initial stage of burn-in
         self.increase, self.reduce = 2.0, 0.5         # if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
 
-        self.relative_accuracy = 0.05
+        self.relative_accuracy = 0.1
 
 
     def random_unit_vector(self, random_key, num_chains):
@@ -262,6 +262,7 @@ class Sampler:
             #will we accept the step?
             accept, loss, x, u, l, g, varE = accept_reject_step(loss, x, u, l, g, varE, loss_new, xx, uu, ll, gg, varE_new)
             Ls.append(loss)
+            entropy.append(jnp.average(l))
             #X.append(x)
             never_accepted *= (1-accept)
             never_rejected *= accept #True if no step has been rejected so far
@@ -275,6 +276,7 @@ class Sampler:
 
         Ls = []
         epss = []
+        entropy = []
         #X = []
 
         condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * ((state[2] < self.max_fail) or state[4])  # true during the burn-in
@@ -286,6 +288,7 @@ class Sampler:
         #print(sigma / jnp.sqrt(self.Target.second_moments))
         ### determine the epsilon for sampling ###
         eps = eps * (1.0/self.reduce)**fail_count #the epsilon before the row of failures, we will take this as a baseline
+        #eps *= jnp.power(1 / Ls[-fail_count-1], 1./6.)
 
         Ls2 = []
         eps2 = []
@@ -302,24 +305,27 @@ class Sampler:
 
 
         n1 = np.arange(len(Ls))
-        n2 = np.arange(len(Ls), len(Ls) + len(Ls2))
         plt.plot(n1, Ls, 'o-', label = 'loss', color = 'tab:blue', alpha = 0.5)
+        plt.plot(n1, entropy, 'o', label = 'entropy', color = 'black', alpha = 0.5)
         plt.plot(n1, epss, 'o', label = 'epsilon', color = 'tab:red', alpha = 0.5)
+        plt.plot([len(Ls), ], eps, 'o', label='epsilon', color='tab:red')
 
+        n2 = np.arange(len(Ls), len(Ls) + len(Ls2))
         plt.plot(n2, Ls2, 's-',  color = 'tab:blue')
         plt.plot(n2, eps2, 's',  color = 'tab:red')
+
         plt.legend()
         plt.yscale('log')
         plt.xlabel('burn-in steps')
         plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in.png')
-        plt.close()
+        plt.show()
 
 
         ### let's do some checks and print warnings ###
         if steps == self.max_burn_in:
             print('Burn-in exceeded the predescribed number of iterations, loss = {0} but we aimed for 0.1'.format(loss))
 
-        return steps+num_eps, x, u, l, g, key, L, eps, sigma
+        return steps, x, u, l, g, key, L, eps, sigma
 
 
 
@@ -352,7 +358,7 @@ class Sampler:
         def step_ess(state, useless):
             x, u, g, key = state
             x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma) # update particles by one step
-            return (x, u, g, key), jnp.average(jnp.square(x), axis = 0)
+            return (x, u, g, key), jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
 
         if output == 'normal':
             X = jax.lax.scan(step, init= (x, u, g, key), xs= None, length= num_steps)[1] #do the sampling
@@ -365,28 +371,39 @@ class Sampler:
 
         elif output == 'ess':
             Xsq = jax.lax.scan(step_ess, init=(x, u, g, key), xs=None, length=num_steps)[1] #do the sampling
+            print(Xsq[-1])
+            print(self.Target.second_moments)
+            #instantaneous moments bias
+            bias_d_t = jnp.square(Xsq - self.Target.second_moments[None, :]) / self.Target.variance_second_moments[None, :]
+            bias_avg_t, bias_max_t = jnp.average(bias_d_t, axis=-1), jnp.max(bias_d_t, axis= -1)
 
-            burnin2_steps = self.remove_burn_in(jnp.average(Xsq, axis = -1), self.relative_accuracy)
-
-            second_moments = jnp.cumsum(Xsq[burnin2_steps:], axis=0) / jnp.arange(1, num_steps - burnin2_steps+1)[:, None]
+            #averaged moments bias
+            burnin2_steps = self.remove_burn_in(jnp.average(Xsq, axis=-1), self.relative_accuracy)
+            second_moments = jnp.cumsum(Xsq[burnin2_steps:], axis=0) / jnp.arange(1, num_steps - burnin2_steps + 1)[:, None]
             bias_d = jnp.square(second_moments - self.Target.second_moments[None, :]) / self.Target.variance_second_moments[None, :]
             bias_avg, bias_max = jnp.average(bias_d, axis=-1), jnp.max(bias_d, axis=-1)
 
+            # plot
+            plt.plot(bias_avg_t, '--', color='tab:orange', alpha=0.5, label='average')
+            plt.plot(bias_max_t, '--', color='tab:red', alpha=0.5, label='max')
+
             plt.plot(bias_avg, '.-', color='tab:orange', label = 'average')
             plt.plot(bias_max, '.-', color='tab:red', label = 'max')
+
             plt.yscale('log')
             plt.savefig('tst_ensamble/' + self.Target.name + '/bias.png')
-            plt.close()
+            plt.show()
 
-            num_avg = find_crossing(bias_avg, 0.01)
-            num_max = find_crossing(bias_max, 0.01)
+            num_inst = find_crossing(bias_max_t, 0.01)
+            num = find_crossing(bias_max, 0.01)
 
-            return num_avg, num_max, burnin_steps + burnin2_steps
+            return num_inst + burnin_steps, num + burnin_steps + burnin2_steps
+
 
 
     def remove_burn_in(self, f, relative_accuracy):
 
-        f_avg = jnp.average(f[-len(f) // 10])
+        f_avg = jnp.average(f[-len(f) // 10:])
         burnin2_steps = len(f) - find_crossing(-jnp.abs(f[::-1] - f_avg) / f_avg, -relative_accuracy)
 
         plt.plot(f, '.-')
@@ -397,6 +414,6 @@ class Sampler:
         plt.xlabel('steps')
         plt.ylabel('f')
         plt.savefig('tst_ensamble/' + self.Target.name + '/secondary_burn_in.png')
-        plt.close()
+        plt.show()
 
         return burnin2_steps

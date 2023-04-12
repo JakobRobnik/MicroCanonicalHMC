@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 
-from sampling.ensamble import Sampler as EnsambleSampler
+from sampling.ensamble1 import Sampler as EnsambleSampler
 
 from benchmarks.benchmarks_mchmc import *
 from benchmarks.german_credit import Target as GermanCredit
@@ -23,7 +23,7 @@ def problems():
     def problem(num):
         t0 = time.time()
 
-        num_samples = [500, 1000, 2000, 1000, 1000, 2000][num]
+        num_samples = [500, 1000, 1000, 1000, 1000, 2000][num]
         target = [Banana(prior = 'prior'),
                   IllConditionedGaussianGamma(prior = 'prior'),
                   GermanCredit(),
@@ -33,17 +33,16 @@ def problems():
 
 
         sampler = EnsambleSampler(target, alpha = 1.0, varE_wanted= 1e-3)
-        n1, n2, nburn = sampler.sample(num_samples, 4096, output = 'ess')
+        n1, n2 = sampler.sample(num_samples, 4096, output = 'ess')
 
         t1 = time.time()
         print(time.strftime('%H:%M:%S', time.gmtime(t1 - t0)))
 
-        dat= np.array([n1 + nburn, n2 + nburn])
+        dat= np.array([n1, n2])
         print(dat)
         return dat
 
-    problem(0)
-    #data = [problem(num) for num in range(3)]
+    data = [problem(num) for num in [3 ]]
 
 
 problems()
