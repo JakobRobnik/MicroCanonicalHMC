@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 
-from sampling.ensamble1 import Sampler as EnsambleSampler
+from sampling.ensamble import Sampler as EnsambleSampler
 
 from benchmarks.benchmarks_mchmc import *
 from benchmarks.german_credit import Target as GermanCredit
@@ -32,7 +32,7 @@ def problems():
                   StochasticVolatility()][num]
 
 
-        sampler = EnsambleSampler(target, alpha = 1.0, varE_wanted= 1e-3)
+        sampler = EnsambleSampler(target, alpha = jnp.inf, varE_wanted= 1e-3)
         n1, n2 = sampler.sample(num_samples, 4096, output = 'ess')
 
         t1 = time.time()
@@ -46,3 +46,19 @@ def problems():
 
 
 problems()
+
+# target = Brownian()
+# sampler = EnsambleSampler(target, alpha=1.0, varE_wanted=1e-3)
+# x = sampler.sample(1000, 200, output='normal')
+# np.save('brown.npy', x)
+# print(x.shape)
+
+#
+# x = np.load('brown.npy')
+#
+# for i in range(100):
+#     plt.plot(x[i, :, 0], x[i, :, 1])
+#
+# plt.plot(np.log([0.1, ]), np.log([0.15, ]), '*', color = 'tab:red', markersize = 5)
+#
+# plt.show()

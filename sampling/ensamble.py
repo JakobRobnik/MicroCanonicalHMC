@@ -100,7 +100,7 @@ class Sampler:
         self.delay_check = 20
         self.loss_wanted = 0.2                        # if the virial loss is lower, we start collecting samples
 
-        self.relative_accuracy = 0.1 # Determines how strict we are in removing the secondary burn in. The secondary burn-in ends,
+        self.relative_accuracy = 0.05 # Determines how strict we are in removing the secondary burn in. The secondary burn-in ends,
                                       # when the expected value of avg_d(variance) stops to fluctuate by more than relative_accuracy
 
 
@@ -312,7 +312,7 @@ class Sampler:
         #plt.ylim(0.1, 1e2)
 
         plt.subplot(num, 1, 2)
-        plt.plot(n1, entropy_arr, '.-', color = 'black', label = 'entropy')
+        plt.plot(n1, entropy_arr - np.min(entropy_arr) + 1, '.-', color = 'black', label = 'entropy')
         #plt.plot(n1, np.ones(len(n1)) * self.Target.entropy, '--', color='black', alpha = 0.5, label= 'truth')
         plt.legend()
         plt.yscale('log')

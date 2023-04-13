@@ -98,13 +98,13 @@ class Sampler:
         # sampler.max_burn_in = 400
         # samples = sampler.sample(1000, 300)
 
-        self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
+        self.eps_initial = 1*jnp.sqrt(self.Target.d)  # this will be changed during the burn-in
         self.max_burn_in = 200                        # we will not take more steps
         self.max_fail = 6                             # if the reduction of epsilon does not improve the loss 'max_fail'-times in a row, we stop the initial stage of burn-in
         self.loss_wanted = 0.1                        # if the virial loss is lower, we stop the initial stage of burn-in
         self.increase, self.reduce = 2.0, 0.5         # if the loss never went up, we incease the epsilon by a factor of 'increase'. If the loss went up, we decrease the epsilon by a factor 'reduce'.
 
-        self.relative_accuracy = 0.1
+        self.relative_accuracy = 0.05
 
 
     def random_unit_vector(self, random_key, num_chains):
@@ -236,7 +236,8 @@ class Sampler:
             """if there are nans or the loss went up we don't want to update the state"""
 
             no_nans = jnp.all(jnp.isfinite(xx))
-            tru = (loss_new < loss) * no_nans  # loss went down and there were no nans
+            entropy_diff = jnp.average(ll) - jnp.average(l)
+            tru = ((loss_new < loss) or (entropy_diff < 0.0)) and no_nans  # (either loss or entropy went down) and there were no nans
             false = (1 - tru)
             Loss = loss_new * tru + loss * false
             X = jnp.nan_to_num(xx) * tru + x * false
@@ -263,7 +264,7 @@ class Sampler:
             accept, loss, x, u, l, g, varE = accept_reject_step(loss, x, u, l, g, varE, loss_new, xx, uu, ll, gg, varE_new)
             Ls.append(loss)
             entropy.append(jnp.average(l))
-            #X.append(x)
+            X.append(x)
             never_accepted *= (1-accept)
             never_rejected *= accept #True if no step has been rejected so far
             fail_count = (fail_count + 1) * (1-accept) #how many rejected steps did we have in a row
@@ -277,13 +278,27 @@ class Sampler:
         Ls = []
         epss = []
         entropy = []
-        #X = []
+        X = []
 
         condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in) * ((state[2] < self.max_fail) or state[4])  # true during the burn-in
 
         state=  (0, loss0, 0, True, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4)
         steps, loss, fail_count, never_rejected, never_accepted, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, state)
         #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, state)
+
+        sigrw = np.array(X)[:, :, 0].T
+        sigobs = np.array(X)[:, :, 1].T
+        print(np.shape(sigrw))
+        plt.rcParams.update({'font.size': 25})
+        plt.figure(figsize=(10, 10))
+        for i in range(20):
+            plt.plot(sigrw[i], sigobs[i], '.-')
+            plt.plot(sigrw[i, 0], sigobs[i, 0], 'o', color = 'black')
+        plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
+        plt.xlabel(r'$\log \sigma_{\mathrm{rw}}$')
+        plt.ylabel(r'$\log \sigma_{\mathrm{obs}}$')
+        plt.show()
+
 
         #print(sigma / jnp.sqrt(self.Target.second_moments))
         ### determine the epsilon for sampling ###
@@ -353,7 +368,7 @@ class Sampler:
         def step(state, useless):
             x, u, g, key = state
             x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma) # update particles by one step
-            return (x, u, g, key), x
+            return (x, u, g, key)
 
         def step_ess(state, useless):
             x, u, g, key = state
@@ -363,6 +378,8 @@ class Sampler:
         if output == 'normal':
             X = jax.lax.scan(step, init= (x, u, g, key), xs= None, length= num_steps)[1] #do the sampling
             X = jnp.swapaxes(X, 0, 1)
+
+            return X
 
             f = jnp.average(jnp.average(jnp.square(X), axis= 0), axis= -1)
             burnin2_steps = self.remove_burn_in(f, self.relative_accuracy)
