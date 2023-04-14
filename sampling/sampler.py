@@ -232,6 +232,19 @@ class Sampler:
         return xx, uu, ll, gg, kinetic_change, key, time + eps
 
 
+
+    def dynamics_generalized_sg(self, x, u, g, random_key, time, L, eps, sigma):
+        """One step of the generalized dynamics."""
+
+        # Hamiltonian step
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
+
+        # Langevin-like noise
+        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
+        uu, key = self.partially_refresh_momentum(uu, nu, key)
+
+        return xx, uu, ll, gg, kinetic_change, key, time + eps
+
     def nan_reject(self, x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kk):
         """if there are nans, let's reduce the stepsize, and not update the state. The function returns the old state in this case."""
         tru = jnp.all(jnp.isfinite(xx))
@@ -401,7 +414,6 @@ class Sampler:
         ### auto-tune the hyperparameters L and eps ###
         if self.frac_tune1 + self.frac_tune2 + self.frac_tune3 != 0.0:
             L, eps, sigma, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, sigma, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
-
             if self.frac_tune3 != 0: #if we want to further improve L tuning we go to the second stage (which is a bit slower)
                 L, x, u, l, g, key = self.tune3(x, u, l, g, key, L, eps, sigma, (int)(num_steps * self.frac_tune3))
 
@@ -429,7 +441,7 @@ class Sampler:
 
             if output == 'normal' or output == 'detailed':
                 X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma)
-
+                print('here')
                 if output == 'detailed':
                     return X, E, L, eps
                 else:

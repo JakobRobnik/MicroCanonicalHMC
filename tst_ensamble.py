@@ -42,7 +42,7 @@ def problems():
         print(dat)
         return dat
 
-    data = [problem(num) for num in [3 ]]
+    data = [problem(num) for num in [2 ]]
 
 
 problems()
