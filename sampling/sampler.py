@@ -154,6 +154,27 @@ class Sampler:
         return xx, uu, l, gg, kinetic_change, random_key
 
 
+    def leapfrog_sg(self, x, u, g, random_key, eps, sigma, data):
+        """leapfrog"""
+
+        z = x / sigma # go to the latent space
+
+        # half step in momentum
+        uu, delta_r1 = self.update_momentum(eps * 0.5, g * sigma, u)
+
+        # full step in x
+        zz = z + eps * uu
+        xx = sigma * zz # go back to the configuration space
+        l, gg = self.Target.grad_nlogp(xx, data)
+
+        # half step in momentum
+        uu, delta_r2 = self.update_momentum(eps * 0.5, gg * sigma, uu)
+        kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
+
+        return xx, uu, l, gg, kinetic_change, random_key
+
+
+
     def minimal_norm(self, x, u, g, random_key, eps, sigma):
         """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
@@ -234,16 +255,26 @@ class Sampler:
 
 
     def dynamics_generalized_sg(self, x, u, g, random_key, time, L, eps, sigma):
-        """One step of the generalized dynamics."""
+        """One sweep over the entire dataset. Perfomrs self.Target.num_batches steps with the stochastic gradient."""
 
-        # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
+        #reshufle data and arange in batches
 
-        # Langevin-like noise
-        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
-        uu, key = self.partially_refresh_momentum(uu, nu, key)
+        key_reshuffle, key_dynamics, key_langevin = jax.random.split(random_key, 3)
+        data_shape = self.Target.data.shape
+        data = jax.random.permutation(key_reshuffle, self.Target.data).reshape(self.Target.num_batches, data_shape[0]//self.Target.data, data_shape[1])
 
-        return xx, uu, ll, gg, kinetic_change, key, time + eps
+        def substep(state, xs):
+            # Hamiltonian step
+            xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
+
+            # Langevin-like noise
+            nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
+            uu, key = self.partially_refresh_momentum(uu, nu, key)
+
+            return xx, uu, ll, gg, kinetic_change, key, time + eps
+
+
+
 
     def nan_reject(self, x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kk):
         """if there are nans, let's reduce the stepsize, and not update the state. The function returns the old state in this case."""
@@ -441,7 +472,6 @@ class Sampler:
 
             if output == 'normal' or output == 'detailed':
                 X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma)
-                print('here')
                 if output == 'detailed':
                     return X, E, L, eps
                 else:
