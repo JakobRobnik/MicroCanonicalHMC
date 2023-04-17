@@ -13,3 +13,5 @@ The associated papers are:
 - [formulation as a stochastic process and first application to the lattice field theory](https://arxiv.org/abs/2303.18221)
 
 If you have any questions do not hesitate to contact me at jakob_robnik@berkeley.edu
+
+![ensamble](plots/movies/rosenbrock.gif)
