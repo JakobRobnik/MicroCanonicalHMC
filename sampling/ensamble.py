@@ -339,7 +339,7 @@ class Sampler:
 
         plt.xlabel('burn-in steps')
         plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in2.png')
-        plt.show()
+        plt.close()
 
         return steps, x, u, l, g, key, L, eps, sigma
 
@@ -406,7 +406,7 @@ class Sampler:
             plt.plot(bias_max, '.-', color='tab:red', label = 'max')
             plt.yscale('log')
             plt.savefig('tst_ensamble/' + self.Target.name + '/bias2.png')
-            plt.show()
+            plt.close()
 
             num_t = find_crossing(bias_max_t, 0.01)
             num = find_crossing(bias_max, 0.01)
@@ -427,7 +427,7 @@ class Sampler:
 
         plt.xlabel('steps')
         plt.ylabel('f')
-        plt.savefig('tst_ensamble/' + self.Target.name + '/secondary_burn_in2.png')
+        plt.close('tst_ensamble/' + self.Target.name + '/secondary_burn_in2.png')
         plt.show()
 
         return burnin2_steps

@@ -466,7 +466,7 @@ class Sampler:
                     plt.show()
 
                     cutoff_reached = bsq[-1] < 0.01
-                    return (100.0 / (find_crossing(bsq, 0.01) *self.grad_evals_per_step) ) * cutoff_reached
+                    return (100.0 / (find_crossing(bsq, 0.01) * self.grad_evals_per_step) ) * cutoff_reached
 
                 ### reshape results ###
                 if type(results) is tuple: #each chain returned a tuple

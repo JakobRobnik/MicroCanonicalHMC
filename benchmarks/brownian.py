@@ -44,16 +44,16 @@ class Target():
 
 
     def nlogp(self, x):
-        y = softplus_to_log(x[:2])
+        #y = softplus_to_log(x[:2])
 
-        lik = 0.5 * jnp.exp(-2*y[1]) * jnp.sum(self.observable * jnp.square(x[2:] - self.data)) + y[1] * self.num_observable
-        prior_x = 0.5 * jnp.exp(-2*y[0]) * (x[2]**2 + jnp.sum(jnp.square(x[3:] - x[2:-1]))) + y[0] * self.num_data
-        prior_logsigma = 0.5 * jnp.sum(jnp.square(y / 2.0)) - jnp.sum(jnp.log(jacobian(x[:2])))
+        lik = 0.5 * jnp.exp(-2*x[1]) * jnp.sum(self.observable * jnp.square(x[2:] - self.data)) + x[1] * self.num_observable
+        prior_x = 0.5 * jnp.exp(-2*x[0]) * (x[2]**2 + jnp.sum(jnp.square(x[3:] - x[2:-1]))) + x[0] * self.num_data
+        prior_logsigma = 0.5 * jnp.sum(jnp.square(x / 2.0))
 
         return lik + prior_x + prior_logsigma
 
     def transform(self, x):
-        return jnp.concatenate((jnp.exp(softplus_to_log(x[:2])), x[2:]))
+        return jnp.concatenate((jnp.exp(x[:2]), x[2:]))
 
 
     def prior_draw_optimize(self, key):
@@ -69,7 +69,7 @@ class Target():
 
         walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
 
-        return jnp.concatenate((log_to_softplus(log_sigma), walk))
+        return jnp.concatenate((log_sigma, walk))
 
 
     def generate_data(self, key):
@@ -88,7 +88,7 @@ def ground_truth(key_num):
     key = jax.random.PRNGKey(key_num)
     mchmc_target = Target()
     numpyro_target = mchmc_target_to_numpyro(Target)
-    samples, steps, steps_warmup = sample_nuts(numpyro_target, mchmc_target, None, 10000, 10000, 20, random_key=key, progress_bar= True)
+    samples, steps, steps_warmup = sample_nuts(numpyro_target, mchmc_target, None, 10000, 100000, 20, random_key=key, progress_bar= True)
 
     x = np.array(samples['x'])
     xsq = jnp.square(jax.vmap(mchmc_target.transform)(x))
@@ -150,11 +150,10 @@ def plot_walk():
 
 
 def map():
-    chains = 20
-
+    chains = 10
+    from optimization.adam import optimize_adam
     from scipy.optimize import minimize
     t = Target()
-
     def store(x):
         X.append(x[0])
         Y.append(x[1])
@@ -166,7 +165,10 @@ def map():
     for i in range(chains):
         X = []
         Y = []
-        opt = minimize(t.grad_nlogp, jac = True, x0 = x0[i], method = 'BFGS', callback = store)
+        #opt = minimize(t.grad_nlogp, jac = True, x0 = x0[i], method = 'BFGS', callback = store, options = {'maxiter': 5000})
+        #opt = minimize(t.grad_nlogp, jac = True, x0 = x0[i], method = 'L-BFGS-B', callback = store, options = {'maxiter': 1000, 'maxcor': 50})
+        opt = minimize(t.grad_nlogp, jac = True, x0 = x0[i], method = 'Newton-CG', callback = store, options = {'maxiter': 1000})
+
         print(len(X))
         plt.plot(X, Y, '.-', color = 'black', alpha = 0.5)
         plt.plot(X[0], Y[0], 'o', color='tab:red')
@@ -178,15 +180,49 @@ def map():
     plt.ylabel(r'$\log \sigma_{\mathrm{obs}}$')
     plt.show()
 
+def map_adam():
+    from optimization.adam import optimize_adam
+    chains = 10
+    t = Target()
 
-softplus_to_log = lambda x: jnp.log(jnp.log(1 + jnp.exp(x)))
-log_to_softplus = lambda x: jnp.log(jnp.exp(jnp.exp(x))-1)
+    x0 = jax.vmap(t.prior_draw)(jax.random.split(jax.random.PRNGKey(0), chains))
+    plt.rcParams.update({'font.size': 25})
+    plt.figure(figsize=(10, 10))
 
-jacobian = lambda x: 1./((1 + jnp.exp(-x)) * jnp.log(1 + jnp.exp(x)))
+    for i in range(chains):
+        l, x = optimize_adam(t.grad_nlogp, x0[i], 10000, lr = 0.05, trace= True)
+        X, Y = x[:, 0], x[:, 1]
+
+        plt.plot(X, Y, '.-', color='black', alpha=0.5)
+        plt.plot(X[0], Y[0], 'o', color='tab:red')
+        plt.plot(X[-1], Y[-1], 'o', color='tab:blue')
+
+    plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
+    plt.xlabel(r'$\log \sigma_{\mathrm{rw}}$')
+    plt.ylabel(r'$\log \sigma_{\mathrm{obs}}$')
+    plt.show()
+
+def mchmc():
+    target = Brownian()
+    target.transform = lambda x: x
+    sampler = Sampler(target, integrator='LF', L=0.8, eps=0.1, frac_tune1=0.0, frac_tune2=0.0, frac_tune3=0.0,
+                      diagonal_preconditioning=False)
+
+    x = sampler.sample(10000, output='normal')
+
+    plt.plot(x[:, 0], x[:, 1], '.-')
+    plt.plot(x[0, 0], x[0, 1], 'o', color='tab:red')
+    plt.plot(x[500, 0], x[500, 1], 'o', color='tab:red')
+    plt.plot(x[1000, 0], x[1000, 1], 'o', color='tab:red')
+    plt.plot(x[1500, 0], x[1500, 1], 'o', color='tab:red')
+
+    plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
+
+    plt.show()
+
 
 if __name__ == '__main__':
-
-    print(softplus_to_log(log_to_softplus(-1)))
+    map_adam()
     #ground_truth(2)
     #plot_hierarchical()
     #join_ground_truth()

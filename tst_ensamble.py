@@ -23,7 +23,7 @@ def problems():
     def problem(num):
         t0 = time.time()
 
-        num_samples = [500, 1000, 1000, 1000, 1000, 2000][num]
+        num_samples = [500, 1000, 1000, 1000, 1000, 1000][num]
         target = [Banana(prior = 'prior'),
                   IllConditionedGaussianGamma(prior = 'prior'),
                   GermanCredit(),
@@ -42,7 +42,7 @@ def problems():
         print(dat)
         return dat
 
-    data = [problem(num) for num in [2 ]]
+    data = [problem(num) for num in [5, ]]
 
 
 problems()
