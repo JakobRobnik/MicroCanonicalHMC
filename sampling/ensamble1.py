@@ -285,19 +285,20 @@ class Sampler:
         state=  (0, loss0, 0, True, True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.ones(self.Target.d), 1e4)
         steps, loss, fail_count, never_rejected, never_accepted, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, state)
         #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, state)
-
-        sigrw = np.array(X)[:, :, 0].T
-        sigobs = np.array(X)[:, :, 1].T
-        print(np.shape(sigrw))
-        plt.rcParams.update({'font.size': 25})
-        plt.figure(figsize=(10, 10))
-        for i in range(20):
-            plt.plot(sigrw[i], sigobs[i], '.-')
-            plt.plot(sigrw[i, 0], sigobs[i, 0], 'o', color = 'black')
-        plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
-        plt.xlabel(r'$\log \sigma_{\mathrm{rw}}$')
-        plt.ylabel(r'$\log \sigma_{\mathrm{obs}}$')
-        plt.show()
+        entropy = jnp.array(entropy)
+        entropy += 1 - jnp.min(entropy)
+        # sigrw = np.array(X)[:, :, 0].T
+        # sigobs = np.array(X)[:, :, 1].T
+        # print(np.shape(sigrw))
+        # plt.rcParams.update({'font.size': 25})
+        # plt.figure(figsize=(10, 10))
+        # for i in range(20):
+        #     plt.plot(sigrw[i], sigobs[i], '.-')
+        #     plt.plot(sigrw[i, 0], sigobs[i, 0], 'o', color = 'black')
+        # plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
+        # plt.xlabel(r'$\log \sigma_{\mathrm{rw}}$')
+        # plt.ylabel(r'$\log \sigma_{\mathrm{obs}}$')
+        # plt.show()
 
 
         #print(sigma / jnp.sqrt(self.Target.second_moments))
@@ -333,7 +334,7 @@ class Sampler:
         plt.yscale('log')
         plt.xlabel('burn-in steps')
         plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in.png')
-        plt.show()
+        plt.close()
 
 
         ### let's do some checks and print warnings ###
@@ -388,8 +389,8 @@ class Sampler:
 
         elif output == 'ess':
             Xsq = jax.lax.scan(step_ess, init=(x, u, g, key), xs=None, length=num_steps)[1] #do the sampling
-            print(Xsq[-1])
-            print(self.Target.second_moments)
+            # print(Xsq[-1])
+            # print(self.Target.second_moments)
             #instantaneous moments bias
             bias_d_t = jnp.square(Xsq - self.Target.second_moments[None, :]) / self.Target.variance_second_moments[None, :]
             bias_avg_t, bias_max_t = jnp.average(bias_d_t, axis=-1), jnp.max(bias_d_t, axis= -1)
@@ -409,7 +410,7 @@ class Sampler:
 
             plt.yscale('log')
             plt.savefig('tst_ensamble/' + self.Target.name + '/bias.png')
-            plt.show()
+            plt.close()
 
             num_inst = find_crossing(bias_max_t, 0.01)
             num = find_crossing(bias_max, 0.01)
@@ -431,6 +432,6 @@ class Sampler:
         plt.xlabel('steps')
         plt.ylabel('f')
         plt.savefig('tst_ensamble/' + self.Target.name + '/secondary_burn_in.png')
-        plt.show()
+        plt.close()
 
         return burnin2_steps

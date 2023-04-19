@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 
-from sampling.ensamble import Sampler as EnsambleSampler
+from sampling.ensamble1 import Sampler as EnsambleSampler
 
 from benchmarks.benchmarks_mchmc import *
 from benchmarks.german_credit import Target as GermanCredit

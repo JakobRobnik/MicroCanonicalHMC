@@ -567,7 +567,7 @@ class StochasticVolatility():
         scales = jnp.array([self.typical_sigma, self.typical_nu])
         params = jax.random.exponential(key_exp, shape = (2, )) * scales
         walk = random_walk(key_walk, self.d - 2) * params[0]
-        return jnp.concatenate((walk, np.log(params/scales)))
+        return jnp.concatenate((walk, jnp.log(params/scales)))
 
 
 def random_walk(key, num):
