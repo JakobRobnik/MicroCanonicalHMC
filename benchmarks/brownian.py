@@ -44,15 +44,16 @@ class Target():
 
 
     def nlogp(self, x):
+        y = softplus_to_log(x[:2])
 
-        lik = 0.5 * jnp.exp(-2*x[1]) * jnp.sum(self.observable * jnp.square(x[2:] - self.data)) + x[1] * self.num_observable
-        prior_x = 0.5 * jnp.exp(-2*x[0]) * (x[2]**2 + jnp.sum(jnp.square(x[3:] - x[2:-1]))) + x[0] * self.num_data
-        prior_logsigma = 0.5 * jnp.sum(jnp.square(x[:2] / 2.0))
+        lik = 0.5 * jnp.exp(-2*y[1]) * jnp.sum(self.observable * jnp.square(x[2:] - self.data)) + y[1] * self.num_observable
+        prior_x = 0.5 * jnp.exp(-2*y[0]) * (x[2]**2 + jnp.sum(jnp.square(x[3:] - x[2:-1]))) + y[0] * self.num_data
+        prior_logsigma = 0.5 * jnp.sum(jnp.square(y / 2.0)) - jnp.sum(jnp.log(jacobian(x[:2])))
 
         return lik + prior_x + prior_logsigma
 
     def transform(self, x):
-        return jnp.concatenate((jnp.exp(x[:2]), x[2:]))
+        return jnp.concatenate((jnp.exp(softplus_to_log(x[:2])), x[2:]))
 
 
     def prior_draw_optimize(self, key):
@@ -68,7 +69,7 @@ class Target():
 
         walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
 
-        return jnp.concatenate((log_sigma, walk))
+        return jnp.concatenate((log_to_softplus(log_sigma), walk))
 
 
     def generate_data(self, key):
@@ -147,6 +148,7 @@ def plot_walk():
     plt.savefig('walk_posterior.png')
     plt.show()
 
+
 def map():
     chains = 20
 
@@ -177,17 +179,14 @@ def map():
     plt.show()
 
 
+softplus_to_log = lambda x: jnp.log(jnp.log(1 + jnp.exp(x)))
+log_to_softplus = lambda x: jnp.log(jnp.exp(jnp.exp(x))-1)
+
+jacobian = lambda x: 1./((1 + jnp.exp(-x)) * jnp.log(1 + jnp.exp(x)))
+
 if __name__ == '__main__':
 
-    key = jax.random.PRNGKey(0)
-
-    t = Target()
-    x = jax.vmap(t.prior_draw)(jax.random.split(key, 100))
-    plt.plot(x[:, 0], x[:, 1], '.', color = 'tab:red')
-
-    x = jax.vmap(t.prior_draw_optimize)(jax.random.split(key, 100))
-    plt.plot(x[:, 0], x[:, 1], '.', color = 'tab:blue')
-    plt.show()
+    print(softplus_to_log(log_to_softplus(-1)))
     #ground_truth(2)
     #plot_hierarchical()
     #join_ground_truth()

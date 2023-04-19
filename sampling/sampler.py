@@ -16,7 +16,7 @@ class Sampler:
 
     def __init__(self, Target, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
-                 diagonal_preconditioning= True,
+                 diagonal_preconditioning= True, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
         """Args:
                 Target: the target distribution class
@@ -57,9 +57,9 @@ class Sampler:
             raise ValueError('integrator = ' + integrator + 'is not a valid option.')
 
 
-        ### decoherence mechanism ###
-        generalized = True
-        self.dynamics = self.dynamics_generalized if generalized else self.dynamics_bounces
+        ### option of stochastic gradient ###
+        self.sg = sg
+        self.dynamics = self.dynamics_generalized_sg if sg else self.dynamics_generalized
 
         ### preconditioning ###
         self.diagonal_preconditioning = diagonal_preconditioning
@@ -153,6 +153,26 @@ class Sampler:
 
         return xx, uu, l, gg, kinetic_change, random_key
 
+    # def leapfrog(self, x, u, g, random_key, eps, sigma):
+    #     """leapfrog"""
+    #
+    #     z = x / sigma  # go to the latent space
+    #
+    #     # half step in x
+    #     zz = z + 0.5 * eps * u
+    #     l, gg = self.Target.grad_nlogp(sigma * zz)
+    #
+    #     # full step in momentum
+    #     uu, delta_r = self.update_momentum(eps, gg * sigma, u)
+    #
+    #     # half step in x
+    #     zz += 0.5 * eps * uu
+    #     xx = sigma * zz  # go back to the configuration space
+    #
+    #     l = self.Target.nlogp(xx)
+    #     kinetic_change = delta_r * (self.Target.d - 1)
+    #
+    #     return xx, uu, l, gg, kinetic_change, random_key
 
     def leapfrog_sg(self, x, u, g, random_key, eps, sigma, data):
         """leapfrog"""
@@ -172,6 +192,28 @@ class Sampler:
         kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
 
         return xx, uu, l, gg, kinetic_change, random_key
+
+    #
+    # def leapfrog_sg(self, x, u, g, random_key, eps, sigma, data):
+    #     """leapfrog"""
+    #
+    #     z = x / sigma # go to the latent space
+    #
+    #     # half step in x
+    #     zz = z + 0.5 * eps * u
+    #     xx = sigma * zz # go back to the configuration space
+    #     l, gg = self.Target.grad_nlogp(xx, data)
+    #
+    #     # half step in momentum
+    #     uu, delta_r = self.update_momentum(eps, gg * sigma, u)
+    #
+    #     # full step in x
+    #     zz += 0.5 * eps * uu
+    #     xx = sigma * zz # go back to the configuration space
+    #
+    #     kinetic_change = delta_r * (self.Target.d-1)
+    #
+    #     return xx, uu, l, gg, kinetic_change, random_key
 
 
 
@@ -259,20 +301,24 @@ class Sampler:
 
         #reshufle data and arange in batches
 
-        key_reshuffle, key_dynamics, key_langevin = jax.random.split(random_key, 3)
+        key_reshuffle, key = jax.random.split(random_key)
         data_shape = self.Target.data.shape
-        data = jax.random.permutation(key_reshuffle, self.Target.data).reshape(self.Target.num_batches, data_shape[0]//self.Target.data, data_shape[1])
+        data = jax.random.permutation(key_reshuffle, self.Target.data).reshape(self.Target.num_batches, data_shape[0]//self.Target.num_batches, data_shape[1])
 
-        def substep(state, xs):
+        def substep(state, data_batch):
+            x, u, l, g, key, K, t = state
             # Hamiltonian step
-            xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
+            xx, uu, ll, gg, dK, key = self.leapfrog_sg(x, u, g, key, eps, sigma, data_batch)
 
             # Langevin-like noise
             nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
             uu, key = self.partially_refresh_momentum(uu, nu, key)
 
-            return xx, uu, ll, gg, kinetic_change, key, time + eps
+            return (xx, uu, ll, gg, key, K + dK, t + eps), None
 
+        xx, uu, ll, gg, key, kinetic_change, time = jax.lax.scan(substep, init= (x, u, 0.0, g, key, 0.0, time), xs= data, length= self.Target.num_batches)[0]
+
+        return xx, uu, ll, gg, kinetic_change, key, time
 
 
 
@@ -335,7 +381,14 @@ class Sampler:
                 raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
         else: #initial x is given
             x = x_initial
-        l, g = self.Target.grad_nlogp(x)
+
+        if self.sg:
+            key_reshuffle, key = jax.random.split(key)
+            data_batch = jax.random.permutation(key_reshuffle, self.Target.data)[0: len(self.Target.data) // self.Target.num_batches]
+            l, g = self.Target.grad_nlogp(x, data_batch)
+
+        else:
+            l, g = self.Target.grad_nlogp(x)
 
         u, key = self.random_unit_vector(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
