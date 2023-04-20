@@ -321,7 +321,7 @@ def stochastic_volatility_ground_truth(key_num):
     var_second_moment[-2] = np.std(np.square(sigma))**2
     var_second_moment[-1] = np.std(np.square(nu))**2
 
-    np.save('data/stochastic_volatility/ground_truth'+str(key_num)+'.npy', [second_moment, var_second_moment])
+    np.save('benchmarks/ground_truth/stochastic_volatility/ground_truth_'+str(key_num) +'.npy', [second_moment, var_second_moment])
 
     # volatility = np.sort(np.exp(s), axis=0)
     # np.save('data/stochastic_volatility/NUTS_posterior_band.npy', [volatility[len(volatility) // 4, :], volatility[len(volatility) // 2, :], volatility[3 * len(volatility) // 4, :]])
@@ -407,15 +407,15 @@ def dimension_scaling():
 if __name__ == '__main__':
 
 
-    #stochastic_volatility_ground_truth(1)
+    stochastic_volatility_ground_truth(2)
 
-    name = 'stochastic_volatility'
-
-    data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
-
-    truth = np.median(data, axis = 0)
-    np.save('../data/'+name+'/ground_truth.npy', truth)
-
-    for i in range(3):
-        bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
-        print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
+    # name = 'stochastic_volatility'
+    #
+    # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
+    #
+    # truth = np.median(data, axis = 0)
+    # np.save('../data/'+name+'/ground_truth.npy', truth)
+    #
+    # for i in range(3):
+    #     bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
+    #     print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))

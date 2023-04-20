@@ -397,7 +397,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', adaptive = False):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1, adaptive = False):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -421,12 +421,20 @@ class Sampler:
                         'ess': Effective Sample Size per gradient evaluation, float.
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
 
+                thinning: only one every 'thinning' steps is stored. Defaults to 1.
+
                adaptive: use the adaptive step size for sampling. This is experimental and not well developed yet.
         """
 
         if num_chains == 1:
-            results = self.single_chain_sample(num_steps, x_initial, random_key, output, adaptive) #the function which actually does the sampling
+            results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning, adaptive) #the function which actually does the sampling
             if output == 'ess':
+                # import matplotlib.pyplot as plt
+                # plt.plot(jnp.sqrt(results))
+                # plt.plot([0, len(results)], np.ones(2) * 0.1, '--', color='black', alpha=0.5)
+                # plt.yscale('log')
+                # plt.show()
+
                 cutoff_reached = results[-1] < 0.01
                 return (100.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached
             else:
@@ -451,7 +459,7 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, adaptive)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning, adaptive)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
@@ -486,7 +494,7 @@ class Sampler:
 
 
 
-    def single_chain_sample(self, num_steps, x_initial, random_key, output, adaptive):
+    def single_chain_sample(self, num_steps, x_initial, random_key, output, thinning, adaptive):
         """sampling routine. It is called by self.sample"""
 
         ### initial conditions ###
@@ -524,7 +532,7 @@ class Sampler:
         else: #fixed stepsize
 
             if output == 'normal' or output == 'detailed':
-                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma)
+                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
                 if output == 'detailed':
                     return X, E, L, eps
                 else:
@@ -544,7 +552,7 @@ class Sampler:
 
     ### for loops which do the sampling steps: ###
 
-    def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
+    def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma, thinning):
         """Stores transform(x) for each step."""
         
         def step(state, useless):
@@ -554,10 +562,29 @@ class Sampler:
             EE = E + kinetic_change + ll - l
             return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), ll, EE)
 
-        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length=num_steps)
+        if thinning == 1:
+            return jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length=num_steps)[1]
 
-        return track
-        # index_burnin = burn_in_ending(L)//thinning
+        else:
+            return self.sample_thinning(num_steps, x, u, l, g, random_key, L, eps, sigma, thinning)
+
+
+    def sample_thinning(self, num_steps, x, u, l, g, random_key, L, eps, sigma, thinning):
+        """Stores transform(x) for each step."""
+
+        def step(state, useless):
+
+            def substep(state, useless):
+                x, u, l, g, E, key, time = state
+                xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
+                EE = E + kinetic_change + ll - l
+                return (xx, uu, ll, gg, EE, key, time), None
+
+            state = jax.lax.scan(step, init=state, xs=None, length=thinning)[0] #do 'thinning' steps without saving
+
+            return state, (self.Target.transform(state[0]), state[2], state[4]) #save one sample
+
+        return jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length= num_steps // thinning)[1]
 
 
 
