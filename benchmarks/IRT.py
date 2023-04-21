@@ -32,8 +32,8 @@ class Target():
         self.d = 501
         self.name= name
 
-        #data = np.load(dirr+'/ground_truth/'+name+'/ground_truth.npy')
-        #self.second_moments, self.variance_second_moments = data[0], data[1]
+        data = np.load(dirr+'/ground_truth/'+name+'/ground_truth.npy')
+        self.second_moments, self.variance_second_moments = data[0], data[1]
 
         #xmap = np.load(dirr+'/ground_truth/'+name+'/map.npy')
         self.transform = lambda x: target.default_event_space_bijector(x)
@@ -104,26 +104,28 @@ def ground_truth(key_num):
     np.save('ground_truth/'+name+'/ground_truth_'+str(key_num) +'.npy', [second_moments, variance_second_moments])
 
 
+
+def joint_ground_truth():
+
+    data = np.array([np.load('ground_truth/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
+
+    truth = np.median(data, axis = 0)
+    np.save('ground_truth/'+name+'/ground_truth.npy', truth)
+
+    for i in range(3):
+        bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
+        print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
+
+
 if __name__ == '__main__':
 
-    ground_truth(0)
-    # kkey = jax.random.PRNGKey(0)
-    # key = jax.random.split(kkey, 100)
-    # t = Target()
-    #
-    # x = jax.vmap(t.prior_draw)(key)
-    # g = jax.vmap(lambda x: t.grad_nlogp(x)[1])(x)  ######   REPEAT FOR MULTIPLE CHAINS AND COMPUTE VIRIAL LOSS
-    #
-    # print(jnp.average(x * g, axis=0))
+    kkey = jax.random.PRNGKey(0)
+    key = jax.random.split(kkey, 100)
+    t = Target()
+
+    x = jax.vmap(t.prior_draw)(key)
+    g = jax.vmap(lambda x: t.grad_nlogp(x)[1])(x)
+
+    print(jnp.average(x * g, axis=0))
 
     #Target().prior_draw(jax.random.PRNGKey(0))
-    #ground_truth(2)
-
-    # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
-    #
-    # truth = np.median(data, axis = 0)
-    # np.save('../data/'+name+'/ground_truth.npy', truth)
-    #
-    # for i in range(3):
-    #     bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
-    #     print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))

@@ -302,7 +302,7 @@ def rosenbrock(key_num, d = 36):
 
 def stochastic_volatility_ground_truth(key_num):
 
-    samples, steps, warmup_calls = sample_nuts(targets.StochasticVolatility, MCHMC_targets.StochasticVolatility(), None, 10000, 10000, 50, progress_bar= True)
+    samples, steps, warmup_calls = sample_nuts(targets.StochasticVolatility, MCHMC_targets.StochasticVolatility(), None, 10000, 10000, 50, key_num, progress_bar= True)
 
     s= np.array(samples['s'])
     sigma= np.array(samples['sigma'])
@@ -403,19 +403,19 @@ def dimension_scaling():
     # print(ess)
 
 
+def join_ground_truth():
+    name = 'stochastic_volatility'
+
+    data = np.array([np.load('benchmarks/ground_truth/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
+
+    truth = np.median(data, axis = 0)
+    np.save('benchmarks/ground_truth/'+name+'/ground_truth.npy', truth)
+
+    for i in range(3):
+        bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
+        print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
 
 if __name__ == '__main__':
 
-
+    #join_ground_truth()
     stochastic_volatility_ground_truth(2)
-
-    # name = 'stochastic_volatility'
-    #
-    # data = np.array([np.load('../data/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
-    #
-    # truth = np.median(data, axis = 0)
-    # np.save('../data/'+name+'/ground_truth.npy', truth)
-    #
-    # for i in range(3):
-    #     bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
-    #     print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))

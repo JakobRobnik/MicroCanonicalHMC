@@ -422,6 +422,8 @@ class Sampler:
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
 
                 thinning: only one every 'thinning' steps is stored. Defaults to 1.
+                        This is not the recommended solution to save memory. It is better to use the transform functionality.
+                        If this is not sufficient consider saving only the expected values, by setting output= 'expectation'.
 
                adaptive: use the adaptive step size for sampling. This is experimental and not well developed yet.
         """
@@ -429,11 +431,11 @@ class Sampler:
         if num_chains == 1:
             results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning, adaptive) #the function which actually does the sampling
             if output == 'ess':
-                # import matplotlib.pyplot as plt
-                # plt.plot(jnp.sqrt(results))
-                # plt.plot([0, len(results)], np.ones(2) * 0.1, '--', color='black', alpha=0.5)
-                # plt.yscale('log')
-                # plt.show()
+                import matplotlib.pyplot as plt
+                plt.plot(jnp.sqrt(results))
+                plt.plot([0, len(results)], np.ones(2) * 0.1, '--', color='black', alpha=0.5)
+                plt.yscale('log')
+                plt.show()
 
                 cutoff_reached = results[-1] < 0.01
                 return (100.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached

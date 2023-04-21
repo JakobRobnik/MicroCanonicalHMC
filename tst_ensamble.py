@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 
-from sampling.ensamble1 import Sampler as EnsambleSampler
+from sampling.ensamble import Sampler as EnsambleSampler
 
 from benchmarks.benchmarks_mchmc import *
 from benchmarks.german_credit import Target as GermanCredit
@@ -18,7 +18,6 @@ print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
 def problems():
     import time
-
 
     def problem(num):
         t0 = time.time()
@@ -42,7 +41,7 @@ def problems():
         print(dat)
         return dat
 
-    data = [problem(num) for num in [5, ]]
+    data = [problem(num) for num in [4, ]]
 
 
 problems()
