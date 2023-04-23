@@ -202,27 +202,44 @@ def map_adam():
     plt.ylabel(r'$\log \sigma_{\mathrm{obs}}$')
     plt.show()
 
+
+
 def mchmc():
-    target = Brownian()
+    from sampling.sampler import Sampler
+
+    target = Target()
     target.transform = lambda x: x
+    num_chains = (128, 32)
+    key, key_prior = jax.random.split(jax.random.PRNGKey(0))
+    keys = jax.random.split(key_prior, num_chains[0])
+
     sampler = Sampler(target, integrator='LF', L=0.8, eps=0.1, frac_tune1=0.0, frac_tune2=0.0, frac_tune3=0.0,
                       diagonal_preconditioning=False)
 
-    x = sampler.sample(10000, output='normal')
+    # initial condition
+    xSC = jax.vmap(target.prior_draw)(keys)
+    x0 = jnp.repeat(xSC, num_chains[1], axis=0)
 
-    plt.plot(x[:, 0], x[:, 1], '.-')
-    plt.plot(x[0, 0], x[0, 1], 'o', color='tab:red')
-    plt.plot(x[500, 0], x[500, 1], 'o', color='tab:red')
-    plt.plot(x[1000, 0], x[1000, 1], 'o', color='tab:red')
-    plt.plot(x[1500, 0], x[1500, 1], 'o', color='tab:red')
+    x = sampler.sample(6000, num_chains[0] * num_chains[1], x0, random_key = key, output='normal', thinning = 10)
 
-    plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
+    print(x.shape)
+    g = jax.vmap(jax.vmap(lambda z: target.grad_nlogp(z)[1]))(x)
+    print(g.shape)
+    np.save('brownian_samples.npy', np.array([x, g]))
 
-    plt.show()
+
+    #plt.plot(x[:, -1, 0], x[:, -1, 1], '.')
+    # for m in range(chains):
+    #     plt.plot(x[m, :, 0], x[m, :, 1], '-')
+        # for k in range(1):
+        #     plt.plot(x[m, 500 * k, 0], x[m, 500 * k, 1], '.', color='tab:red')
+
+    #plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
+
 
 
 if __name__ == '__main__':
-    map_adam()
+    mchmc()
     #ground_truth(2)
     #plot_hierarchical()
     #join_ground_truth()

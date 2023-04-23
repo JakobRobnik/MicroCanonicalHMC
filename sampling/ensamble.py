@@ -68,7 +68,7 @@ class pmap_target:
 class Sampler:
     """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, alpha = 1.0, varE_wanted = 1e-4, pmap = False):
+    def __init__(self, Target, alpha = 1.0, varE_wanted = 1e-4, maxiter= 5000, pmap = False):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -95,13 +95,8 @@ class Sampler:
         ### Hyperparameters of the burn in. The value of those parameters typically will not have large impact on the performance ###
 
         self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
-        self.max_burn_in = 100                       # we will not take more steps
-        self.required_decrease = 0.01 # if log10(change of virial loss) / steps if less than required decrease we start collecting samples
-        self.delay_check = 20
-        self.loss_wanted = 0.2                        # if the virial loss is lower, we start collecting samples
-
-        self.relative_accuracy = 0.05 # Determines how strict we are in removing the secondary burn in. The secondary burn-in ends,
-                                      # when the expected value of avg_d(variance) stops to fluctuate by more than relative_accuracy
+        self.maxiter = maxiter                       # we will not take more steps
+        self.keep_frac = 0.7                        # percentage of chains to keep after the burn-in
 
 
     def random_unit_vector(self, random_key, num_chains):
@@ -188,11 +183,30 @@ class Sampler:
         X = z - (g @ z.T).T @ x / x.shape[0]
         return jnp.sqrt(jnp.average(jnp.square(X))), key
 
-    # def bias(self, x, random_key):
-    #     key, key_z = jax.random.split(random_key)
-    #     z = jax.random.rademacher(key_z, (self.hutchinson_repeat, self.Target.d))  # <z_i z_j> = delta_ij
-    #     X = z - (x @ z.T).T @ x @ self.Target.Hessian / x.shape[0]
-    #     return jnp.sqrt(jnp.average(jnp.square(X))), key
+
+    def splitR(self, x, num_chains):
+        """See: https://arxiv.org/pdf/2110.13017.pdf, Definition 8."""
+
+        X = x.reshape(num_chains[0], num_chains[1], x.shape[1])
+        avg = jnp.average(X, axis=1)  # average for each superchain
+        avg2 = jnp.average(jnp.square(X), axis=1)
+        var = avg2 - jnp.square(avg)  # variance for each superchain
+
+        #identify outlier superchains by the different average
+        discrepancy = jnp.max(jnp.abs(avg - jnp.median(avg)), axis = 1) #discrepancy of the average
+        perm = jnp.argsort(discrepancy) # sort the chains by discrepancy
+
+        Avg = avg[perm][:(len(avg) * self.keep_frac).astype(int)] #remove some percentage of the worst chains
+        Var = var[perm][:(len(avg) * self.keep_frac).astype(int)]
+
+        avg_all = jnp.average(Avg, axis=0)  # average of the good chains
+        var_between = jnp.sum(jnp.square(Avg - avg_all), axis=0) / (len(Avg) - 1) # in between chains variance for the good chains
+
+        var_within = jnp.average(Var, axis=0) # average within chain vairance
+
+        R = jnp.sqrt(1. + var_between / var_within) #Gelman-Rubin R
+
+        return jnp.max(R), perm
 
 
     def initialize(self, random_key, x_initial, num_chains):
@@ -234,75 +248,92 @@ class Sampler:
 
 
 
-    def burn_in(self, loss0, x0, u0, l0, g0, random_key):
-        """Initial stage of the burn-in. Here the goal is to get to the typical set as quickly as possible (as measured by the virial conditions)."""
+    def sample(self, num_chains, x_initial='prior', random_key= None):
+        """Args:
+               num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
+               num_chains: number of independent chains, currently only tested for num_chains = 300 (ensamble regime).
+               x_initial: initial condition for x, shape: (num_chains, d). Defaults to 'prior' in which case the initial condition is drawn with self.Target.prior_draw.
+               random_key: jax random seed, defaults to jax.random.PRNGKey(0).
+        """
+
+        # chains are grouped in superchains. chains within the same group have the same intial conditions
+        lossSC, xSC, uSC, lSC, gSC, key = self.initialize(random_key, x_initial, num_chains[0]) #initialize the superchains
+
+        #loss0 = jnp.repeat(lossSC, num_chains[1]), #all chains within the superchain have the same initial conditions
+        x0 = jnp.repeat(xSC, num_chains[1], axis = 0)
+        u0 = jnp.repeat(uSC, num_chains[1], axis = 0)
+        l0 = jnp.repeat(lSC, num_chains[1], axis=0)
+        g0 = jnp.repeat(gSC, num_chains[1], axis=0)
 
 
-        def accept_reject_step(loss, x, u, l, g, varE, loss_new, xx, uu, ll, gg, varE_new):
-            """if there are nans or the loss went up we don't want to update the state"""
+        def accept_reject_step(x, u, l, g, varE, xx, uu, ll, gg, varE_new):
+            """if there are nans we don't want to update the state"""
 
-            no_nans = jnp.all(jnp.isfinite(xx)) and jnp.isfinite(loss_new)
+            no_nans = jnp.all(jnp.isfinite(xx))
             tru = no_nans  # loss went down and there were no nans
             false = (1 - tru)
-            Loss = loss_new * tru + loss * false
             X = jnp.nan_to_num(xx) * tru + x * false
             U = jnp.nan_to_num(uu) * tru + u * false
             L = jnp.nan_to_num(ll) * tru + l * false
             G = jnp.nan_to_num(gg) * tru + g * false
             Var = jnp.nan_to_num(varE_new) * tru + varE * false
-            return tru, Loss, X, U, L, G, Var
+            return tru, X, U, L, G, Var
 
 
         def burn_in_step(state):
             """one step of the burn-in"""
 
-            steps, loss_history, loss_decaying, x, u, l, g, key, L, eps, sigma, varE = state
+            steps, loss, x, u, l, g, key, L, eps, sigma, varE = state
 
             xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
 
-            loss, key = self.virial_loss(xx, gg, key)
             de = jnp.square(kinetic_change + ll - l) / self.Target.d
             varE_new = jnp.average(de)
 
             #will we accept the step?
-            accept, loss, x, u, l, g, varE = accept_reject_step(loss_history[0], x, u, l, g, varE, loss, xx, uu, ll, gg, varE_new)
+            accept, virial_loss, x, u, l, g, varE = accept_reject_step(x, u, l, g, varE, xx, uu, ll, gg, varE_new)
 
-            # tracking
-            loss_arr.append(loss)
-            entropy_arr.append(jnp.average(l))
-            vare_arr.append(varE)
-            f_arr.append(jnp.average(jnp.average(jnp.square(x), 1), axis = 0))
+            # convergence metrics
+            virial_loss, key = self.virial_loss(x, g, key)
+            R = self.splitR(x, num_chains)
 
-            #loss
-            loss_history_new = jnp.concatenate((jnp.ones(1) * loss, loss_history[:-1]))
-            loss_decaying *= (jnp.log10(loss_history_new[-1] / loss_history_new[0]) / self.delay_check > self.required_decrease)
 
             #diagonal preconditioner
-            sigma_new = jnp.std(x, axis=0) * loss_decaying + (1 - loss_decaying) * sigma  # diagonal conditioner
+            sigma_new = jnp.std(x, axis=0) * first_stage + (1 - first_stage) * sigma  # diagonal conditioner
             sigma_ratio = jnp.sqrt(jnp.average(jnp.square(sigma_new) / jnp.average(jnp.square(sigma))))
 
             #stepsize
-            bias_factor = jnp.power(0.5 * loss / 0.1, 0.25) * loss_decaying + (1-loss_decaying) * 1.0
+            bias_factor = jnp.power(0.5 * virial_loss / 0.1, 0.25) * first_stage + (1 - first_stage) * 1.0
             eps *= (bias_factor * jnp.power(varE / self.varEwanted, -1./6.) * sigma_ratio) * accept + (1-accept) * 0.5
             eps_arr.append(eps)
 
-            return steps + 1, loss_history_new, loss_decaying, x, u, l, g, key, L, eps, sigma_new, varE
+            # tracking
+            virial_loss_arr.append(virial_loss)
+            entropy_arr.append(jnp.average(l))
+            vare_arr.append(varE)
+            R_arr.append(self.splitR(x))
+            f_arr.append(jnp.average(jnp.average(jnp.square(x), 1), axis = 0))
+
+
+            return steps + 1, loss, x, u, l, g, key, L, eps, sigma_new, varE
 
         f_arr = []
         loss_arr = []
         eps_arr = []
         vare_arr = []
         entropy_arr = []
+        R_arr = []
 
-        condition = lambda state: (self.loss_wanted < state[1][0]) * (state[0] < self.max_burn_in)# * (jnp.log10(state[1][-1]/state[1][0]) / self.delay_check > self.required_decrease) # true during the burn-in
 
-        state = (0, jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(self.delay_check-1) * jnp.inf)), True, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.std(x0, axis=0) , 1e4)
-        steps, loss_history, loss_decaying, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, state)
+        condition = lambda state: (self.loss_wanted < state[1]) * (state[0] < self.max_burn_in)# * (jnp.log10(state[1][-1]/state[1][0]) / self.delay_check > self.required_decrease) # true during the burn-in
+
+        state = (0, loss, x0, u0, l0, g0, random_key, self.L, self.eps_initial, jnp.std(x0, axis=0) , 1e4)
+        steps, loss, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, state)
         #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, state)
         eps = eps * jnp.power(self.varEwanted / varE, 1./6.)
         n1 = np.arange(len(loss_arr))
 
-        num = 5
+        num = 6
         plt.figure(figsize= (10, 5 * num))
 
         plt.subplot(num, 1, 1)
@@ -319,18 +350,24 @@ class Sampler:
         #plt.ylim(0.9 * self.Target.entropy, 3 * self.Target.entropy)
 
         plt.subplot(num, 1, 3)
+        print(R_arr)
+        plt.plot(n1, R_arr, '.-', color='black', label='split R')
+        plt.legend()
+        #plt.yscale('log')
+
+        plt.subplot(num, 1, 4)
         plt.plot(n1, vare_arr, '.-', color='magenta', label='Var[E]/d')
         plt.legend()
         plt.yscale('log')
         #plt.ylim(1e-4, 1e2)
 
-        plt.subplot(num, 1, 4)
+        plt.subplot(num, 1, 5)
         plt.plot(n1, eps_arr, '.-', color='tab:orange', label = 'eps')
         plt.plot(np.ones(1) * len(loss_arr), jnp.ones(1) * eps, 'o', color = 'tab:red')
         plt.legend()
         plt.yscale('log')
 
-        plt.subplot(num, 1, 5)
+        plt.subplot(num, 1, 6)
         f_true = jnp.average(self.Target.second_moments)
         plt.plot(n1, f_arr, '.-', color='tab:blue', label='E[f(x)]')
         plt.plot(n1, np.ones(len(n1)) * f_true, '--', color = 'black', alpha = 0.5, label = 'truth')
@@ -341,28 +378,12 @@ class Sampler:
         plt.savefig('tst_ensamble/' + self.Target.name + '/primary_burn_in2.png')
         plt.show()
 
-        return steps, x, u, l, g, key, L, eps, sigma
+        return x
+        #return steps, x, u, l, g, key, L, eps, sigma
 
 
 
-    def sample(self, num_steps, num_chains, x_initial='prior', output= 'normal', random_key= None):
-        """Args:
-               num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
-               num_chains: number of independent chains, currently only tested for num_chains = 300 (ensamble regime).
-               x_initial: initial condition for x, shape: (num_chains, d). Defaults to 'prior' in which case the initial condition is drawn with self.Target.prior_draw.
-               random_key: jax random seed, defaults to jax.random.PRNGKey(0).
-               output: determines the output of the function. Currently supported:
-                        'full': returns the samples, shape: (num_chains, num_samples, d)
-                        'ess': the number gradient calls per chain needed to get the bias b2 bellow 0.1. In this case, self.Target.variance = <x_i^2>_true should be defined.
-               remove_burn_in: removes the samples during the burn-in phase. The output shape is (num_chains, num_samples - num_burnin, d).
-                               The end of burn-in is determined based on settling of the expected value of f(x) = x^T x.
-                               Specifically, when the instantaneous expected values start to fluctuate by less than 10%.
-        """
-
-        state = self.initialize(random_key, x_initial, num_chains) #initialize
-
-        burnin_steps, x, u, l, g, key, L, eps, sigma = self.burn_in(*state) #burn-in (first stage)
-        #print(eps)
+    def further_sample(self, num_steps, num_chains, x_initial='prior', output= 'normal', random_key= None):
 
         ### sampling ###
 

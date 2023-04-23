@@ -582,7 +582,7 @@ class Sampler:
                 EE = E + kinetic_change + ll - l
                 return (xx, uu, ll, gg, EE, key, time), None
 
-            state = jax.lax.scan(step, init=state, xs=None, length=thinning)[0] #do 'thinning' steps without saving
+            state = jax.lax.scan(substep, init=state, xs=None, length= thinning)[0] #do 'thinning' steps without saving
 
             return state, (self.Target.transform(state[0]), state[2], state[4]) #save one sample
 

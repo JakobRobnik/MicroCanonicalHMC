@@ -32,7 +32,7 @@ def problems():
 
 
         sampler = EnsambleSampler(target, alpha = jnp.inf, varE_wanted= 1e-3)
-        n1, n2 = sampler.sample(num_samples, 4096, output = 'ess')
+        n1, n2 = sampler.sample(num_samples, (128, 32), output = 'ess')
 
         t1 = time.time()
         print(time.strftime('%H:%M:%S', time.gmtime(t1 - t0)))
@@ -41,7 +41,7 @@ def problems():
         print(dat)
         return dat
 
-    data = [problem(num) for num in [4, ]]
+    data = [problem(num) for num in [3, ]]
 
 
 problems()
