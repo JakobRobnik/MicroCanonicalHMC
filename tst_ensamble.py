@@ -22,7 +22,6 @@ def problems():
     def problem(num):
         t0 = time.time()
 
-        num_samples = [500, 1000, 1000, 1000, 1000, 1000][num]
         target = [Banana(prior = 'prior'),
                   IllConditionedGaussianGamma(prior = 'prior'),
                   GermanCredit(),
@@ -31,8 +30,8 @@ def problems():
                   StochasticVolatility()][num]
 
 
-        sampler = EnsambleSampler(target, alpha = jnp.inf, varE_wanted= 1e-3)
-        n1, n2 = sampler.sample(num_samples, (128, 32), output = 'ess')
+        sampler = EnsambleSampler(target, varE_wanted= 1e-3)
+        n1, n2 = sampler.sample((256, 16))
 
         t1 = time.time()
         print(time.strftime('%H:%M:%S', time.gmtime(t1 - t0)))
