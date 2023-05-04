@@ -30,17 +30,15 @@ def problems():
                   StochasticVolatility()][num]
 
 
-        sampler = EnsambleSampler(target, varE_wanted= 1e-3)
-        n1, n2 = sampler.sample((256, 16))
+        sampler = EnsambleSampler(target, varE_wanted= 1e-3)#, diagonal_preconditioning = False)
+        x = sampler.sample(4096)
+        #x = sampler.sample(1000, 4096, output = 'ess')
 
         t1 = time.time()
         print(time.strftime('%H:%M:%S', time.gmtime(t1 - t0)))
 
-        dat= np.array([n1, n2])
-        print(dat)
-        return dat
-
-    data = [problem(num) for num in [3, ]]
+        
+    data = [problem(num) for num in [1, ]]
 
 
 problems()
