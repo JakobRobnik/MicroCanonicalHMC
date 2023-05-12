@@ -37,7 +37,6 @@ class Sampler:
 
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
 
-        self.frac_tune = 1./3.
         self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
 
 
