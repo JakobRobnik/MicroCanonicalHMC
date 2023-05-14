@@ -1,6 +1,6 @@
 # MicroCanoncial Hamiltonian Monte Carlo (MCHMC)
 
-![poster](github_poster.pdf)
+![poster](github_poster.png)
 
 You can check out the tutorials:
 - [getting started](intro_tutorial.ipynb): sampling from a standard Gaussian (sequential sampling)
