@@ -17,7 +17,7 @@ class StandardNormal():
 
     def nlogp(self, x):
         """- log p of the target distribution"""
-        return 0.5 * jnp.sum(jnp.square(x), axis= -1)
+        return 0.5 * jnp.sum(jnp.square(x))
 
     def prior_draw(self, key):
         return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * jnp.sqrt(temp_schedule[0]) #start from the distribution at high temperature
@@ -27,7 +27,11 @@ target = StandardNormal(d = 100)
 
 sampler = Sampler(target)
 
-x = sampler.sample(steps_at_each_temp = 50, tune_steps= 16, num_chains= 100, temp_schedule = temp_schedule)
+x = sampler.sample(steps_at_each_temp = 1000, tune_steps= 100, num_chains= 100, temp_schedule = temp_schedule)
 
 
-print(x)
+x1 = jnp.average(x, axis = 0)
+x2 = jnp.average(jnp.square(x), axis = 0)
+
+print(x1)
+print(x2)

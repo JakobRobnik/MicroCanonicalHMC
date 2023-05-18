@@ -3,7 +3,6 @@ import jax
 import jax.numpy as jnp
 
 
-
 class vmap_target:
     """A wrapper target class, where jax.vmap has been applied to the functions of a given target"""
 
@@ -139,34 +138,37 @@ class Sampler:
 
         def step(state, tune):
 
-            x, u, l, g, key, L, eps = state
-
+            x, u, l, g, key, L, eps = state 
             x, u, ll, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, T)  # update particles by one step
 
 
-            ### stepsize tuning ###
+            ### eps tuning ###
             de = jnp.square(kinetic_change + ll - l) / self.Target.d #square energy error per dimension
             varE = jnp.average(de) #averaged over the ensamble
 
                                 #if we are in the tuning phase            #else
             eps *= (tune * jnp.power(varE / self.varEwanted, -1./6.) + (1-tune))
 
+
             ### L tuning ###
+            #typical width of the posterior
             moment1 = jnp.average(x, axis=0)
             moment2 = jnp.average(jnp.square(x), axis = 0)
             var= moment2 - jnp.square(moment1)
             sig = jnp.sqrt(jnp.average(var)) # average over dimensions (= typical width of the posterior)
+
             Lnew = self.alpha * sig * jnp.sqrt(self.Target.d)
             L = tune * Lnew + (1-tune) * L #update L if we are in the tuning phase
+            
+
+            return (x, u, ll, g, key, L, eps), None
 
 
-            return (x, u, l, g, key, L, eps), None
-
-
-                                    #tune in the first 1/3 of time        #stop tuning
+                                                #tuning                     #no tuning
         tune_schedule = jnp.concatenate((jnp.ones(tune_steps), jnp.zeros(num_steps - tune_steps)))
 
         return jax.lax.scan(step, init= (x0, u0, l0, g0, key0, L0, eps0), xs= tune_schedule, length= num_steps)[0]
+
 
 
 
@@ -179,21 +181,16 @@ class Sampler:
 
         def temp_level(state, iter):
             x, u, l, g, key, L, eps = state
-
             T, Tprev = temp_schedule_ext[iter], temp_schedule_ext[iter-1]
-
             L *= jnp.sqrt(T / Tprev)
             eps *= jnp.sqrt(T / Tprev)
 
-            state = self.sample_temp_level(steps_at_each_temp, tune_steps, x, u, l, g, key, L, eps, T)
+            return self.sample_temp_level(steps_at_each_temp, tune_steps, x, u, l, g, key, L, eps, T), None
 
-            return state, None
-
-
-        state = jax.lax.scan(temp_level, init= (x0, u0, l0, g0, key0, self.L, self.eps_initial), xs= jnp.arange(1, len(temp_schedule_ext)))[0]
-
-        return state[0] # final x
-
+        
+        # do the sampling and return the final x of all the chains
+        return jax.lax.scan(temp_level, init= (x0, u0, l0, g0, key0, self.L, self.eps_initial), xs= jnp.arange(1, len(temp_schedule_ext)))[0][0]
+        
 
 
 
