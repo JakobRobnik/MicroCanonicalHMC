@@ -40,35 +40,54 @@ class vmap_target:
 
 
 
-class pmap_target:
-    """A wrapper target class, where jax.pmap has been applied to the functions of a given target"""
 
-    def __init__(self, target):
+
+class pmap_target:
+    """A wrapper target class, where jax.pmap(jax.vmap()) has been applied to the functions of a given target."""
+
+    def __init__(self, target, chains):
         """target: a given target to pmap"""
+        
+        devices= jax.local_device_count()
+        self.devices = devices
 
         # obligatory attributes
-        self.grad_nlogp = jax.pmap(target.grad_nlogp)
         self.d = target.d
-
+        
+        pvgrad= jax.pmap(jax.vmap(target.grad_nlogp))
+        
+        def grad(x):
+            l, g = jnp.array(pvgrad(x.reshape(devices, chains // devices, target.d)))
+            return l.reshape(chains), g.reshape(chains, target.d)
+                
+        self.grad_nlogp = grad
+        
         # optional attributes
 
-        if hasattr(target, 'transform'):
-            self.transform = jax.pmap(jax.vmap(target.transform))
+        if hasattr(target, 'transform'):            
+            pvtransform= jax.pmap(jax.vmap(target.transform))
+            self.transform = lambda x: jnp.array(pvtransform(x.reshape(devices, chains // devices, target.d))).reshape(chains, target.d)
+
         else:
-            self.transform = lambda x: x  # if not given, set it to the identity
+            self.transform = lambda x: x #if not given, set it to the identity
 
         if hasattr(target, 'prior_draw'):
-            self.prior_draw = jax.pmap(target.prior_draw)
+            pvdraw= jax.pmap(jax.vmap(target.prior_draw))
+            self.transform = lambda x: jnp.array(pvdraw(x.reshape(devices, chains // devices))).reshape(chains)
 
-        if hasattr(target, 'variance'):
-            self.variance = target.variance
 
+        if hasattr(target, 'second_moments'):
+            self.second_moments = target.second_moments
+            self.variance_second_moments = target.variance_second_moments
+
+        if hasattr(target, 'name'):
+            self.name = target.name
 
 
 class Sampler:
     """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, alpha = 1.0, varE_wanted = 1e-3, diagonal_preconditioning = False, pmap = False):
+    def __init__(self, Target, chains, alpha = 1.0, varEi = 1e-1, varEf = 1e-5, diagonal_preconditioning = False):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -76,28 +95,23 @@ class Sampler:
                 pmap: if True, jax.pmap will be applied to the Target functions.
                       In this case, the number of available devices (as returned by jax.local_device_count())
                       should be equal or larger than the number of ensamble chains that we are running.
-                      if False, jax.vmap will be applied to the Target functions. The operation will be run on a single device.
+                      if 0, jax.vmap will be applied to the Target functions. The operation will be run on a single device.
         """
 
-        if pmap:
-            self.Target = pmap_target(Target)
-        else:
+        self.chains = chains
+        
+        if jax.local_device_count() == 1:
             self.Target = vmap_target(Target)
-
+        else:
+            self.Target = pmap_target(Target, chains)
+        
         self.alpha = alpha
-        self.varEwanted = varE_wanted
+        self.varEi, self.varEf = varEi, varEf
         self.diagonal_preconditioning = diagonal_preconditioning
         
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
-
-        ### Hyperparameters of the burn in. The value of those parameters typically will not have large impact on the performance ###
-        
+                
         self.isotropic_u0 = False
-        self.hutchinson_repeat = 100 #how many realizations to take in hutchinson's trick to compute the virial loss. 100 typically ensures 1% accuracy of the equipartition loss.
-
-        self.required_decrease = 0.01 # if log10(change of virial loss) / steps if less than required decrease we start collecting samples
-        self.delay_check = 20
-
         self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
 
 
@@ -168,68 +182,8 @@ class Sampler:
         return xx, uu, ll, gg, kinetic_change, key
 
 
-    # def virial_loss(self, x, g, key):
-    #     """loss^2 = (1/d) sum_i (virial_i - 1)^2"""
-    #
-    #     virials = jnp.average(x*g, axis=0) #should be all close to 1 if we have reached the typical set
-    #     return jnp.sqrt(jnp.average(jnp.square(virials - 1.0))), key
+    def initialize(self, random_key, x_initial):
 
-
-    def vloss(self, x, g, random_key):
-        """loss^2 = Tr[(1 - V)^T (1 - V)] / d
-            where Vij = <xi gj> is the matrix of virials.
-            Loss is computed with the Hutchinson's trick."""
-
-        z = jax.random.rademacher(random_key, (self.hutchinson_repeat, self.Target.d)) # <z_i z_j> = delta_ij
-        X = z - (g @ z.T).T @ x / x.shape[0]
-        return jnp.sqrt(jnp.average(jnp.square(X)))
-
-    
-    def virial_loss(self, x, g, random_key, num_chains):
-        
-        key1, key2 = jax.random.split(random_key)
-        
-        if num_chains is tuple:
-            shape = (num_chains[0], num_chains[1], self.Target.d)
-            virials = jax.vmap(self.vloss)(x.reshape(shape), g.reshape(shape), jax.random.split(key2, num_chains[0]))
-            return jnp.median(virials), virials, key1
-        else: 
-            return self.vloss(x, g, key2), key1
-                 
-
-    def splitR(self, x, num_chains):
-        """See: https://arxiv.org/pdf/2110.13017.pdf, Definition 8."""
-
-        X = x.reshape(num_chains[0], num_chains[1], x.shape[1])
-        avg = jnp.average(X, axis=1)  # average for each superchain
-        avg2 = jnp.average(jnp.square(X), axis=1)
-        var = avg2 - jnp.square(avg)  # variance for each superchain
-
-        #identify outlier superchains by the different average
-        discrepancy = jnp.max(jnp.abs(avg - jnp.median(avg)), axis = 1) #discrepancy of the average
-        perm = jnp.argsort(discrepancy) # sort the chains by discrepancy
-
-        Avg = avg[perm][:(len(avg) * self.keep_frac).astype(int)] #remove some percentage of the worst chains
-        Var = var[perm][:(len(avg) * self.keep_frac).astype(int)]
-
-        avg_all = jnp.average(Avg, axis=0)  # average of the good chains
-        var_between = jnp.sum(jnp.square(Avg - avg_all), axis=0) / (len(Avg) - 1) # in between chains variance for the good chains
-
-        var_within = jnp.average(Var, axis=0) # average within chain vairance
-
-        R = jnp.sqrt(1. + var_between / var_within) #Gelman-Rubin R
-
-        return jnp.max(R), perm
-
-
-    def initialize(self, random_key, x_initial, chain_shape):
-
-        if chain_shape is tuple:
-            num_chains = chain_shape[0]
-        else:
-            num_chains = chain_shape
-
-            
         if random_key is None:
             key = jax.random.PRNGKey(0)
         else:
@@ -238,7 +192,7 @@ class Sampler:
 
         if isinstance(x_initial, str):
             if x_initial == 'prior':  # draw the initial x from the prior
-                keys_all = jax.random.split(key, num_chains + 1)
+                keys_all = jax.random.split(key, self.chains + 1)
                 x = self.Target.prior_draw(keys_all[1:])
                 key = keys_all[0]
 
@@ -250,30 +204,21 @@ class Sampler:
 
         l, g = self.Target.grad_nlogp(x)
         virials = jnp.average(x * g, axis=0)
-        xg = jnp.average(x * g, axis = -1)
 
         ### initial velocity ###
         if self.isotropic_u0:
-            u, key = self.random_unit_vector(key, num_chains)  # random velocity orientations
+            u, key = self.random_unit_vector(key, self.chains)  # random velocity orientations
 
         else: # align the initial velocity with the gradient, with the sign depending on the virial condition
             sgn = -2.0 * (virials < 1.0) + 1.0
             u = - g / jnp.sqrt(jnp.sum(jnp.square(g), axis = 1))[:, None] # initialize momentum in the direction of the gradient of log p
             u = u * sgn[None, :] #if the virial in that direction is smaller than 1, we flip the direction of the momentum in that direction
+       
+        return x, u, l, g, key
 
 
-        
-        if chain_shape is tuple:
-            loss = jnp.median(self.Target.d  * jnp.square(xg) - 2 * xg + 1)
 
-            return loss, jnp.repeat(x, num_chains[1], axis= 0), jnp.repeat(u, num_chains[1], axis= 0), jnp.repeat(l, num_chains[1], axis= 0), jnp.repeat(g, num_chains[1], axis= 0), key
-        else:
-            loss, key = self.virial_loss(x, g, key, chain_shape)
-            return loss, x, u, l, g, key
-    
-
-
-    def sample(self, num_chains, neff= 200, x_initial='prior', random_key= None, maxiter= 1000):
+    def sample(self, num_steps, x_initial='prior', random_key= None):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
                num_chains: a tuple (number of superchains, number of chains per superchain)
@@ -281,20 +226,14 @@ class Sampler:
                random_key: jax random seed, defaults to jax.random.PRNGKey(0).
         """
 
-        
-        loss_wanted = jnp.sqrt((self.Target.d + 1) / neff)
-        loss_wanted5 = jnp.sqrt((self.Target.d + 1) / 5.0)
-        loss_wanted100 = jnp.sqrt((self.Target.d + 1) / 100.0)
-        
-        # chains are grouped in superchains. chains within the same group have the same intial conditions
-        loss, x0, u0, l0, g0, key = self.initialize(random_key, x_initial, num_chains)
+        x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
         
 
-        def accept_reject_step(x, u, l, g, varE, xx, uu, ll, gg, varE_new):
+        def no_nans(x, u, l, g, varE, xx, uu, ll, gg, varE_new):
             """if there are nans we don't want to update the state"""
 
             no_nans = jnp.all(jnp.isfinite(xx))
-            tru = no_nans  # loss went down and there were no nans
+            tru = no_nans  # there were no nans
             false = (1 - tru)
             X = jnp.nan_to_num(xx) * tru + x * false
             U = jnp.nan_to_num(uu) * tru + u * false
@@ -304,37 +243,22 @@ class Sampler:
             return tru, X, U, L, G, Var
 
 
-        def burn_in_step(state):
-            """one step of the burn-in"""
-
-            steps, loss_history, first_stage, x, u, l, g, key, L, eps, sigma, varE = state
+        def step(state, useless):
+            
+            steps, x, u, l, g, key, L, eps, sigma, varE = state
 
             xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
 
             de = jnp.square(kinetic_change + ll - l) / self.Target.d
             varE_new = jnp.average(de)
 
-            #will we accept the step?
-            accept, x, u, l, g, varE = accept_reject_step(x, u, l, g, varE, xx, uu, ll, gg, varE_new)
+            # if there were nans we don't do the step
+            nonans, x, u, l, g, varE_new = no_nans(x, u, l, g, varE, xx, uu, ll, gg, varE_new)
 
             
-            # good superchains based on the virial condition inside the chain
-            if num_chains is tuple:
-                loss, loss_sc, key = self.virial_loss(x, g, key, num_chains)
-                goodsc = num_chains[0] #// 2
-                order = jnp.argsort(loss_sc)
-                X = ((x.reshape(num_chains[0], num_chains[1], self.Target.d)[order])[:goodsc]).reshape(goodsc * num_chains[1], self.Target.d)
-            else:
-                loss, key = self.virial_loss(x, g, key, num_chains)
-                X = x
-            
-                        #loss
-            loss_history_new = jnp.concatenate((jnp.ones(1) * loss, loss_history[:-1]))
-            first_stage *= (jnp.log10(loss_history_new[-1] / loss_history_new[0]) / self.delay_check > self.required_decrease)
-
             #diagonal preconditioner
             if self.diagonal_preconditioning:
-                update = first_stage# & ((steps+1) % 30 == 0)
+                update = ((steps+1) % 30 == 0) & steps < num_steps // 3
                 sigma_new = jnp.std(x, axis=0) * update + (1 - update) * sigma  # diagonal conditioner
                 sigma_ratio = jnp.sqrt(jnp.average(jnp.square(sigma_new) / jnp.average(jnp.square(sigma))))
                 u *= sigma / sigma_new
@@ -343,38 +267,26 @@ class Sampler:
             else: 
                 sigma_new = sigma
                 sigma_ratio = 1.0
-                L = self.alpha * jnp.sqrt(jnp.average(jnp.square(jnp.std(x, axis=0)))) * jnp.sqrt(self.Target.d)
+                Lnew = self.alpha * jnp.sqrt(jnp.average(jnp.square(jnp.std(x, axis=0)))) * jnp.sqrt(self.Target.d)
+                update = steps < num_steps // 2
+                L = Lnew * update + L *(1-update)
+                
                 
             #stepsize
-            bias_factor = jnp.power(0.5 * loss / 0.1, 0.25) * first_stage + (1 - first_stage) * 1.0
-            eps *= (bias_factor * jnp.power(varE / self.varEwanted, -1./6.) * sigma_ratio) * accept + (1-accept) * 0.5
-            eps_arr.append(eps)
-
-            # tracking
-            loss_arr.append(loss)
-            entropy_arr.append(jnp.median(l))
-            vare_arr.append(varE)
-            
+            pow = 1./(num_steps - steps)
+            var_slow_change = jnp.power(varE_new, 1. - pow) * jnp.power(self.varEf, pow)
+            varEwanted = var_slow_change * nonans + jnp.power(1.2, -6.) * varE_new * (1-nonans) 
+            eps *= jnp.power(varEwanted / varE_new, 1./6.) * sigma_ratio
+       
             # bias
-            moments = jnp.average(jnp.square(self.Target.transform(X)), axis = 0)
+            moments = jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
             bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
             bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
-            bias_avg_arr.append(bias_avg)
-            bias_max_arr.append(bias_max)
 
-            return steps + 1, loss_history_new, first_stage, x, u, l, g, key, L, eps, sigma_new, varE
+
+            return (steps + 1, x, u, l, g, key, L, eps, sigma_new, varE_new), (eps, varE_new, bias_avg, bias_max)
 
         
-        loss_arr = []
-        entropy_arr = []
-        
-        eps_arr = []
-        vare_arr = []
-
-        bias_avg_arr = []
-        bias_max_arr = []
-        
-        condition = lambda state: (loss_wanted < state[1][0]) * (state[0] < maxiter)# * (jnp.log10(state[1][-1]/state[1][0]) / self.delay_check > self.required_decrease) # true during the burn-in
         
         if self.diagonal_preconditioning:
             sigma0 = jnp.std(x0, axis=0)
@@ -386,41 +298,25 @@ class Sampler:
             sigma0 = jnp.ones(self.Target.d)
             sig = jnp.sqrt(jnp.average(jnp.square(jnp.std(x0, axis=0))))
                            
-        loss_history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(self.delay_check-1) * jnp.inf))
                             
-        state = (0, loss_history, True, x0, u0, l0, g0, key, self.alpha * sig * jnp.sqrt(self.Target.d), self.eps_initial, sigma0 , 1e4)
-        steps, loss_history, first_stage, x, u, l, g, key, L, eps, sigma, varE = my_while(condition, burn_in_step, state)
-        #steps, loss, fail_count, never_rejected, x, u, l, g, key, L, eps, sigma, varE = jax.lax.while_loop(condition, burn_in_step, state)
-        eps = eps * jnp.power(self.varEwanted / varE, 1./6.)
-        n1 = np.arange(len(loss_arr))
-
+        state = (0, x0, u0, l0, g0, key, self.alpha * sig * jnp.sqrt(self.Target.d), self.eps_initial, sigma0 , self.varEi)
+        state, track = jax.lax.scan(step, init= state, xs = None, length = num_steps)
         
-        num = 3
+        eps_arr, vare_arr, bias_avg_arr, bias_max_arr = track
+        num = 2
         plt.figure(figsize= (10, 5 * num))
 
-        ### convergence diagnostics ###
-        plt.subplot(num, 1, 1)
-        plt.title('convergence diagnostics')
-        plt.plot(n1, loss_arr, '.-', color = 'tab:blue', label = 'virial')
-        plt.plot(n1, np.ones(len(n1)) * loss_wanted, '--', color = 'black', alpha = 0.7)
-        plt.plot(n1, np.ones(len(n1)) * loss_wanted5, '--', color = 'black', alpha = 0.2)
-
-        plt.plot(n1, entropy_arr - np.min(entropy_arr) + 1, '.-', color = 'tab:orange', label = 'entropy')
-        plt.legend()
-        plt.yscale('log')
-
-        
         ### stepsize tuning ###
-        plt.subplot(num, 1, 2)
+        plt.subplot(num, 1, 1)
         plt.title('stepsize tuning')
-        plt.plot(n1, vare_arr, '.-', color='magenta', label='Var[E]/d')
-        plt.plot(n1, eps_arr, '.-', color='tab:orange', label = 'eps')
-        plt.plot(np.ones(1) * len(loss_arr), jnp.ones(1) * eps, 'o', color = 'tab:red')
+        plt.plot([0, num_steps-1], [self.varEi, self.varEf], 'o', color = 'black')
+        plt.plot(vare_arr, '.-', color='magenta', label='Var[E]/d')
+        plt.plot(eps_arr, '.-', color='tab:orange', label = 'eps')
         plt.yscale('log')
         plt.legend()
 
         ### bias ###
-        plt.subplot(num, 1, 3)
+        plt.subplot(num, 1, 2)
         plt.plot(bias_avg_arr, color = 'tab:blue', label= 'average')
         plt.plot(bias_max_arr, color = 'tab:red', label= 'max')
         plt.plot(jnp.ones(len(bias_max_arr)) * 1e-2, '--', color = 'black')
@@ -433,78 +329,4 @@ class Sampler:
         #plt.savefig('tst_ensamble/' + self.Target.name + '.png')
         plt.show()
 
-        return x
-        #return steps, x, u, l, g, key, L, eps, sigma
-
-
-
-    def further_sample(self, num_steps, num_chains, x_initial='prior', output= 'normal', random_key= None):
-
-        ### sampling ###
-
-        def step(state, useless):
-            x, u, g, key = state
-            x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma) # update particles by one step
-            return (x, u, g, key), x
-
-        def step_ess(state, useless):
-            x, u, g, key = state
-            x, u, l, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma) # update particles by one step
-            return (x, u, g, key), jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
-
-        if output == 'normal':
-            X = jax.lax.scan(step, init= (x, u, g, key), xs= None, length= num_steps)[1] #do the sampling
-            X = jnp.swapaxes(X, 0, 1)
-
-            f = jnp.average(jnp.average(jnp.square(X), axis= 0), axis= -1)
-            burnin2_steps = self.remove_burn_in(f, self.relative_accuracy)
-
-            return X[:, burnin2_steps:, :]
-
-        elif output == 'ess':
-            Xsq = jax.lax.scan(step_ess, init=(x, u, g, key), xs=None, length=num_steps)[1] #do the sampling
-
-
-            # instantaneous moments bias
-            bias_d_t = jnp.square(Xsq - self.Target.second_moments[None, :]) / self.Target.variance_second_moments[None, :]
-            bias_avg_t, bias_max_t = jnp.average(bias_d_t, axis=-1), jnp.max(bias_d_t, axis=-1)
-
-            # time-averaged moments bias
-            burnin2_steps = self.remove_burn_in(jnp.average(Xsq, axis = -1), self.relative_accuracy)
-            second_moments = jnp.cumsum(Xsq[burnin2_steps:], axis=0) / jnp.arange(1, num_steps - burnin2_steps+1)[:, None]
-            bias_d = jnp.square(second_moments - self.Target.second_moments[None, :]) / self.Target.variance_second_moments[None, :]
-            bias_avg, bias_max = jnp.average(bias_d, axis=-1), jnp.max(bias_d, axis=-1)
-
-            plt.plot(bias_avg_t, '--', color='tab:orange', alpha = 0.5, label = 'average')
-            plt.plot(bias_max_t, '--', color='tab:red', alpha = 0.5, label = 'max')
-
-            plt.plot(bias_avg, '.-', color='tab:orange', label = 'average')
-            plt.plot(bias_max, '.-', color='tab:red', label = 'max')
-            plt.yscale('log')
-            plt.savefig('tst_ensamble/' + self.Target.name + '/bias2.png')
-            plt.show()
-
-            num_t = find_crossing(bias_max_t, 0.01)
-            num = find_crossing(bias_max, 0.01)
-
-            return num_t + burnin_steps, num + burnin_steps + burnin2_steps
-
-
-    def remove_burn_in(self, f, relative_accuracy):
-
-
-        f_avg = jnp.average(f[-len(f) // 10])
-        burnin2_steps = len(f) - find_crossing(-jnp.abs(f[::-1] - f_avg) / f_avg, -relative_accuracy)
-
-        plt.plot(f, '.-')
-        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg, color='black')
-        plt.plot([0, len(f) -1], jnp.ones(2) * f_avg*(1+relative_accuracy), color = 'black', alpha= 0.3)
-        plt.plot([0, len(f) - 1], jnp.ones(2) * f_avg*(1-relative_accuracy), color= 'black', alpha= 0.3)
-
-        plt.xlabel('steps')
-        plt.ylabel('f')
-        plt.savefig('tst_ensamble/' + self.Target.name + '/secondary_burn_in2.png')
-        plt.close()
-
-        return burnin2_steps
-
+        return state[1]
