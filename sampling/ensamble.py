@@ -430,7 +430,7 @@ class Sampler:
         plt.xlabel('# gradient evaluations')
         plt.ylabel(r'$\mathrm{bias}^2$')
         plt.yscale('log')
-        plt.savefig('tst_ensamble/' + self.Target.name + '.png')
+        #plt.savefig('tst_ensamble/' + self.Target.name + '.png')
         plt.show()
 
         return x

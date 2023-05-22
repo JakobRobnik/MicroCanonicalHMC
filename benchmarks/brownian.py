@@ -180,27 +180,79 @@ def map():
     plt.ylabel(r'$\log \sigma_{\mathrm{obs}}$')
     plt.show()
 
-def map_adam():
+
+def adam_comparisson():
     from optimization.adam import optimize_adam
-    chains = 10
+    chains = 5
     t = Target()
 
     x0 = jax.vmap(t.prior_draw)(jax.random.split(jax.random.PRNGKey(0), chains))
     plt.rcParams.update({'font.size': 25})
     plt.figure(figsize=(10, 10))
 
+    #MCHMC
+    data = np.load('brownian_samples.npy')
+    xmchmc = data[0]
+
+    #ADAM
     for i in range(chains):
-        l, x = optimize_adam(t.grad_nlogp, x0[i], 10000, lr = 0.05, trace= True)
+        l, x = optimize_adam(t.grad_nlogp, x0[i], 100000, lr = 0.05, trace= True)
         X, Y = x[:, 0], x[:, 1]
 
-        plt.plot(X, Y, '.-', color='black', alpha=0.5)
+        plt.plot(X, Y, '-', color='tab:red', alpha=0.5)
         plt.plot(X[0], Y[0], 'o', color='tab:red')
-        plt.plot(X[-1], Y[-1], 'o', color='tab:blue')
+        #plt.plot(X[-1], Y[-1], 'o', color='tab:blue')
 
-    plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
+
+        plt.plot(xmchmc[i, :,  0], xmchmc[i, :, 1], '-', alpha = 0.5, color = 'tab:blue')
+        plt.plot(xmchmc[i, 0, 0], xmchmc[i, 0, 1], 'o', color='tab:blue')
+
+    plt.plot([], [], 'o-', color = 'tab:blue', label = 'MCLMC')
+    plt.plot([], [], 'o-', color='tab:red', label='ADAM')
+
+    plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20, label = 'true parameters')
+    plt.legend()
     plt.xlabel(r'$\log \sigma_{\mathrm{rw}}$')
     plt.ylabel(r'$\log \sigma_{\mathrm{obs}}$')
+    plt.savefig('adam_comparisson.png')
     plt.show()
+
+
+
+def adam_comparisson2():
+    from optimization.adam import optimize_adam
+    chains = 5
+    t = Target()
+
+    x0 = jax.vmap(t.prior_draw)(jax.random.split(jax.random.PRNGKey(0), chains))
+    plt.rcParams.update({'font.size': 25})
+    plt.figure(figsize=(10, 10))
+
+    #MCHMC
+    data = np.load('brownian_samples.npy')
+    xmchmc = data[0]
+
+    #ADAM
+    shift = 1e4
+    for i in range(chains):
+        l, x = optimize_adam(t.grad_nlogp, x0[i], 100000, lr = 0.05, trace= True)
+
+        plt.plot(l + shift, '-', color='tab:red')
+
+
+        plt.plot(jax.vmap(t.nlogp)(xmchmc[i]) + shift, '-', color = 'tab:blue')
+
+    plt.plot([], [], 'o-', color = 'tab:blue', label = 'MCLMC')
+    plt.plot([], [], 'o-', color='tab:red', label='ADAM')
+
+    plt.legend()
+    plt.xlabel('gradient calls')
+    plt.ylabel(r'$-\log p$')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.savefig('adam_comparisson2.png')
+    plt.show()
+
 
 
 
@@ -209,18 +261,17 @@ def mchmc():
 
     target = Target()
     target.transform = lambda x: x
-    num_chains = (128, 32)
+    num_chains = 32
     key, key_prior = jax.random.split(jax.random.PRNGKey(0))
-    keys = jax.random.split(key_prior, num_chains[0])
+    keys = jax.random.split(key_prior, num_chains)
 
     sampler = Sampler(target, integrator='LF', L=0.8, eps=0.1, frac_tune1=0.0, frac_tune2=0.0, frac_tune3=0.0,
                       diagonal_preconditioning=False)
 
     # initial condition
-    xSC = jax.vmap(target.prior_draw)(keys)
-    x0 = jnp.repeat(xSC, num_chains[1], axis=0)
+    x0 = jax.vmap(target.prior_draw)(keys)
 
-    x = sampler.sample(6000, num_chains[0] * num_chains[1], x0, random_key = key, output='normal', thinning = 10)
+    x = sampler.sample(10000, num_chains, x0, random_key = key, output='normal')
 
     print(x.shape)
     g = jax.vmap(jax.vmap(lambda z: target.grad_nlogp(z)[1]))(x)
@@ -234,12 +285,12 @@ def mchmc():
         # for k in range(1):
         #     plt.plot(x[m, 500 * k, 0], x[m, 500 * k, 1], '.', color='tab:red')
 
-    #plt.plot(jnp.log(jnp.array([0.1, ])), jnp.log(jnp.array([0.15, ])), '*', color='gold', markersize=20)
-
 
 
 if __name__ == '__main__':
-    mchmc()
+    adam_comparisson2()
+    #plott()
+    #mchmc()
     #ground_truth(2)
     #plot_hierarchical()
     #join_ground_truth()
