@@ -56,20 +56,22 @@ class Target():
         return jnp.concatenate((jnp.exp(x[:2]), x[2:]))
 
 
-    def prior_draw_optimize(self, key):
-        """draws x from the prior"""
+    # def prior_draw(self, key):
+    #     """draws x from the prior"""
 
-        return jax.scipy.optimize.minimize(self.nlogp, x0 = self.prior_draw(key), method = 'BFGS', options = {'maxiter': 500}).x
+    #     return jax.scipy.optimize.minimize(self.nlogp, x0 = jnp.zeros(self.d), method = 'BFGS', options = {'maxiter': 100}).x
 
     def prior_draw(self, key):
-        key_walk, key_sigma = jax.random.split(key)
+        return jax.random.normal(key, shape = (self.d, ))
 
-        log_sigma = jax.random.normal(key_sigma, shape= (2, ))*2 #log sigma_i, log sigma_obs
-        #log_sigma = jnp.log(np.array([0.1, 0.15])) + jax.random.normal(key_sigma, shape=(2,)) *0.1#*0.05# log sigma_i, log sigma_obs
+    #     key_walk, key_sigma = jax.random.split(key)
 
-        walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
+    #     log_sigma = jax.random.normal(key_sigma, shape= (2, ))*2 #log sigma_i, log sigma_obs
+    #     #log_sigma = jnp.log(np.array([0.1, 0.15])) + jax.random.normal(key_sigma, shape=(2,)) *0.1#*0.05# log sigma_i, log sigma_obs
 
-        return jnp.concatenate((log_sigma, walk))
+    #     walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
+
+    #     return jnp.concatenate((log_sigma, walk))
 
 
     def generate_data(self, key):
