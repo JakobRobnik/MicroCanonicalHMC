@@ -39,9 +39,6 @@ class vmap_target:
             self.name = target.name
 
 
-
-
-
 class pmap_target:
     """A wrapper target class, where jax.pmap(jax.vmap()) has been applied to the functions of a given target."""
 
@@ -118,7 +115,8 @@ mble chains that we are running.
             self.Target = pmap_target(Target, chains)
         
         self.alpha = alpha
-        self.varEi, self.varEf0, self.varEf1 = 10, 1e-3, 1e-5
+        #self.varEi, self.varEf0, self.varEf1 = 10, 1e-3, 1e-5
+        self.varEi, self.varEf0, self.varEf1 = 1e-4, 1e-4, 1e-4
         self.diagonal_preconditioning = diagonal_preconditioning
         
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
@@ -213,7 +211,7 @@ mble chains that we are running.
 
         else:  # initial x is given
             x = jnp.copy(x_initial)
-
+        
         l, g = self.Target.grad_nlogp(x)
         virials = jnp.average(x * g, axis=0)
 
@@ -279,9 +277,14 @@ mble chains that we are running.
             else: 
                 sigma_new = sigma
                 sigma_ratio = 1.0
-                Lnew = self.alpha * jnp.sqrt(jnp.average(jnp.square(jnp.std(x, axis=0)))) * jnp.sqrt(self.Target.d)
-                update = True#steps < num_steps // 2
-                L = Lnew * update + L *(1-update)
+                
+                ### setting L with sigma ###
+                # Lnew = self.alpha * jnp.sqrt(jnp.average(jnp.square(jnp.std(x, axis=0)))) * jnp.sqrt(self.Target.d)
+                L = self.alpha * jnp.sqrt(jnp.average(self.Target.second_moments)) * jnp.sqrt(self.Target.d)
+                # update = True#steps < num_steps // 2
+                # L = Lnew * update + L *(1-update)
+                
+                ### L/eps = const ###                
                 
                 
             #stepsize
@@ -291,6 +294,8 @@ mble chains that we are running.
             varEwanted = var_slow_change * nonans + jnp.power(1.2, -6.) * varEwanted * (1-nonans) 
             eps *= jnp.power(varEwanted / varE, 1./6.) * sigma_ratio
        
+       
+
             # bias
             moments = jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
             bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
@@ -312,7 +317,9 @@ mble chains that we are running.
             sig = jnp.sqrt(jnp.average(jnp.square(jnp.std(x0, axis=0))))
                            
         stage = jnp.concatenate((jnp.zeros(num_steps//3), jnp.ones(num_steps - num_steps//3)))
-        state = (0, x0, u0, l0, g0, key, self.alpha * sig * jnp.sqrt(self.Target.d), self.eps_initial, sigma0 , self.varEi, self.varEi)
+        #L = self.alpha * sig * jnp.sqrt(self.Target.d)
+        L = num_steps * 0.1 * self.eps_initial
+        state = (0, x0, u0, l0, g0, key, L, self.eps_initial, sigma0 , self.varEi, self.varEi)
         state, track = jax.lax.scan(step, init= state, xs = stage, length = num_steps)
         
         eps_arr, vare_arr, varew_arr, bias_avg_arr, bias_max_arr = track
