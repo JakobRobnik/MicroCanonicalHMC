@@ -1,13 +1,7 @@
 import matplotlib.pyplot as plt
-import numpy as np
 import jax
 import jax.numpy as jnp
-import pandas as pd
-
-
-from .sampler import find_crossing
-from .sampler import my_while
-
+from sampling.sampler import find_crossing
 
 
 class vmap_target:
@@ -81,6 +75,7 @@ class pmap_target:
             self.name = target.name
 
 
+
 class Sampler:
     """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
@@ -88,23 +83,7 @@ class Sampler:
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
-                varE_wanted: controls the stepsize after the burn-in. We aim for Var[E] / d = 'varE_wanted'.
-                pmap: if True, jax.pmap will be applied to the Target functions.
-                      In this case, the number of available devices (as returned by jax.local_device_count())
-                      should be equal or larger than the number of ensadef prior_draw(self, key):
-    #     return jax.random.normal(key, shape = (self.d, ))
-
-    #     key_walk, key_sigma = jax.random.split(key)
-
-    #     log_sigma = jax.random.normal(key_sigma, shape= (2, ))*2 #log sigma_i, log sigma_obs
-    #     #log_sigma = jnp.log(np.array([0.1, 0.15])) + jax.random.normal(key_sigma, shape=(2,)) *0.1#*0.05# log sigma_i, log sigma_obs
-
-    #     walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
-
-    #     return jnp.concatenate((log_sigma, walk))
-
-mble chains that we are running.
-                      if 0, jax.vmap will be applied to the Target functions. The operation will be run on a single device.
+                
         """
 
         self.chains = chains
@@ -115,16 +94,15 @@ mble chains that we are running.
             self.Target = pmap_target(Target, chains)
         
         self.alpha = alpha
-        #self.varEi, self.varEf0, self.varEf1 = 10, 1e-3, 1e-5
-        self.varEi, self.varEf0, self.varEf1 = 1e-4, 1e-4, 1e-4
+        self.program = Program()
         self.diagonal_preconditioning = diagonal_preconditioning
         
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
                 
         self.isotropic_u0 = False
-        self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
+        self.eps_initial = 0.01 * jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
 
-
+        
     def random_unit_vector(self, random_key, num_chains):
         """Generates a random (isotropic) unit vector."""
         key, subkey = jax.random.split(random_key)
@@ -238,7 +216,7 @@ mble chains that we are running.
 
         x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
         
-
+        
         def no_nans(x, u, l, g, varE, xx, uu, ll, gg, varE_new):
             """if there are nans we don't want to update the state"""
 
@@ -253,9 +231,9 @@ mble chains that we are running.
             return tru, X, U, L, G, Var
 
 
-        def step(state, stage):
+        def step(state, useless):
             
-            steps, x, u, l, g, key, L, eps, sigma, varE, varEwanted = state
+            steps, x, u, l, g, key, L, eps, sigma, varE, t = state
 
             xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
 
@@ -264,7 +242,6 @@ mble chains that we are running.
 
             # if there were nans we don't do the step
             nonans, x, u, l, g, varE = no_nans(x, u, l, g, varE, xx, uu, ll, gg, varE_new)
-
             
             #diagonal preconditioner
             if self.diagonal_preconditioning:
@@ -280,7 +257,6 @@ mble chains that we are running.
                 
                 ### setting L with sigma ###
                 # Lnew = self.alpha * jnp.sqrt(jnp.average(jnp.square(jnp.std(x, axis=0)))) * jnp.sqrt(self.Target.d)
-                L = self.alpha * jnp.sqrt(jnp.average(self.Target.second_moments)) * jnp.sqrt(self.Target.d)
                 # update = True#steps < num_steps // 2
                 # L = Lnew * update + L *(1-update)
                 
@@ -288,21 +264,20 @@ mble chains that we are running.
                 
                 
             #stepsize
-            pow = 1./(((1-stage) * num_steps//3 + stage*num_steps)- steps )
-            varef = self.varEf0 *(1-stage) + self.varEf1 * stage
-            var_slow_change = jnp.power(varEwanted, 1. - pow) * jnp.power(varef, pow)
-            varEwanted = var_slow_change * nonans + jnp.power(1.2, -6.) * varEwanted * (1-nonans) 
-            eps *= jnp.power(varEwanted / varE, 1./6.) * sigma_ratio
-       
-       
-
+            t_nonans = t + (1.-t) / (num_steps - steps)
+            t_nans = self.program.inv_vare(self.program.vare(t) / 1.2**6)
+            tnew = t_nonans * nonans + t_nans * (1-nonans)
+            varEwanted = self.program.vare(tnew)
+            eps_factor = jnp.power(varEwanted / varE, 1./6.) * sigma_ratio
+            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.1])), 10.0])) #eps cannot change by more than a factor of 10 in one step
+            eps *= eps_factor
+            
             # bias
             moments = jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
             bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
             bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
 
-
-            return (steps + 1, x, u, l, g, key, L, eps, sigma_new, varE, varEwanted), (eps, varE, varEwanted, bias_avg, bias_max)
+            return (steps + 1, x, u, l, g, key, L, eps, sigma_new, varE, tnew), (eps, varE, varEwanted, bias_avg, bias_max)
 
         
         
@@ -316,45 +291,79 @@ mble chains that we are running.
             sigma0 = jnp.ones(self.Target.d)
             sig = jnp.sqrt(jnp.average(jnp.square(jnp.std(x0, axis=0))))
                            
-        stage = jnp.concatenate((jnp.zeros(num_steps//3), jnp.ones(num_steps - num_steps//3)))
         #L = self.alpha * sig * jnp.sqrt(self.Target.d)
-        L = num_steps * 0.1 * self.eps_initial
-        state = (0, x0, u0, l0, g0, key, L, self.eps_initial, sigma0 , self.varEi, self.varEi)
-        state, track = jax.lax.scan(step, init= state, xs = stage, length = num_steps)
+        #L = num_steps * 0.1 * self.eps_initial
+        L = self.alpha * jnp.sqrt(jnp.average(self.Target.second_moments)) * jnp.sqrt(self.Target.d)
+
+        state = (0, x0, u0, l0, g0, key, L, self.eps_initial, sigma0, self.program.vare(0.), 0.)
+        state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps)
         
-        eps_arr, vare_arr, varew_arr, bias_avg_arr, bias_max_arr = track
-        num = 3
-        plt.figure(figsize= (8, 4 * num))
+        eps, vare, varew, bias_avg, bias_max = track
+        num = 2
+        plt.figure(figsize= (6, 3 * num))
 
         ### stepsize tuning ###
         plt.subplot(num, 1, 1)
         plt.title('stepsize tuning')
-        plt.plot([0, num_steps-1], [self.varEi, self.varEf1], 'o', color = 'black')
-        plt.plot(vare_arr, '.-', color='magenta', label='Var[E]/d')
-        plt.plot(varew_arr, '.-', color='tab:red', label = 'targeted')
-        plt.plot(eps_arr, '.-', color='tab:orange', label = 'eps')
+        plt.plot(vare, '.-', color='magenta', label='Var[E]/d')
+        plt.plot(varew, '.-', color='tab:red', label = 'targeted')
+        plt.plot(eps, '.-', color='tab:orange', label = 'eps')
         plt.yscale('log')
         plt.legend()
         
-        plt.subplot(num, 1, 2)
-        plt.title('stepsize tuning')
-        plt.plot(eps_arr, '.-', color='tab:orange', label = 'eps')
-        plt.yscale('log')
-        plt.legend()
+        # plt.subplot(num, 1, 2)
+        # plt.title('stepsize tuning')
+        # plt.plot(eps_arr, '.-', color='tab:orange', label = 'eps')
+        # plt.yscale('log')
+        # plt.legend()
 
         
         ### bias ###
-        plt.subplot(num, 1, 3)
-        plt.plot(bias_avg_arr, color = 'tab:blue', label= 'average')
-        plt.plot(bias_max_arr, color = 'tab:red', label= 'max')
-        plt.plot(jnp.ones(len(bias_max_arr)) * 1e-2, '--', color = 'black')
+        plt.subplot(num, 1, 2)
+        plt.plot(bias_avg, color = 'tab:blue', label= 'average')
+        plt.plot(bias_max, color = 'tab:red', label= 'max')
+        plt.plot(jnp.ones(len(bias_max)) * 1e-2, '--', color = 'black')
         #num_max, num_avg = find_crossing(bias_max_arr, 0.01), find_crossing(bias_avg_arr, 0.01)
         #plt.title('steps to low bias: {0} (max), {1} (avg)'.format(num_max, num_avg))
         plt.legend()
         plt.xlabel('# gradient evaluations')
         plt.ylabel(r'$\mathrm{bias}^2$')
         plt.yscale('log')
-        #plt.savefig('tst_ensamble/' + self.Target.name + '.png')
-        plt.show()
+        plt.savefig('plots/tst_ensamble/' + self.Target.name + '.png')
+        plt.tight_layout()
+        plt.close()
 
         return state[1]
+
+
+
+class Program:
+    
+    def __init__(self):
+        
+        #fraction of the total sampling time
+        self.t = jnp.array([-1e-10, 4./5., 1. + 1e-10]) 
+        
+        #log Var[E]/d that we want at the specified times. Other values will be interpolated by the exponential.
+        self.m = jnp.log(jnp.array([1.1e-3, 0.9e-3, 1e-5]))
+
+        self.a, self.b = self.get_coeffs(self.t, self.m)
+        self.ainv, self.binv = self.get_coeffs(self.m, self.t)
+
+
+    def get_coeffs(self, x, y):
+        """coefficients of the linear interpolation"""
+        slope = (y[:-1] - y[1:]) / (x[:-1] - x[1:])
+        intercept = (-y[:-1]*x[1:] + y[1:] * x[:-1]) / (x[:-1] - x[1:])
+        return slope, intercept
+
+
+    def vare(self, s):
+        """gets the desired Var[E]/d at: number_of_steps = s * total_number_of_steps"""
+        select = jnp.searchsorted(self.t, s) - 1
+        return jnp.exp(self.a[select] * s + self.b[select])
+
+    def inv_vare(self, m):
+        """inverse of the above function"""
+        select = jnp.searchsorted(self.m[::-1], jnp.log(m))
+        return self.ainv[-select] * jnp.log(m) + self.binv[-select]

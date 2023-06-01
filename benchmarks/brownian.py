@@ -62,16 +62,15 @@ class Target():
     #     return jax.scipy.optimize.minimize(self.nlogp, x0 = jnp.zeros(self.d), method = 'BFGS', options = {'maxiter': 100}).x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ))
 
-    #     key_walk, key_sigma = jax.random.split(key)
+        key_walk, key_sigma = jax.random.split(key)
 
-    #     log_sigma = jax.random.normal(key_sigma, shape= (2, ))*2 #log sigma_i, log sigma_obs
-    #     #log_sigma = jnp.log(np.array([0.1, 0.15])) + jax.random.normal(key_sigma, shape=(2,)) *0.1#*0.05# log sigma_i, log sigma_obs
+        log_sigma = jnp.zeros(2)#jax.random.normal(key_sigma, shape= (2, ))*2 #log sigma_i, log sigma_obs
+        #log_sigma = jnp.log(np.array([0.1, 0.15])) + jax.random.normal(key_sigma, shape=(2,)) *0.1#*0.05# log sigma_i, log sigma_obs
 
-    #     walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
+        walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
 
-    #     return jnp.concatenate((log_sigma, walk))
+        return jnp.concatenate((log_sigma, walk))
 
 
     def generate_data(self, key):

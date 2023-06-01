@@ -32,7 +32,7 @@ class StandardNormal():
         return x
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        return jax.random.normal(key, shape = (self.d, ))
 
 
 
@@ -106,10 +106,10 @@ class IllConditionedESH():
         return x
 
     def draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * jnp.sqrt(self.variance)
+        return jax.random.normal(key, shape = (self.d, )) * jnp.sqrt(self.variance)
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        return jax.random.normal(key, shape = (self.d, ))
 
 
 
@@ -179,7 +179,7 @@ class Banana():
         return 0.5 * (jnp.square(x[0] / 10.0) + jnp.square(x[1] - mu2))
 
     def posterior_draw(self, key):
-        z = jax.random.normal(key, shape = (2, ), dtype = 'float64')
+        z = jax.random.normal(key, shape = (2, ))
         x0 = 10.0 * z[0]
         x1 = self.curvature * (x0 ** 2 - 100) + z[1]
         return jnp.array([x0, x1])
@@ -232,7 +232,7 @@ class Banana():
 #         return 0.5 * (jnp.square(x[0] / 10.0) + jnp.square(x[1] - mu2))
 #
 #     def posterior_draw(self, key):
-#         z = jax.random.normal(key, shape = (2, ), dtype = 'float64')
+#         z = jax.random.normal(key, shape = (2, ))
 #         x0 = 10.0 * z[0]
 #         x1 = self.curvature * (x0 ** 2 - 100) + z[1]
 #         return jnp.array([x0, x1])
@@ -332,7 +332,7 @@ class BiModal():
         return x
 
     def prior_draw(self, key):
-        z = jax.random.normal(key, shape = (self.d, ), dtype = 'float64') *self.sigma1
+        z = jax.random.normal(key, shape = (self.d, )) *self.sigma1
         #z= z.at[0].set(self.mu1 + z[0])
         return z
 
@@ -400,7 +400,7 @@ class Funnel():
 
 
     def prior_draw(self, key):
-        return self.inverse_transform(jax.random.normal(key, shape = (self.d, ), dtype = 'float64'))
+        return self.inverse_transform(jax.random.normal(key, shape = (self.d, )))
 
 
 
@@ -421,7 +421,7 @@ class Funnel_with_Data():
 
     def simulate_data(self):
 
-        norm = jax.random.normal(jax.random.PRNGKey(123), shape = (2*(self.d-1), ), dtype = 'float64')
+        norm = jax.random.normal(jax.random.PRNGKey(123), shape = (2*(self.d-1), ))
         z_true = norm[:self.d-1] * jnp.exp(self.theta_true * 0.5)
         self.data = z_true + norm[self.d-1:] * self.sigma_data
 
@@ -446,7 +446,7 @@ class Funnel_with_Data():
     def prior_draw(self, key):
         key1, key2 = jax.random.split(key)
         theta = jax.random.normal(key1, dtype= 'float64') * self.sigma_theta
-        z = jax.random.normal(key2, shape = (self.d-1, ), dtype = 'float64') * jnp.exp(theta * 0.5)
+        z = jax.random.normal(key2, shape = (self.d-1, )) * jnp.exp(theta * 0.5)
         return jnp.concatenate((z, theta))
 
 
@@ -496,7 +496,7 @@ class Rosenbrock():
 
 
     def prior_draw(self, key):
-        return jax.random.normal(key, shape = (self.d, ), dtype = 'float64')
+        return jax.random.normal(key, shape = (self.d, ))
 
 
     def compute_moments(self):
@@ -565,7 +565,8 @@ class StochasticVolatility():
         key_walk, key_exp = jax.random.split(key)
 
         scales = jnp.array([self.typical_sigma, self.typical_nu])
-        params = jax.random.exponential(key_exp, shape = (2, )) * scales
+        #params = jax.random.exponential(key_exp, shape = (2, )) * scales
+        params= scales
         walk = random_walk(key_walk, self.d - 2) * params[0]
         return jnp.concatenate((walk, jnp.log(params/scales)))
 
