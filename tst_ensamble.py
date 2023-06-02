@@ -16,21 +16,21 @@ num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
 
-targets = [[Banana(prior = 'MAP'), 100],
-        [IllConditionedGaussianGamma(prior = 'MAP'), 1000],
+targets = [[Banana(prior = 'prior'), 100],
+        [IllConditionedGaussianGamma(prior = 'prior'), 1000],
         [GermanCredit(), 1000],
         [Brownian(), 1000],
         [IRT(), 1000],
-        [StochasticVolatility(), 1000]]
+        [StochasticVolatility(), 2000]]
 
 
 if __name__ == '__main__':
     chains = 4096
 
-    for i in [0, 1, 2, 3, 4, 5]:
+    for i in [5, ]:
         target, num_steps = targets[i]
         print(target.name)
         x0 = jnp.zeros(shape = (chains, target.d))
-        sampler = EnsambleSampler(target, chains, diagonal_preconditioning = False)
+        sampler = EnsambleSampler(target, chains, diagonal_preconditioning = False, alpha = 1.)
         sampler.isotropic_u0 = True
-        x = sampler.sample(num_steps)#, x_initial = x0)
+        x = sampler.sample(num_steps, x_initial = x0)

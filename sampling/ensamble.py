@@ -98,7 +98,7 @@ class Sampler:
         self.diagonal_preconditioning = diagonal_preconditioning
         
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
-                
+        
         self.isotropic_u0 = False
         self.eps_initial = 0.01 * jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
 
@@ -262,7 +262,6 @@ class Sampler:
                 
                 ### L/eps = const ###                
                 
-                
             #stepsize
             t_nonans = t + (1.-t) / (num_steps - steps)
             t_nans = self.program.inv_vare(self.program.vare(t) / 1.2**6)
@@ -333,6 +332,9 @@ class Sampler:
         plt.tight_layout()
         plt.close()
 
+        print(find_crossing(bias_max, 0.01))
+        print(eps[-1])
+        
         return state[1]
 
 
@@ -342,10 +344,12 @@ class Program:
     def __init__(self):
         
         #fraction of the total sampling time
-        self.t = jnp.array([-1e-10, 4./5., 1. + 1e-10]) 
+        self.t = jnp.array([-1e-10, 0.2, 0.3, 1. + 1e-10]) 
         
         #log Var[E]/d that we want at the specified times. Other values will be interpolated by the exponential.
-        self.m = jnp.log(jnp.array([1.1e-3, 0.9e-3, 1e-5]))
+        #self.m = jnp.log(jnp.array([1e-3, 9e-4, 5e-4]))
+        self.m = jnp.log(jnp.array([5e-2, 4e-2, 2e-8, 1e-8]))
+
 
         self.a, self.b = self.get_coeffs(self.t, self.m)
         self.ainv, self.binv = self.get_coeffs(self.m, self.t)
