@@ -102,6 +102,8 @@ class Sampler:
         self.isotropic_u0 = False
         self.eps_initial = 0.01 * jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
 
+        self.eps_factor = 1.0
+        
         
     def random_unit_vector(self, random_key, num_chains):
         """Generates a random (isotropic) unit vector."""
@@ -205,6 +207,9 @@ class Sampler:
         return x, u, l, g, key
 
 
+    def getL(self, x):
+        return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
+
 
     def sample(self, num_steps, x_initial='prior', random_key= None):
         """Args:
@@ -235,7 +240,8 @@ class Sampler:
             
             steps, x, u, l, g, key, L, eps, sigma, varE, t = state
 
-            xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)  # update particles by one step
+            xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, self.eps_factor * eps, sigma)  # update particles by one step
+
 
             de = jnp.square(kinetic_change + ll - l) / self.Target.d
             varE_new = jnp.average(de)
@@ -244,31 +250,28 @@ class Sampler:
             nonans, x, u, l, g, varE = no_nans(x, u, l, g, varE, xx, uu, ll, gg, varE_new)
             
             #diagonal preconditioner
-            if self.diagonal_preconditioning:
-                update = ((steps+1) % 30 == 0) & steps < num_steps // 3
-                sigma_new = jnp.std(x, axis=0) * update + (1 - update) * sigma  # diagonal conditioner
-                sigma_ratio = jnp.sqrt(jnp.average(jnp.square(sigma_new) / jnp.average(jnp.square(sigma))))
-                u *= sigma / sigma_new
-                u /= jnp.sqrt(jnp.sum(jnp.square(u)))
+            # if self.diagonal_preconditioning:
+            #     update = ((steps+1) % 30 == 0) & steps < num_steps // 3
+            #     sigma_new = jnp.std(x, axis=0) * update + (1 - update) * sigma  # diagonal conditioner
+            #     sigma_ratio = jnp.sqrt(jnp.average(jnp.square(sigma_new) / jnp.average(jnp.square(sigma))))
+            #     u *= sigma / sigma_new
+            #     u /= jnp.sqrt(jnp.sum(jnp.square(u)))
                 
-            else: 
-                sigma_new = sigma
-                sigma_ratio = 1.0
+            sigma_new = sigma
+            sigma_ratio = 1.0
+            
+            Lnew = self.getL(x)
+            update = True#steps > 10
+            L = Lnew * update + L *(1-update)
+            
                 
-                ### setting L with sigma ###
-                # Lnew = self.alpha * jnp.sqrt(jnp.average(jnp.square(jnp.std(x, axis=0)))) * jnp.sqrt(self.Target.d)
-                # update = True#steps < num_steps // 2
-                # L = Lnew * update + L *(1-update)
-                
-                ### L/eps = const ###                
-                
-            #stepsize
+            # stepsize
             t_nonans = t + (1.-t) / (num_steps - steps)
             t_nans = self.program.inv_vare(self.program.vare(t) / 1.2**6)
             tnew = t_nonans * nonans + t_nans * (1-nonans)
             varEwanted = self.program.vare(tnew)
             eps_factor = jnp.power(varEwanted / varE, 1./6.) * sigma_ratio
-            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.1])), 10.0])) #eps cannot change by more than a factor of 10 in one step
+            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.1])), 10.0])) # eps cannot change by more than a factor of 10 in one step
             eps *= eps_factor
             
             # bias
@@ -276,29 +279,32 @@ class Sampler:
             bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
             bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
 
-            return (steps + 1, x, u, l, g, key, L, eps, sigma_new, varE, tnew), (eps, varE, varEwanted, bias_avg, bias_max)
+            return (steps + 1, x, u, l, g, key, L, eps, sigma_new, varE, tnew), (eps, varE, varEwanted, L, jnp.average(l), bias_avg, bias_max)
 
-        
-        
-        if self.diagonal_preconditioning:
-            sigma0 = jnp.std(x0, axis=0)
-            sig = 1.0
-            u0 /= sigma0
-            u0 /= jnp.sqrt(jnp.sum(jnp.square(u0)))
+
+        # def master_step(state):
             
-        else:
-            sigma0 = jnp.ones(self.Target.d)
-            sig = jnp.sqrt(jnp.average(jnp.square(jnp.std(x0, axis=0))))
+        #     state1, state2 = state
+            
+        #     state1 = step
+            
+        
+        # if self.diagonal_preconditioning:
+        #     sigma0 = jnp.std(x0, axis=0)
+        #     sig = 1.0
+        #     u0 /= sigma0
+        #     u0 /= jnp.sqrt(jnp.sum(jnp.square(u0)))
+            
+        sigma0 = jnp.ones(self.Target.d)
                            
-        #L = self.alpha * sig * jnp.sqrt(self.Target.d)
         #L = num_steps * 0.1 * self.eps_initial
-        L = self.alpha * jnp.sqrt(jnp.average(self.Target.second_moments)) * jnp.sqrt(self.Target.d)
-
+        L0 = self.alpha * jnp.sqrt(jnp.average(self.Target.second_moments)) * jnp.sqrt(self.Target.d)
+        L = self.getL(x0)
         state = (0, x0, u0, l0, g0, key, L, self.eps_initial, sigma0, self.program.vare(0.), 0.)
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps)
         
-        eps, vare, varew, bias_avg, bias_max = track
-        num = 2
+        eps, vare, varew, Ls, l, bias_avg, bias_max= track
+        num = 3
         plt.figure(figsize= (6, 3 * num))
 
         ### stepsize tuning ###
@@ -310,15 +316,16 @@ class Sampler:
         plt.yscale('log')
         plt.legend()
         
-        # plt.subplot(num, 1, 2)
-        # plt.title('stepsize tuning')
-        # plt.plot(eps_arr, '.-', color='tab:orange', label = 'eps')
-        # plt.yscale('log')
-        # plt.legend()
-
+        ### L tuning ###
+        plt.subplot(num, 1, 2)
+        plt.title('L tuning')
+        plt.plot(Ls[11:], '.-', color='tab:blue')
+        plt.plot(L0 * jnp.ones(num_steps), '-', color='black')
+        plt.xlabel("L")
+        plt.yscale('log')
         
         ### bias ###
-        plt.subplot(num, 1, 2)
+        plt.subplot(num, 1, 3)
         plt.plot(bias_avg, color = 'tab:blue', label= 'average')
         plt.plot(bias_max, color = 'tab:red', label= 'max')
         plt.plot(jnp.ones(len(bias_max)) * 1e-2, '--', color = 'black')
@@ -344,11 +351,11 @@ class Program:
     def __init__(self):
         
         #fraction of the total sampling time
-        self.t = jnp.array([-1e-10, 0.2, 0.3, 1. + 1e-10]) 
+        self.t = jnp.array([-1e-10, 0.3, 0.4, 0.5, 1. + 1e-10]) 
         
         #log Var[E]/d that we want at the specified times. Other values will be interpolated by the exponential.
         #self.m = jnp.log(jnp.array([1e-3, 9e-4, 5e-4]))
-        self.m = jnp.log(jnp.array([5e-2, 4e-2, 2e-8, 1e-8]))
+        self.m = jnp.log(jnp.array([5e-2, 4e-2, 2e-7, 2e-8, 1e-8]))
 
 
         self.a, self.b = self.get_coeffs(self.t, self.m)

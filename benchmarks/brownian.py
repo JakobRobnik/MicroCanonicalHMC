@@ -65,8 +65,8 @@ class Target():
 
         key_walk, key_sigma = jax.random.split(key)
 
-        log_sigma = jnp.zeros(2)#jax.random.normal(key_sigma, shape= (2, ))*2 #log sigma_i, log sigma_obs
-        #log_sigma = jnp.log(np.array([0.1, 0.15])) + jax.random.normal(key_sigma, shape=(2,)) *0.1#*0.05# log sigma_i, log sigma_obs
+        #log_sigma = jax.random.normal(key_sigma, shape= (2, ))*2 #log sigma_i, log sigma_obs
+        log_sigma = jnp.log(np.array([0.1, 0.15])) + jax.random.normal(key_sigma, shape=(2,)) *0.1#*0.05# log sigma_i, log sigma_obs
 
         walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
 
