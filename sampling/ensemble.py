@@ -104,7 +104,6 @@ class Sampler:
 
         self.eps_factor = 1.0
         
-        
     def random_unit_vector(self, random_key, num_chains):
         """Generates a random (isotropic) unit vector."""
         key, subkey = jax.random.split(random_key)
@@ -279,15 +278,9 @@ class Sampler:
             bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
             bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
 
-            return (steps + 1, x, u, l, g, key, L, eps, sigma_new, varE, tnew), (eps, varE, varEwanted, L, jnp.average(l), bias_avg, bias_max)
+            return (steps + 1, x, u, l, g, key, L, eps, sigma_new, varE, tnew), (x, eps, varE, varEwanted, L, jnp.average(l), bias_avg, bias_max)
 
-
-        # def master_step(state):
-            
-        #     state1, state2 = state
-            
-        #     state1 = step
-            
+        
         
         # if self.diagonal_preconditioning:
         #     sigma0 = jnp.std(x0, axis=0)
@@ -303,7 +296,7 @@ class Sampler:
         state = (0, x0, u0, l0, g0, key, L, self.eps_initial, sigma0, self.program.vare(0.), 0.)
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps)
         
-        eps, vare, varew, Ls, l, bias_avg, bias_max= track
+        x, eps, vare, varew, Ls, l, bias_avg, bias_max= track
         num = 3
         plt.figure(figsize= (6, 3 * num))
 
@@ -342,7 +335,7 @@ class Sampler:
         print(find_crossing(bias_max, 0.01))
         print(eps[-1])
         
-        return state[1]
+        return jnp.swapaxes(x, 0, 1)
 
 
 
