@@ -79,7 +79,7 @@ class pmap_target:
 class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, chains, alpha = 1.0, diagonal_preconditioning = False):
+    def __init__(self, Target, chains, alpha = 1., diagonal_preconditioning = False):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -94,15 +94,14 @@ class Sampler:
             self.Target = pmap_target(Target, chains)
         
         self.alpha = alpha
-        self.program = Program()
         self.diagonal_preconditioning = diagonal_preconditioning
-        
+        self.C = 0.1
+                
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
         
         self.isotropic_u0 = False
         self.eps_initial = 0.01 * jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
 
-        self.eps_factor = 1.0
         
     def random_unit_vector(self, random_key, num_chains):
         """Generates a random (isotropic) unit vector."""
@@ -127,7 +126,7 @@ class Sampler:
         There are no exponentials e^delta, which prevents overflows when the gradient norm is large."""
         g_norm = jnp.sqrt(jnp.sum(jnp.square(g), axis=1)).T
         nonzero = g_norm > 1e-13  # if g_norm is zero (we are at the MAP solution) we also want to set e to zero and the function will return u
-        inv_g_norm = jnp.nan_to_num(1.0 / g_norm) * nonzero
+        inv_g_norm = jnp.nan_to_num(1. / g_norm) * nonzero
         e = - g * inv_g_norm[:, None]
         ue = jnp.sum(u * e, axis=1)
         delta = eps * g_norm / (self.Target.d - 1)
@@ -165,7 +164,7 @@ class Sampler:
         xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
 
         # bounce
-        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
+        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.) / self.Target.d)
         uu, key = self.partially_refresh_momentum(uu, key, nu)
 
         return xx, uu, ll, gg, kinetic_change, key
@@ -199,17 +198,49 @@ class Sampler:
             u, key = self.random_unit_vector(key, self.chains)  # random velocity orientations
 
         else: # align the initial velocity with the gradient, with the sign depending on the virial condition
-            sgn = -2.0 * (virials < 1.0) + 1.0
+            sgn = -2. * (virials < 1.) + 1.
             u = - g / jnp.sqrt(jnp.sum(jnp.square(g), axis = 1))[:, None] # initialize momentum in the direction of the gradient of log p
             u = u * sgn[None, :] #if the virial in that direction is smaller than 1, we flip the direction of the momentum in that direction
        
         return x, u, l, g, key
 
 
-    def getL(self, x):
+    def computeL(self, x):
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
 
 
+    def estimate_bias(self, x, y):
+        """Estimate the bias from the difference between the chains.
+            x: the precise chain
+            y: the sloppy chain
+           Bias is computed for the raw x coordinate, without the Target.transform
+        """
+        
+        # moments from the precise chain
+        xsq = jnp.square(x)
+        moments, var = jnp.average(xsq, 0), jnp.std(xsq, 0)**2
+    
+        # moments from the sloppy chain
+        xsq = jnp.square(y)
+        moments_sloppy = jnp.average(xsq, 0) 
+        
+        # compute the bias of the sloppy chain as if the precise chain was the ground truth
+        bias_d = jnp.square(moments_sloppy - moments) / var
+        bias = jnp.max(bias_d)
+        
+        return bias
+
+
+    def ground_truth_bias(self, x):
+
+        moments = jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
+        bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
+        bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
+
+        return bias_avg, bias_max
+
+
+        
     def sample(self, num_steps, x_initial='prior', random_key= None):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
@@ -221,153 +252,115 @@ class Sampler:
         x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
         
         
-        def no_nans(x, u, l, g, varE, xx, uu, ll, gg, varE_new):
-            """if there are nans we don't want to update the state"""
-
-            no_nans = jnp.all(jnp.isfinite(xx))
-            tru = no_nans  # there were no nans
-            false = (1 - tru)
-            X = jnp.nan_to_num(xx) * tru + x * false
-            U = jnp.nan_to_num(uu) * tru + u * false
-            L = jnp.nan_to_num(ll) * tru + l * false
-            G = jnp.nan_to_num(gg) * tru + g * false
-            Var = jnp.nan_to_num(varE_new) * tru + varE * false
-            return tru, X, U, L, G, Var
-
-
         def step(state, useless):
             
-            steps, x, u, l, g, key, L, eps, sigma, varE, t = state
-
-            xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, self.eps_factor * eps, sigma)  # update particles by one step
-
-
-            de = jnp.square(kinetic_change + ll - l) / self.Target.d
-            varE_new = jnp.average(de)
-
+            x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
+            
+            ### two steps of the precise dynamics ###
+            xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
+            de = jnp.square(dK + ll - l) / self.Target.d
+            varee = jnp.average(de)
+            xx, uu, ll, gg, _, key = self.dynamics(xx, uu, gg, key, L, eps, sigma)
+        
+            ### one step of the sloppy dynamics ###
+            xx2, uu2, ll2, gg2, dK3, key = self.dynamics(x2, u2, g2, key, L, 2 * eps, sigma)
+                        
             # if there were nans we don't do the step
-            nonans, x, u, l, g, varE = no_nans(x, u, l, g, varE, xx, uu, ll, gg, varE_new)
-            
-            #diagonal preconditioner
-            # if self.diagonal_preconditioning:
-            #     update = ((steps+1) % 30 == 0) & steps < num_steps // 3
-            #     sigma_new = jnp.std(x, axis=0) * update + (1 - update) * sigma  # diagonal conditioner
-            #     sigma_ratio = jnp.sqrt(jnp.average(jnp.square(sigma_new) / jnp.average(jnp.square(sigma))))
-            #     u *= sigma / sigma_new
-            #     u /= jnp.sqrt(jnp.sum(jnp.square(u)))
-                
-            sigma_new = sigma
-            sigma_ratio = 1.0
-            
-            Lnew = self.getL(x)
-            update = True#steps > 10
-            L = Lnew * update + L *(1-update)
-            
-                
-            # stepsize
-            t_nonans = t + (1.-t) / (num_steps - steps)
-            t_nans = self.program.inv_vare(self.program.vare(t) / 1.2**6)
-            tnew = t_nonans * nonans + t_nans * (1-nonans)
-            varEwanted = self.program.vare(tnew)
-            eps_factor = jnp.power(varEwanted / varE, 1./6.) * sigma_ratio
-            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.1])), 10.0])) # eps cannot change by more than a factor of 10 in one step
-            eps *= eps_factor
+            nonans = jnp.all(jnp.isfinite(xx)) & jnp.all(jnp.isfinite(xx2))
+            x, u, l, g = switch(nonans, x, u, l, g, xx, uu, ll, gg)
+            x2, u2, l2, g2 = switch(nonans, x2, u2, l2, g2, xx2, uu2, ll2, gg2)
+            vare = jnp.nan_to_num(varee) * nonans + vare * (1-nonans)
             
             # bias
-            moments = jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
-            bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
-            bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
+            bias = self.estimate_bias(x, x2) #estimate the bias
+            bias_avg, bias_max = self.ground_truth_bias(x) #actual bias
 
-            return (steps + 1, x, u, l, g, key, L, eps, sigma_new, varE, tnew), (x, eps, varE, varEwanted, L, jnp.average(l), bias_avg, bias_max)
-
-        
-        
-        # if self.diagonal_preconditioning:
-        #     sigma0 = jnp.std(x0, axis=0)
-        #     sig = 1.0
-        #     u0 /= sigma0
-        #     u0 /= jnp.sqrt(jnp.sum(jnp.square(u0)))
+            # hyperparameters for the next step
+            varew = self.C * jnp.power(bias, 3./8.)
+            eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
+            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
+            eps *= eps_factor
             
+            L = self.computeL(x)
+            
+            return (x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, bias, bias_avg, bias_max)
+
+
+        # initialize the hyperparameters            
         sigma0 = jnp.ones(self.Target.d)
-                           
-        #L = num_steps * 0.1 * self.eps_initial
-        L0 = self.alpha * jnp.sqrt(jnp.average(self.Target.second_moments)) * jnp.sqrt(self.Target.d)
-        L = self.getL(x0)
-        state = (0, x0, u0, l0, g0, key, L, self.eps_initial, sigma0, self.program.vare(0.), 0.)
-        state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps)
+        L = self.computeL(x0)
+        state = (x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
         
-        x, eps, vare, varew, Ls, l, bias_avg, bias_max= track
-        num = 3
+        # run the chains
+        state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
+        
+        self.analyze_resutls(track)
+        
+        return state[0]
+    
+    
+
+    def analyze_resutls(self, track):
+    
+        eps, vare, varew, Ls, bias, bias_avg, bias_max = track
+        
+        print(find_crossing(bias_max, 0.01) * 2)
+        
+        num = 4
         plt.figure(figsize= (6, 3 * num))
 
-        ### stepsize tuning ###
-        plt.subplot(num, 1, 1)
-        plt.title('stepsize tuning')
-        plt.plot(vare, '.-', color='magenta', label='Var[E]/d')
-        plt.plot(varew, '.-', color='tab:red', label = 'targeted')
-        plt.plot(eps, '.-', color='tab:orange', label = 'eps')
-        plt.yscale('log')
-        plt.legend()
-        
-        ### L tuning ###
-        plt.subplot(num, 1, 2)
-        plt.title('L tuning')
-        plt.plot(Ls[11:], '.-', color='tab:blue')
-        plt.plot(L0 * jnp.ones(num_steps), '-', color='black')
-        plt.xlabel("L")
-        plt.yscale('log')
+        steps = jnp.arange(0, 2*len(eps), 2)
         
         ### bias ###
-        plt.subplot(num, 1, 3)
-        plt.plot(bias_avg, color = 'tab:blue', label= 'average')
-        plt.plot(bias_max, color = 'tab:red', label= 'max')
-        plt.plot(jnp.ones(len(bias_max)) * 1e-2, '--', color = 'black')
-        #num_max, num_avg = find_crossing(bias_max_arr, 0.01), find_crossing(bias_avg_arr, 0.01)
-        #plt.title('steps to low bias: {0} (max), {1} (avg)'.format(num_max, num_avg))
+        plt.subplot(num, 1, 1)
+        plt.title('bias')
+        plt.plot(steps, bias_avg, color = 'tab:blue', label= 'average')
+        plt.plot(steps, bias_max, color = 'tab:red', label= 'max')
+        plt.plot(steps, bias, '--', color = 'tab:red', alpha = 0.5, label = 'self-estimated')
+        plt.plot(steps, jnp.ones(steps.shape) * 1e-2, '--', color = 'black')
         plt.legend()
-        plt.xlabel('# gradient evaluations')
         plt.ylabel(r'$\mathrm{bias}^2$')
         plt.yscale('log')
+        
+        ### stepsize tuning ###
+        plt.subplot(num, 1, 2)
+        plt.title('energy error')
+        plt.plot(steps, vare, '.-', color='magenta', label='measured')
+        plt.plot(steps, varew, '.-', color='tab:red', label = 'targeted')
+        plt.ylabel("Var[E]/d")
+        plt.yscale('log')
+        plt.legend()
+        
+        plt.subplot(num, 1, 3)
+        plt.title('stepsize')
+        plt.plot(steps, eps, '.-', color='tab:orange', label = 'eps')
+        plt.ylabel(r"$\epsilon$")
+        plt.yscale('log')
+        
+        ### L tuning ###
+        plt.subplot(num, 1, 4)
+        plt.title('L')
+        L0 = self.alpha * jnp.sqrt(jnp.sum(self.Target.second_moments))
+        plt.plot(steps, Ls, '.-', color='tab:blue')
+        plt.plot(steps, L0 * jnp.ones(steps.shape), '-', color='black')
+        plt.ylabel("L")
+        plt.yscale('log')
+        plt.xlabel('# gradient evaluations')
+        
         plt.savefig('plots/tst_ensemble/' + self.Target.name + '.png')
         plt.tight_layout()
         plt.close()
 
-        print(find_crossing(bias_max, 0.01))
-        print(eps[-1])
         
-        return jnp.swapaxes(x, 0, 1)
 
+def switch(tru, x, u, l, g, xx, uu, ll, gg):
+    """if there are nans we don't want to update the state"""
 
-
-class Program:
+    false = (1 - tru)
+    X = jnp.nan_to_num(xx) * tru + x * false
+    U = jnp.nan_to_num(uu) * tru + u * false
+    L = jnp.nan_to_num(ll) * tru + l * false
+    G = jnp.nan_to_num(gg) * tru + g * false
     
-    def __init__(self):
-        
-        #fraction of the total sampling time
-        self.t = jnp.array([-1e-10, 0.3, 0.4, 0.5, 1. + 1e-10]) 
-        
-        #log Var[E]/d that we want at the specified times. Other values will be interpolated by the exponential.
-        #self.m = jnp.log(jnp.array([1e-3, 9e-4, 5e-4]))
-        self.m = jnp.log(jnp.array([5e-2, 4e-2, 2e-7, 2e-8, 1e-8]))
+    return tru, X, U, L, G
 
-
-        self.a, self.b = self.get_coeffs(self.t, self.m)
-        self.ainv, self.binv = self.get_coeffs(self.m, self.t)
-
-
-    def get_coeffs(self, x, y):
-        """coefficients of the linear interpolation"""
-        slope = (y[:-1] - y[1:]) / (x[:-1] - x[1:])
-        intercept = (-y[:-1]*x[1:] + y[1:] * x[:-1]) / (x[:-1] - x[1:])
-        return slope, intercept
-
-
-    def vare(self, s):
-        """gets the desired Var[E]/d at: number_of_steps = s * total_number_of_steps"""
-        select = jnp.searchsorted(self.t, s) - 1
-        return jnp.exp(self.a[select] * s + self.b[select])
-
-    def inv_vare(self, m):
-        """inverse of the above function"""
-        select = jnp.searchsorted(self.m[::-1], jnp.log(m))
-        return self.ainv[-select] * jnp.log(m) + self.binv[-select]
