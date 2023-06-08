@@ -4,6 +4,7 @@ import jax.numpy as jnp
 
 
 def bisection(f, a, b, tol=1e-3, max_iter=100):
+
     def cond_fn(inputs):
         a, b, _, iter_count = inputs
         return (jnp.abs(a - b) > tol * a) & (iter_count < max_iter)
@@ -16,9 +17,14 @@ def bisection(f, a, b, tol=1e-3, max_iter=100):
         #jax.debug.print("a: {}, b: {}, midpoint: {}, iter: {}", a, b, midpoint, iter_count)
         return a, b, midpoint, iter_count + 1
 
-    a, b, midpoint, iter_count = jax.lax.while_loop(cond_fn, body_fn, (a, b, 0.0, 0))
-    return midpoint
+    #a, b, midpoint, iter_count = jax.lax.while_loop(cond_fn, body_fn, (a, b, 0.0, 0))
+    # Use cond to decide which path to follow, note the condition is now f(b) <= 0
+    a, b, midpoint, iter_count = jax.lax.cond(f(b) <= 0, 
+                                              lambda _: (b, b, b, 0), 
+                                              lambda _: jax.lax.while_loop(cond_fn, body_fn, (a, b, 0.0, 0)), 
+                                              operand=())
 
+    return midpoint
 
 def systematic_resampling(logw, random_key):
     # Normalize weights
