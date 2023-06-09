@@ -98,19 +98,19 @@ def ground_truth(key_num):
     second_moments = jnp.average(xsq, axis = 0)
     variance_second_moments = jnp.std(xsq, axis = 0)**2
 
-    np.save('ground_truth/'+name+'/ground_truth_'+str(key_num) +'.npy', [second_moments, variance_second_moments])
-    np.save('ground_truth/'+name+'/chain_'+str(key_num) +'.npy', x)
+    np.save('benchmarks/ground_truth/'+name+'/ground_truth_'+str(key_num) +'.npy', [second_moments, variance_second_moments])
+    np.save('benchmarks/ground_truth/'+name+'/chain_'+str(key_num) +'.npy', x)
 
 
 def join_ground_truth():
-    data = np.array([np.load('ground_truth/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
+    data = np.array([np.load('benchmarks/ground_truth/'+name+'/ground_truth_'+str(i)+'.npy') for i in range(3)])
 
     truth = np.median(data, axis = 0)
-    np.save('ground_truth/'+name+'/ground_truth.npy', truth)
+    np.save('benchmarks/ground_truth/'+name+'/ground_truth.npy', truth)
 
     for i in range(3):
         bias_d = np.square(data[i, 0] - truth[0]) / truth[1]
-        print(np.sqrt(np.average(bias_d)), np.sqrt(np.max(bias_d)))
+        print(np.average(bias_d), np.max(bias_d))
 
 
 def plot_hierarchical():
@@ -290,9 +290,8 @@ def mchmc():
 
 
 if __name__ == '__main__':
-    adam_comparisson2()
     #plott()
     #mchmc()
     #ground_truth(2)
     #plot_hierarchical()
-    #join_ground_truth()
+    join_ground_truth()
