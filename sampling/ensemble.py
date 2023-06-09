@@ -212,6 +212,7 @@ class Sampler:
 
 
     def computeL(self, x):
+        return 10.
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
 
 
