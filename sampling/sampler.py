@@ -435,7 +435,10 @@ class Sampler:
                 plt.plot(jnp.sqrt(results))
                 plt.plot([0, len(results)], np.ones(2) * 0.1, '--', color='black', alpha=0.5)
                 plt.yscale('log')
-                plt.show()
+                plt.tight_layout()
+                plt.savefig('ess.png')
+                plt.close()
+                #plt.show()
 
                 cutoff_reached = results[-1] < 0.01
                 return (100.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached
@@ -620,8 +623,8 @@ class Sampler:
             F2 = (W * F2 + jnp.square(self.Target.transform(x))) / (W + 1)  # Update <f(x)> with a Kalman filter
             W += 1
             bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
-            bias = jnp.average(bias_d)
-            #bias = jnp.max(bias_d)
+            #bias = jnp.average(bias_d)
+            bias = jnp.max(bias_d)
 
             return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 

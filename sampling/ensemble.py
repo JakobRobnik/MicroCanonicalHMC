@@ -241,7 +241,7 @@ class Sampler:
         bias_d = jnp.square(moments_sloppy - moments) / var
         bias = jnp.average(bias_d)
         
-        return bias 
+        return bias / 16.
 
 
     def ground_truth_bias(self, x):
@@ -250,7 +250,7 @@ class Sampler:
         bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
         bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
 
-        return bias_avg, bias_max, jnp.argmax(bias_d)
+        return bias_avg, bias_max
 
 
         
@@ -300,7 +300,7 @@ class Sampler:
             
             L = self.computeL(x)
             
-            return (steps + 2, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (x, eps, vare, varew, L, initialization_bias, disrcretization_bias, bias_avg, bias_max, worst_param)
+            return (steps + 2, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, initialization_bias, disrcretization_bias, bias_avg, bias_max)
 
 
         # initialize the hyperparameters            
@@ -311,7 +311,7 @@ class Sampler:
         # run the chains
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
         
-        self.analyze_resuls(track)
+        self.analyze_results(track)
         
         return state[0]
     
@@ -319,13 +319,9 @@ class Sampler:
 
     def analyze_results(self, track):
     
-        eps, vare, varew, Ls, bias1, bias2, bias_avg, bias_max, worst_param = track
+        eps, vare, varew, Ls, bias1, bias2, bias_avg, bias_max = track
         
         print(find_crossing(bias_max, 0.01) * 2)
-        
-        plt.plot(worst_param, '.')
-        plt.savefig('worst_param.png')
-        plt.close()
         
         num = 4
         plt.figure(figsize= (6, 3 * num))
