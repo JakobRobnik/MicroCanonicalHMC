@@ -16,6 +16,7 @@ dirr = os.path.dirname(os.path.realpath(__file__))
 
 name = 'german_credit'
 target_base = gym.targets.GermanCreditNumericSparseLogisticRegression()
+gym.targets.BrownianMotionMissingMiddleObservations
 prior_distribution = target_base.prior_distribution()
 
 target = gym.targets.VectorModel(target_base, flatten_sample_transformations=True)
