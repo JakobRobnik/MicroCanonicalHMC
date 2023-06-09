@@ -124,13 +124,13 @@ class IllConditionedGaussianGamma():
         rng = np.random.RandomState(seed=10 & (2 ** 32 - 1))
         eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.d)) #eigenvalues of the Hessian
         eigs *= jnp.average(1.0/eigs)
-
         self.entropy = 0.5 * self.d
         R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
         self.Hessian = R @ np.diag(eigs) @ R.T
 
         # analytic ground truth moments
         self.second_moments = jnp.diagonal(R @ np.diag(1.0/eigs) @ R.T)
+        print(jnp.max(self.second_moments) / jnp.min(self.second_moments))
         self.variance_second_moments = 2 * jnp.square(self.second_moments)
 
         # gradient
@@ -151,6 +151,7 @@ class IllConditionedGaussianGamma():
 
     def transform(self, x):
         return x
+    
 
 
 class Banana():
@@ -204,60 +205,7 @@ class Banana():
         plt.savefig('../tst_ensamble/Banana/banana.png')
         plt.show()
 
-#
-#
-# class Banana():
-#     """Banana target fromm the Inference Gym"""
-#
-#     def __init__(self, prior = 'map'):
-#         self.name = 'Banana'
-#         self.curvature = 0.03
-#         self.d = 2
-#         self.grad_nlogp = jax.value_and_grad(self.nlogp)
-#         self.transform = lambda x: x
-#         self.second_moments = jnp.array([100.0, 19.0]) #the first is analytic the second is by drawing 10^8 samples from the generative model. Relative accuracy is around 10^-5.
-#         self.variance_second_moments = jnp.array([20000.0, 4600.898])
-#
-#         if prior == 'map':
-#             self.prior_draw = lambda key: jnp.array([0, -100.0 * self.curvature])
-#         elif prior == 'posterior':
-#             self.prior_draw = lambda key: self.posterior_draw(key)
-#         elif prior == 'prior':
-#             self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.array([10.0, 10.0]) * 2
-#         else:
-#             raise ValueError('prior = '+prior +' is not defined.')
-#
-#     def nlogp(self, x):
-#         mu2 = self.curvature * (x[0] ** 2 - 100)
-#         return 0.5 * (jnp.square(x[0] / 10.0) + jnp.square(x[1] - mu2))
-#
-#     def posterior_draw(self, key):
-#         z = jax.random.normal(key, shape = (2, ))
-#         x0 = 10.0 * z[0]
-#         x1 = self.curvature * (x0 ** 2 - 100) + z[1]
-#         return jnp.array([x0, x1])
-#
-#     def ground_truth(self):
-#         x = jax.vmap(self.posterior_draw)(jax.random.split(jax.random.PRNGKey(0), 100000000))
-#         print(jnp.average(x, axis=0))
-#         print(jnp.average(jnp.square(x), axis=0))
-#         print(jnp.std(jnp.square(x[:, 0])) ** 2, jnp.std(jnp.square(x[:, 1])) ** 2)
-#
-#
-#     def plott(self):
-#         xmin, xmax = -20.0, 20.0
-#         ymin, ymax = -10.0, 10.0
-#         X, Y, Z = get_contour_plot(self, jnp.linspace(xmin, xmax, 100), jnp.linspace(ymin, ymax, 100))
-#
-#         import matplotlib.pyplot as plt
-#         plt.figure(figsize=(10, 5))
-#         plt.contourf(X, Y, jnp.exp(-Z))
-#
-#         x = np.linspace(xmin, xmax, 100)
-#         plt.plot(x, 0.03 * (x ** 2 - 100), color='tab:red')
-#         plt.savefig('../tst_ensamble/Banana/banana.png')
-#         plt.show()
-#
+
 
 class HardConvex():
 

@@ -95,7 +95,6 @@ class Sampler:
         
         self.alpha = alpha
         self.diagonal_preconditioning = diagonal_preconditioning
-        self.hutchinson_repeat = 100
                 
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
         
@@ -103,6 +102,11 @@ class Sampler:
         self.eps_initial = 0.01 * jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
 
         self.C = 0.1
+        
+        
+        #self.required_decrease = 0.0 # if log10(change of equipartition loss) / steps is less than required decrease
+        self.delay_check = 30
+
         
         
     def random_unit_vector(self, random_key, num_chains):
@@ -217,7 +221,7 @@ class Sampler:
             Loss is computed with the Hutchinson's trick."""
 
         key, key_z = jax.random.split(random_key)
-        z = jax.random.rademacher(key_z, (self.hutchinson_repeat, self.Target.d)) # <z_i z_j> = delta_ij
+        z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
         X = z - (g @ z.T).T @ x / x.shape[0]
         return jnp.average(jnp.square(X)) / self.Target.d, key
     
@@ -267,7 +271,7 @@ class Sampler:
         
         def step(state, useless):
             
-            steps, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
+            steps, history, phase1, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
             
             ### two steps of the precise dynamics ###
             xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
@@ -287,33 +291,38 @@ class Sampler:
             # bias
             initialization_bias, key = self.equipartition_loss(x, g, key) #estimate the bias from the equipartition loss
             disrcretization_bias = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
-            bias_avg, bias_max, worst_param = self.ground_truth_bias(x) #actual bias
+            bias_avg, bias_max = self.ground_truth_bias(x) #actual bias
 
             # hyperparameters for the next step
-            phase1 = steps < 200#0.2 * num_steps
-            bias = initialization_bias#initialization_bias * phase1 + disrcretization_bias * (1-phase1)
+            
+            history = jnp.concatenate((jnp.ones(1) * initialization_bias, history[:-1]))
+            phase1 = steps < 0.5 * num_steps#(jnp.log10(history[-1] / history[0]) / self.delay_check > 0.0)
+
+            bias = initialization_bias * phase1 + disrcretization_bias * (1-phase1)
             varew = self.C * jnp.power(bias, 3./8.)
-            #varew = 1e-4 * (1-phase1) + varew * phase1
+            varew = 1e-3 * (1-phase1) + varew * phase1
             eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             eps *= eps_factor
             
             L = self.computeL(x)
             
-            return (steps + 2, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, initialization_bias, disrcretization_bias, bias_avg, bias_max)
+            
+            return (steps + 2, history, phase1, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, initialization_bias, disrcretization_bias, bias_avg, bias_max)
 
 
         # initialize the hyperparameters            
         sigma0 = jnp.ones(self.Target.d)
         L = self.computeL(x0)
-        state = (0, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
+        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(self.delay_check-1) * jnp.inf))
+        state = (0, history, True, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
         
         # run the chains
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
         
         self.analyze_results(track)
         
-        return state[0]
+        #return state[0]
     
     
 
@@ -362,6 +371,7 @@ class Sampler:
         L0 = self.alpha * jnp.sqrt(jnp.sum(self.Target.second_moments))
         plt.plot(steps, Ls, '.-', color='tab:orange')
         plt.plot(steps, L0 * jnp.ones(steps.shape), '-', color='black')
+
         plt.ylabel("L")
         #plt.yscale('log')
         plt.xlabel('# gradient evaluations')
