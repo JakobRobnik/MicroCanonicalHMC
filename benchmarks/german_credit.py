@@ -46,12 +46,31 @@ class Target():
         self.grad_nlogp = lambda x: (target_nlog_prob_fn(x), target_nlog_prob_grad_fn(x))
 
 
+    # def prior_draw(self, key):
+    #     x = prior_distribution.sample(seed= key)
+    #     w = x['unscaled_weights']
+    #     ls = x['local_scales']
+    #     gs = x['global_scale']
+    #     return jnp.concatenate((jnp.log(ls), jnp.ones(1) * jnp.log(gs), w))
+
+
+    # def prior_draw(self, key):
+    #     key1, key2 = jax.random.split(key)
+    #     weights = jax.random.normal(key1, shape = (25, ))
+    #     scales = jax.random.gamma(key2, a=  0.5, shape = (26, )) / 0.5
+    #     return jnp.concatenate((jnp.log(scales), weights))
+    
+    #fix the global hierarchical parameter
+    # def prior_draw(self, key):
+    #     key1, key2 = jax.random.split(key)
+    #     weights = jax.random.normal(key1, shape = (25, ))
+    #     scales = jax.random.gamma(key2, a=  0.5, shape = (25, )) / 0.5
+    #     return jnp.concatenate((jnp.log(scales), jnp.zeros(1), weights))
+    
+    #fix scale parameters
     def prior_draw(self, key):
-        x = prior_distribution.sample(seed= key)
-        w = x['unscaled_weights']
-        ls = x['local_scales']
-        gs = x['global_scale']
-        return jnp.concatenate((jnp.log(ls), jnp.ones(1) * jnp.log(gs), w))
+        weights = jax.random.normal(key, shape = (25, ))
+        return jnp.concatenate((jnp.zeros(26), weights))
 
 
 def map_solution():
@@ -76,7 +95,7 @@ def map_solution():
 
     z_map, objective_trace = optimize(
         z_init=jnp.zeros(target.default_event_space_bijector.inverse_event_shape(target.event_shape)),
-        objective_fn=map_objective_fn, objective_grad_fn=map_objective_grad_fn, learning_rate=0.001, num_steps=2000, )
+        objective_fn= map_objective_fn, objective_grad_fn=map_objective_grad_fn, learning_rate=0.001, num_steps=2000, )
 
     import matplotlib.pyplot as plt
     plt.plot(objective_trace - objective_trace[-1], '.-')
