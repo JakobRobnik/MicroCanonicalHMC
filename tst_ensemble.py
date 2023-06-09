@@ -18,7 +18,7 @@ print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
 targets = [[Banana(prior = 'prior'), 100],
         [IllConditionedGaussianGamma(prior = 'prior'), 1000],
-        [GermanCredit(), 1000],
+        [GermanCredit(), 400],
         [Brownian(), 1000],
         [IRT(), 1000],
         [StochasticVolatility(), 2000]]
@@ -26,9 +26,9 @@ targets = [[Banana(prior = 'prior'), 100],
 
 
 if __name__ == '__main__':
-    chains = 4096
+    chains = 2048#4096
 
-    for i in [0, ]:
+    for i in [3,]:
         target, num_steps = targets[i]
         print(target.name)
         x0 = jnp.zeros(shape = (chains, target.d))

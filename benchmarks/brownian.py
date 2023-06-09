@@ -52,6 +52,7 @@ class Target():
 
         return lik + prior_x + prior_logsigma
 
+
     def transform(self, x):
         return jnp.concatenate((jnp.exp(x[:2]), x[2:]))
 
