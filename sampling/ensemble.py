@@ -212,21 +212,23 @@ class Sampler:
 
 
     def computeL(self, x):
-        return 10.
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
 
 
-    def equipartition_loss(self, x, g, random_key):
-        """loss = Tr[(1 - E)^T (1 - E)] / d^2
-            where Eij = <xi gj> is the equipartition patrix.
-            Loss is computed with the Hutchinson's trick."""
+    # def equipartition_loss(self, x, g, random_key):
+    #     """loss = Tr[(1 - E)^T (1 - E)] / d^2
+    #         where Eij = <xi gj> is the equipartition patrix.
+    #         Loss is computed with the Hutchinson's trick."""
 
-        key, key_z = jax.random.split(random_key)
-        z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
-        X = z - (g @ z.T).T @ x / x.shape[0]
-        return jnp.average(jnp.square(X)) / self.Target.d, key
+    #     key, key_z = jax.random.split(random_key)
+    #     z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
+    #     X = z - (g @ z.T).T @ x / x.shape[0]
+    #     return jnp.average(jnp.square(X)) / self.Target.d, key
     
+    def equipartition_loss(self, x, g, random_key):
+        return jnp.average(jnp.square(1. - jnp.average(x*g, axis = 0))), random_key
     
+        
     def discretization_bias(self, x, y):
         """Estimate the bias from the difference between the chains.
             x: the precise chain
@@ -297,9 +299,9 @@ class Sampler:
             # hyperparameters for the next step
             
             history = jnp.concatenate((jnp.ones(1) * initialization_bias, history[:-1]))
-            phase1 = steps < 0.5 * num_steps#(jnp.log10(history[-1] / history[0]) / self.delay_check > 0.0)
+            phase1 *= (jnp.log10(history[-1] / history[0]) / self.delay_check > 0.0)
 
-            bias = initialization_bias * phase1 + disrcretization_bias * (1-phase1)
+            bias = initialization_bias#initialization_bias * phase1 + disrcretization_bias * (1-phase1)
             varew = self.C * jnp.power(bias, 3./8.)
             varew = 1e-3 * (1-phase1) + varew * phase1
             eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5

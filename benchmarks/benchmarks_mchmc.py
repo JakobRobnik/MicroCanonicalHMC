@@ -130,9 +130,13 @@ class IllConditionedGaussianGamma():
 
         # analytic ground truth moments
         self.second_moments = jnp.diagonal(R @ np.diag(1.0/eigs) @ R.T)
-        print(jnp.max(self.second_moments) / jnp.min(self.second_moments))
         self.variance_second_moments = 2 * jnp.square(self.second_moments)
 
+        # norm = jnp.diag(1/jnp.sqrt(self.second_moments))
+        # Sigma = R @ np.diag(1/eigs) @ R.T
+        # reduced = norm @ Sigma @ norm
+        # print(np.linalg.cond(reduced), np.linalg.cond(Sigma))
+        
         # gradient
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
@@ -143,7 +147,7 @@ class IllConditionedGaussianGamma():
             self.prior_draw = lambda key: R @ (jax.random.normal(key, shape=(self.d,), dtype='float64') / jnp.sqrt(eigs))
 
         else: # N(0, sigma_true_max)
-            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(1.0/jnp.sqrt(eigs)) * 1.5
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(1.0/jnp.sqrt(eigs))
 
     def nlogp(self, x):
         """- log p of the target distribution"""
