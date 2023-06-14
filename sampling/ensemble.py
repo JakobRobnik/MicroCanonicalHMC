@@ -79,7 +79,7 @@ class pmap_target:
 class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, chains, alpha = 1., diagonal_preconditioning = False):
+    def __init__(self, Target, chains, alpha = 1.):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -88,24 +88,21 @@ class Sampler:
 
         self.chains = chains
         
-        if jax.local_device_count() == 1:
+        if jax.local_device_count() == 1: # vmap if only one device is available
             self.Target = vmap_target(Target)
-        else:
+        else: #pmap(vmap()) if multiple devices are available
             self.Target = pmap_target(Target, chains)
-        
-        self.alpha = alpha
-        self.diagonal_preconditioning = diagonal_preconditioning
                 
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
         
-        self.isotropic_u0 = False
-        self.eps_initial = 0.01 * jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
+        # initialization
+        self.isotropic_u0 = False # isotropic direction of the initial velocity (if false, aligned with the gradient)
+        self.eps_initial = 0.01 * jnp.sqrt(self.Target.d) # stepsize of the first step
 
-        self.C = 0.1
-        
-        
-        #self.required_decrease = 0.0 # if log10(change of equipartition loss) / steps is less than required decrease
-        self.delay_check = 30
+        # hyperparameters
+        self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
+        self.C = 0.1 # proportionality constant in determining the stepsize (eps \propto C)
+        self.delay_check = 30 # when equipartition(step = n) - equipartition(step = n - delay check) > 0 the equipartition is considered to have stoped decreassing 
 
         
         
@@ -177,6 +174,7 @@ class Sampler:
 
 
     def initialize(self, random_key, x_initial):
+        """initialize the ensemble"""
 
         if random_key is None:
             key = jax.random.PRNGKey(0)
@@ -215,17 +213,17 @@ class Sampler:
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
 
 
-    # def equipartition_loss(self, x, g, random_key):
-    #     """loss = Tr[(1 - E)^T (1 - E)] / d^2
-    #         where Eij = <xi gj> is the equipartition patrix.
-    #         Loss is computed with the Hutchinson's trick."""
+    def equipartition_fullrank(self, x, g, random_key):
+        """loss = Tr[(1 - E)^T (1 - E)] / d^2
+            where Eij = <xi gj> is the equipartition patrix.
+            Loss is computed with the Hutchinson's trick."""
 
-    #     key, key_z = jax.random.split(random_key)
-    #     z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
-    #     X = z - (g @ z.T).T @ x / x.shape[0]
-    #     return jnp.average(jnp.square(X)) / self.Target.d, key
+        key, key_z = jax.random.split(random_key)
+        z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
+        X = z - (g @ z.T).T @ x / x.shape[0]
+        return jnp.average(jnp.square(X)) / self.Target.d, key
     
-    def equipartition_loss(self, x, g, random_key):
+    def equipartition_diagonal(self, x, g, random_key):
         return jnp.average(jnp.square(1. - jnp.average(x*g, axis = 0))), random_key
     
         
@@ -274,7 +272,7 @@ class Sampler:
         
         def step(state, useless):
             
-            steps, history, phase1, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
+            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
             
             ### two steps of the precise dynamics ###
             xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
@@ -292,26 +290,28 @@ class Sampler:
             vare = jnp.nan_to_num(varee) * nonans + vare * (1-nonans)
             
             # bias
-            initialization_bias, key = self.equipartition_loss(x, g, key) #estimate the bias from the equipartition loss
+            equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
+            equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
+            initialization_bias = equi_diag
+
             disrcretization_bias = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
             bias_avg, bias_max = self.ground_truth_bias(x) #actual bias
 
             # hyperparameters for the next step
             
             history = jnp.concatenate((jnp.ones(1) * initialization_bias, history[:-1]))
-            phase1 *= (jnp.log10(history[-1] / history[0]) / self.delay_check > 0.0)
-
-            bias = initialization_bias#initialization_bias * phase1 + disrcretization_bias * (1-phase1)
+            decreassing *= (jnp.log10(history[-1] / history[0]) / self.delay_check > 0.0)
+            #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
+            bias = initialization_bias# * (1-phase2) + disrcretization_bias * phase2
             varew = self.C * jnp.power(bias, 3./8.)
-            varew = 1e-3 * (1-phase1) + varew * phase1
+            varew = 1e-2 * (1-decreassing) + varew * decreassing
             eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             eps *= eps_factor
             
             L = self.computeL(x)
             
-            
-            return (steps + 2, history, phase1, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, initialization_bias, disrcretization_bias, bias_avg, bias_max)
+            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, equi_diag, equi_full, disrcretization_bias, bias_avg, bias_max)
 
 
         # initialize the hyperparameters            
@@ -331,7 +331,7 @@ class Sampler:
 
     def analyze_results(self, track):
     
-        eps, vare, varew, Ls, bias1, bias2, bias_avg, bias_max = track
+        eps, vare, varew, Ls, equi_diag, equi_full, bias2, bias_avg, bias_max = track
         
         print(find_crossing(bias_max, 0.01) * 2)
         
@@ -345,7 +345,10 @@ class Sampler:
         plt.title('bias')
         plt.plot(steps, bias_avg, color = 'tab:red', alpha = 0.5, label= 'average')
         plt.plot(steps, bias_max, color = 'tab:red', label= 'max')
-        plt.plot(steps, bias1, color = 'tab:blue', label = 'equipartition loss')
+        
+        plt.plot(steps, equi_diag, color = 'tab:blue', label = 'diagonal equipartition')
+        plt.plot(steps, equi_full, '--', color = 'tab:purple', label = 'full rank equipartition')
+
         plt.plot(steps, bias2, color = 'tab:green', label = 'from pairs')
         plt.plot(steps, jnp.ones(steps.shape) * 1e-2, '-', color = 'black')
         plt.legend()
@@ -379,7 +382,7 @@ class Sampler:
         #plt.yscale('log')
         plt.xlabel('# gradient evaluations')
         plt.tight_layout()
-        plt.savefig('plots/tst_ensemble/' + self.Target.name + '.png')
+        #plt.savefig('plots/tst_ensemble/' + self.Target.name + '.png')
         plt.close()
 
         

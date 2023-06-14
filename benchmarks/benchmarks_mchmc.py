@@ -611,14 +611,7 @@ def check_gradient(target, x):
 
 if __name__ == '__main__':
 
-    import matplotlib.pyplot as plt
-    target = Banana(prior= 'prior')
-    num = 300
-    x = jax.vmap(target.prior_draw)(jax.random.split(jax.random.PRNGKey(0), num))
-    plt.plot(x[:, 0], x[:, 1], '.', color = 'tab:blue')
 
-    target = Banana(prior='posterior')
-    x = jax.vmap(target.prior_draw)(jax.random.split(jax.random.PRNGKey(0), num))
-    plt.plot(x[:, 0], x[:, 1], '.', color='tab:red')
-
-    plt.show()
+    rng = np.random.RandomState(seed=10 & (2 ** 32 - 1))
+    eigs = rng.gamma(shape=0.5, scale=1., size=100) #eigenvalues of the Hessian
+    print(np.max(eigs)/np.min(eigs))

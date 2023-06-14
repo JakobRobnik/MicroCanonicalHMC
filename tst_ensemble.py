@@ -28,10 +28,8 @@ targets = [[Banana(prior = 'prior'), 100],
 if __name__ == '__main__':
     chains = 4096
 
-    for i in [0, 1, 2, 3, 4, 5]:
+    for i in [0, 1, 2, 3, 4]:
         target, num_steps = targets[i]
         print(target.name)
-        x0 = jnp.zeros(shape = (chains, target.d))
-        sampler = EnsembleSampler(target, chains, diagonal_preconditioning = False, alpha = 1.)
-        #sampler.isotropic_u0 = True
-        x = sampler.sample(num_steps)#, x_initial = x0)
+        sampler = EnsembleSampler(target, chains)
+        x = sampler.sample(num_steps)
