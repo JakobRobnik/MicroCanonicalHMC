@@ -3,6 +3,8 @@ import jax
 import jax.numpy as jnp
 from sampling.sampler import find_crossing
 
+lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
+
 
 class vmap_target:
     """A wrapper target class, where jax.vmap has been applied to the functions of a given target"""
@@ -79,7 +81,7 @@ class pmap_target:
 class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, chains, alpha = 1.):
+    def __init__(self, Target, chains, alpha = 1., integrator = 'MN'):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -92,16 +94,29 @@ class Sampler:
             self.Target = vmap_target(Target)
         else: #pmap(vmap()) if multiple devices are available
             self.Target = pmap_target(Target, chains)
-                
-        self.grad_evals_per_step = 1.0 # per chain (leapfrog)
         
+        
+        ### integrator ###
+        if integrator == "LF": #leapfrog (first updates the velocity)
+            self.hamiltonian_dynamics = self.leapfrog
+            self.grad_evals_per_step = 1.0 #per chain
+
+        elif integrator== 'MN': #minimal norm integrator (velocity)
+            self.hamiltonian_dynamics = self.minimal_norm
+            self.grad_evals_per_step = 2.0
+        else:
+            raise ValueError('integrator = ' + integrator + 'is not a valid option.')
+
+
         # initialization
         self.isotropic_u0 = False # isotropic direction of the initial velocity (if false, aligned with the gradient)
         self.eps_initial = 0.01 * jnp.sqrt(self.Target.d) # stepsize of the first step
 
         # hyperparameters
         self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
-        self.C = 0.1 # proportionality constant in determining the stepsize (eps \propto C)
+        #factor= jnp.power(2., -6.)
+        self.C = 0.1 #* factor# proportionality constant in determining the stepsize (varew \propto C)
+        self.varew_final = 1e-2 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
         self.delay_check = 30 # when equipartition(step = n) - equipartition(step = n - delay check) > 0 the equipartition is considered to have stoped decreassing 
 
         
@@ -139,7 +154,7 @@ class Sampler:
         return uu / (jnp.sqrt(jnp.sum(jnp.square(uu), axis=1)).T)[:, None], delta_r
 
 
-    def hamiltonian_dynamics(self, x, u, g, key, eps, sigma):
+    def leapfrog(self, x, u, g, eps, sigma):
         """leapfrog"""
 
         z = x / sigma # go to the latent space
@@ -157,18 +172,52 @@ class Sampler:
         uu, delta_r2 = self.update_momentum(eps * 0.5, gg * sigma, uu)
         kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
 
-        return xx, uu, l, gg, kinetic_change, key
+        return xx, uu, l, gg, kinetic_change
+
+
+
+
+    def minimal_norm(self, x, u, g, eps, sigma):
+        """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
+
+        # V T V T V
+        z = x / sigma # go to the latent space
+
+        #V (momentum update)
+        uu, r1 = self.update_momentum(eps * lambda_c, g * sigma, u)
+
+        #T (postion update)
+        zz = z + 0.5 * eps * uu
+        xx = sigma * zz # go back to the configuration space
+        ll, gg = self.Target.grad_nlogp(xx)
+
+        #V (momentum update)
+        uu, r2 = self.update_momentum(eps * (1 - 2 * lambda_c), gg * sigma, uu)
+
+        #T (postion update)
+        zz = zz + 0.5 * eps * uu
+        xx = sigma * zz  # go back to the configuration space
+        ll, gg = self.Target.grad_nlogp(xx)
+
+        #V (momentum update)
+        uu, r3 = self.update_momentum(eps * lambda_c, gg, uu)
+
+        #kinetic energy change
+        kinetic_change = (r1 + r2 + r3) * (self.Target.d-1)
+
+        return xx, uu, ll, gg, kinetic_change
+
 
 
     def dynamics(self, x, u, g, random_key, L, eps, sigma):
         """One step of the generalized dynamics."""
 
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
+        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x, u, g, eps, sigma)
 
         # bounce
         nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.) / self.Target.d)
-        uu, key = self.partially_refresh_momentum(uu, key, nu)
+        uu, key = self.partially_refresh_momentum(uu, random_key, nu)
 
         return xx, uu, ll, gg, kinetic_change, key
 
@@ -244,14 +293,29 @@ class Sampler:
         
         # compute the bias of the sloppy chain as if the precise chain was the ground truth
         bias_d = jnp.square(moments_sloppy - moments) / var
-        bias = jnp.average(bias_d)
+        bias, bias_max = jnp.average(bias_d), jnp.max(bias_d)
         
-        return bias / 16.
+        return bias/16., bias_max/16.
 
 
     def ground_truth_bias(self, x):
 
         moments = jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
+        bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
+        bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
+
+        return bias_avg, bias_max
+
+
+
+    def richardson_bias(self, x, x2):
+        """use richardson extrapolation to improve accuracy of the computed expected values: 
+            see for example: https://en.wikipedia.org/wiki/Richardson_extrapolation"""
+            
+        moments1 = jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
+        moments2 = jnp.average(jnp.square(self.Target.transform(x2)), axis = 0)
+        order = 2
+        moments = (moments1 - moments2 * 0.5**order) / (1. - 0.5**order)
         bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
         bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
 
@@ -283,35 +347,37 @@ class Sampler:
             ### one step of the sloppy dynamics ###
             xx2, uu2, ll2, gg2, _, key = self.dynamics(x2, u2, g2, key, L, 2 * eps, sigma)
                         
-            # if there were nans we don't do the step
+            ### if there were nans we don't do the step ###
             nonans = jnp.all(jnp.isfinite(xx)) & jnp.all(jnp.isfinite(xx2))
             x, u, l, g = switch(nonans, x, u, l, g, xx, uu, ll, gg)
             x2, u2, l2, g2 = switch(nonans, x2, u2, l2, g2, xx2, uu2, ll2, gg2)
             vare = jnp.nan_to_num(varee) * nonans + vare * (1-nonans)
             
-            # bias
+            ### bias ###
             equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
             equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
-            initialization_bias = equi_diag
+            equi = equi_diag
 
-            disrcretization_bias = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
-            bias_avg, bias_max = self.ground_truth_bias(x) #actual bias
-
-            # hyperparameters for the next step
+            bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
+            btrue = self.ground_truth_bias(x) #actual bias
+            brichardson = self.richardson_bias(x, x2) #actual bias
+            bias_summary = {'pair': bpair, 'true': btrue, 'richardson': brichardson, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
             
-            history = jnp.concatenate((jnp.ones(1) * initialization_bias, history[:-1]))
+            
+            ### hyperparameters for the next step ###
+            history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
             decreassing *= (jnp.log10(history[-1] / history[0]) / self.delay_check > 0.0)
             #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
-            bias = initialization_bias# * (1-phase2) + disrcretization_bias * phase2
+            bias = equi# * (1-phase2) + disrcretization_bias * phase2
             varew = self.C * jnp.power(bias, 3./8.)
-            varew = 1e-2 * (1-decreassing) + varew * decreassing
+            varew = self.varew_final * (1-decreassing) + varew * decreassing
             eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             eps *= eps_factor
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, equi_diag, equi_full, disrcretization_bias, bias_avg, bias_max)
+            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary)
 
 
         # initialize the hyperparameters            
@@ -331,9 +397,10 @@ class Sampler:
 
     def analyze_results(self, track):
     
-        eps, vare, varew, Ls, equi_diag, equi_full, bias2, bias_avg, bias_max = track
+        eps, vare, varew, L, bias = track
         
-        print(find_crossing(bias_max, 0.01) * 2)
+        print(find_crossing(bias['true'][1], 0.01) * 2)
+        print(find_crossing(bias['richardson'][1], 0.01) * 2)
         
         num = 4
         plt.figure(figsize= (6, 3 * num))
@@ -343,13 +410,19 @@ class Sampler:
         ### bias ###
         plt.subplot(num, 1, 1)
         plt.title('bias')
-        plt.plot(steps, bias_avg, color = 'tab:red', alpha = 0.5, label= 'average')
-        plt.plot(steps, bias_max, color = 'tab:red', label= 'max')
+        plt.plot(steps, bias['true'][0], color = 'tab:blue', label= 'average')
+        plt.plot(steps, bias['true'][1], color = 'tab:red', label = 'max')
         
-        plt.plot(steps, equi_diag, color = 'tab:blue', label = 'diagonal equipartition')
-        plt.plot(steps, equi_full, '--', color = 'tab:purple', label = 'full rank equipartition')
+        marker = ['--', ':']
+        name= ['richardson', 'pair']
+        for i in range(2):
+            plt.plot(steps, bias[name[i]][0], marker[i], color = 'tab:blue')
+            plt.plot(steps, bias[name[i]][1], marker[i], color = 'tab:red')
+            plt.plot([], [], marker[i], color = 'grey', label= name[i])
 
-        plt.plot(steps, bias2, color = 'tab:green', label = 'from pairs')
+        plt.plot(steps, bias['equipartition diagonal'], color = 'tab:olive', label = 'diagonal equipartition')
+        plt.plot(steps, bias['equipartition full'], '--', color = 'tab:green', label = 'full rank equipartition')
+        
         plt.plot(steps, jnp.ones(steps.shape) * 1e-2, '-', color = 'black')
         plt.legend()
         plt.ylabel(r'$\mathrm{bias}^2$')
@@ -375,14 +448,14 @@ class Sampler:
         plt.subplot(num, 1, 4)
         plt.title('L')
         L0 = self.alpha * jnp.sqrt(jnp.sum(self.Target.second_moments))
-        plt.plot(steps, Ls, '.-', color='tab:orange')
+        plt.plot(steps, L, '.-', color='tab:orange')
         plt.plot(steps, L0 * jnp.ones(steps.shape), '-', color='black')
 
         plt.ylabel("L")
         #plt.yscale('log')
         plt.xlabel('# gradient evaluations')
         plt.tight_layout()
-        #plt.savefig('plots/tst_ensemble/' + self.Target.name + '.png')
+        plt.savefig('plots/tst_ensemble/' + self.Target.name + '_base.png')
         plt.close()
 
         
