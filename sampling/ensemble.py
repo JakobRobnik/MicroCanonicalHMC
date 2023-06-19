@@ -117,8 +117,7 @@ class Sampler:
         #factor= jnp.power(2., -6.)
         self.C = 0.1 #* factor# proportionality constant in determining the stepsize (varew \propto C)
         self.varew_final = 1e-8 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
-        self.delay_check = 30 // self.grads_per_step # when equipartition(step = n) - equipartition(step = n - delay check) > 0 the equipartition is considered to have stoped decreassing 
-
+        
         
         
     def random_unit_vector(self, random_key, num_chains):
@@ -323,7 +322,7 @@ class Sampler:
 
 
         
-    def sample(self, num_steps, x_initial='prior', random_key= None):
+    def sample(self, num_steps, x_initial='prior', random_key= None, delay = 0.04):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
                num_chains: a tuple (number of superchains, number of chains per superchain)
@@ -366,25 +365,27 @@ class Sampler:
             
             ### hyperparameters for the next step ###
             history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
-            decreassing *= (jnp.log10(history[-1] / history[0]) / self.delay_check > 0.0)
-            decreassing = steps < 600
+            decreassing *= (history[-1] > history[0]) 
             #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
-            varew = self.C * jnp.power(bias, 3./8.)
-            varew = self.varew_final * (1-decreassing) + varew * decreassing
+            varew1 = self.C * jnp.power(bias, 3./8.)
+            varew2 = jnp.power(varew, 1 - 1/(num_steps - steps)) * jnp.power(self.varew_final, 1/(num_steps - steps))
+            varew = varew1 * decreassing + varew2 * (1-decreassing)
             eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             eps *= eps_factor
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary, problems)
+            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew, key, L, eps, sigma), (eps, vare, varew, L, bias_summary, problems)
 
 
         # initialize the hyperparameters            
         sigma0 = jnp.ones(self.Target.d)
         L = self.computeL(x0)
-        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(self.delay_check-1) * jnp.inf))
+        delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
+        print(delay_num)
+        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num * -1) * jnp.inf))
         state = (0, history, True, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
         
         # run the chains
