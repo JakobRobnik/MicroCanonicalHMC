@@ -21,14 +21,14 @@ targets = [[Banana(prior = 'prior'), 100],
         [GermanCredit(), 400],
         [Brownian(), 500],
         [IRT(), 700],
-        [StochasticVolatility(), 2000]]
+        [StochasticVolatility(), 1000]]
 
 
 
 if __name__ == '__main__':
     chains = 4096
 
-    for i in [0, 1, 2, 3, 4]:
+    for i in [5, ]:
         target, num_steps = targets[i]
         print(target.name)
         sampler = EnsembleSampler(target, chains)

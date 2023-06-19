@@ -81,7 +81,7 @@ class pmap_target:
 class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, chains, alpha = 1., integrator = 'MN'):
+    def __init__(self, Target, chains, alpha = 1., integrator = 'LF'):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -99,11 +99,11 @@ class Sampler:
         ### integrator ###
         if integrator == "LF": #leapfrog (first updates the velocity)
             self.hamiltonian_dynamics = self.leapfrog
-            self.grad_evals_per_step = 1.0 #per chain
+            self.grads_per_step = 1 #per chain
 
         elif integrator== 'MN': #minimal norm integrator (velocity)
             self.hamiltonian_dynamics = self.minimal_norm
-            self.grad_evals_per_step = 2.0
+            self.grads_per_step = 2
         else:
             raise ValueError('integrator = ' + integrator + 'is not a valid option.')
 
@@ -116,8 +116,8 @@ class Sampler:
         self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
         #factor= jnp.power(2., -6.)
         self.C = 0.1 #* factor# proportionality constant in determining the stepsize (varew \propto C)
-        self.varew_final = 1e-2 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
-        self.delay_check = 30 # when equipartition(step = n) - equipartition(step = n - delay check) > 0 the equipartition is considered to have stoped decreassing 
+        self.varew_final = 1e-8 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
+        self.delay_check = 30 // self.grads_per_step # when equipartition(step = n) - equipartition(step = n - delay check) > 0 the equipartition is considered to have stoped decreassing 
 
         
         
@@ -304,7 +304,7 @@ class Sampler:
         bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
         bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
 
-        return bias_avg, bias_max
+        return [bias_avg, bias_max], jnp.argmax(bias_d)
 
 
 
@@ -359,7 +359,7 @@ class Sampler:
             equi = equi_diag
 
             bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
-            btrue = self.ground_truth_bias(x) #actual bias
+            btrue, problems = self.ground_truth_bias(x) #actual bias
             brichardson = self.richardson_bias(x, x2) #actual bias
             bias_summary = {'pair': bpair, 'true': btrue, 'richardson': brichardson, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
             
@@ -367,6 +367,7 @@ class Sampler:
             ### hyperparameters for the next step ###
             history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
             decreassing *= (jnp.log10(history[-1] / history[0]) / self.delay_check > 0.0)
+            decreassing = steps < 600
             #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
             varew = self.C * jnp.power(bias, 3./8.)
@@ -377,7 +378,7 @@ class Sampler:
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary)
+            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary, problems)
 
 
         # initialize the hyperparameters            
@@ -397,15 +398,22 @@ class Sampler:
 
     def analyze_results(self, track):
     
-        eps, vare, varew, L, bias = track
+        eps, vare, varew, L, bias, problems = track
         
-        print(find_crossing(bias['true'][1], 0.01) * 2)
-        print(find_crossing(bias['richardson'][1], 0.01) * 2)
+        print(find_crossing(bias['true'][1], 0.01) * 2 * self.grads_per_step)
+        #print(find_crossing(bias['richardson'][1], 0.01) * 2)
         
+        print(jnp.sum(problems == self.Target.d-2))
+        print(jnp.sum(problems == self.Target.d-1))
+        print(jnp.sum(problems < self.Target.d-2.5))
+        
+        plt.plot(problems, '.')
+        plt.savefig('problems.png')
+        plt.close()
         num = 4
         plt.figure(figsize= (6, 3 * num))
 
-        steps = jnp.arange(0, 2*len(eps), 2)
+        steps = jnp.arange(0, 2*len(eps), 2) * self.grads_per_step
         
         ### bias ###
         plt.subplot(num, 1, 1)

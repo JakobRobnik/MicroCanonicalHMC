@@ -240,7 +240,7 @@ class Sampler:
         ll, gg = self.Target.grad_nlogp(xx)
 
         #V (momentum update)
-        uu, r3 = self.update_momentum(eps * lambda_c, gg, uu)
+        uu, r3 = self.update_momentum(eps * lambda_c, gg * sigma, uu)
 
         #kinetic energy change
         kinetic_change = (r1 + r2 + r3) * (self.Target.d-1)

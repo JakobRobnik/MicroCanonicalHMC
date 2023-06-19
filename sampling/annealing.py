@@ -143,7 +143,7 @@ class Sampler:
 
 
             ### eps tuning ###
-            de = jnp.square(kinetic_change + ll - l) / self.Target.d #square energy error per dimension
+            de = jnp.square(kinetic_change + (ll - l)/T) / self.Target.d #square energy error per dimension
             varE = jnp.average(de) #averaged over the ensamble
 
                                 #if we are in the tuning phase            #else
