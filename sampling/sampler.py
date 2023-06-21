@@ -1,7 +1,8 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-
+import matplotlib.pyplot as plt
+        
 from .correlation_length import ess_corr
 
 
@@ -431,17 +432,7 @@ class Sampler:
         if num_chains == 1:
             results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning, adaptive) #the function which actually does the sampling
             if output == 'ess':
-                import matplotlib.pyplot as plt
-                plt.plot(jnp.sqrt(results))
-                plt.plot([0, len(results)], np.ones(2) * 0.1, '--', color='black', alpha=0.5)
-                plt.yscale('log')
-                plt.tight_layout()
-                plt.savefig('ess.png')
-                plt.close()
-                #plt.show()
-
-                cutoff_reached = results[-1] < 0.01
-                return (100.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached
+                return self.bias_plot(results)
             else:
                 return results
         else:
@@ -470,16 +461,7 @@ class Sampler:
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
                 if output == 'ess' or output == 'ess funnel':
-                    bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
-
-                    import matplotlib.pyplot as plt
-                    plt.plot(jnp.sqrt(bsq))
-                    plt.plot([0, len(bsq)], np.ones(2) * 0.1, '--', color = 'black', alpha= 0.5)
-                    plt.yscale('log')
-                    plt.show()
-
-                    cutoff_reached = bsq[-1] < 0.01
-                    return (100.0 / (find_crossing(bsq, 0.01) * self.grad_evals_per_step) ) * cutoff_reached
+                    return self.bias_plot(results.reshape(num_chains, num_steps))
 
                 ### reshape results ###
                 if type(results) is tuple: #each chain returned a tuple
@@ -495,7 +477,13 @@ class Sampler:
 
             else: #run chains serially on a single core
 
-                return jax.vmap(f)(jnp.arange(num_chains))
+                results = jax.vmap(f)(jnp.arange(num_chains))
+
+                if output == 'ess' or output == 'ess funnel':
+                    return self.bias_plot(results)
+
+                else: 
+                    return results
 
 
 
@@ -562,13 +550,13 @@ class Sampler:
         
         def step(state, useless):
 
-            x, u, l, g, E, key, time = state
+            x, u, l, g, key, time = state
             xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
-            EE = E + kinetic_change + ll - l
-            return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), ll, EE)
+            de = kinetic_change + ll - l
+            return (xx, uu, ll, gg, key, time), (self.Target.transform(xx), ll, de)
 
         if thinning == 1:
-            return jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length=num_steps)[1]
+            return jax.lax.scan(step, init=(x, u, l, g, random_key, 0.0), xs=None, length=num_steps)[1]
 
         else:
             return self.sample_thinning(num_steps, x, u, l, g, random_key, L, eps, sigma, thinning)
@@ -580,16 +568,16 @@ class Sampler:
         def step(state, useless):
 
             def substep(state, useless):
-                x, u, l, g, E, key, time = state
+                x, u, l, g, _, key, time = state
                 xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
-                EE = E + kinetic_change + ll - l
-                return (xx, uu, ll, gg, EE, key, time), None
+                de = kinetic_change + ll - l
+                return (xx, uu, ll, gg, de, key, time), None
 
             state = jax.lax.scan(substep, init=state, xs=None, length= thinning)[0] #do 'thinning' steps without saving
 
             return state, (self.Target.transform(state[0]), state[2], state[4]) #save one sample
 
-        return jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length= num_steps // thinning)[1]
+        return jax.lax.scan(step, init=(x, u, l, g, 0., random_key, 0.), xs=None, length= num_steps // thinning)[1]
 
 
 
@@ -623,8 +611,8 @@ class Sampler:
             F2 = (W * F2 + jnp.square(self.Target.transform(x))) / (W + 1)  # Update <f(x)> with a Kalman filter
             W += 1
             bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
-            #bias = jnp.average(bias_d)
-            bias = jnp.max(bias_d)
+            bias = jnp.average(bias_d)
+            #bias = jnp.max(bias_d)
 
             return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 
@@ -796,6 +784,20 @@ class Sampler:
         return track, xx, uu, ll, gg, key
 
 
+
+    def bias_plot(self, results):
+        #bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
+        bsq = jnp.median(results, axis = 0)
+        
+        plt.plot(bsq)
+        plt.plot([0, len(bsq)], np.ones(2) * 0.01, '--', color = 'black')
+        plt.yscale('log')
+        plt.tight_layout()
+        plt.savefig('plots/tst_ensemble/sequential/' + self.Target.name + '.png')
+        plt.close()
+
+        cutoff_reached = bsq[-1] < 0.01
+        return ((find_crossing(bsq, 0.01) * self.grad_evals_per_step) / 100. ) * cutoff_reached
 
 
 def find_crossing(array, cutoff):

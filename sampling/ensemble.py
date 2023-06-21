@@ -50,7 +50,7 @@ class pmap_target:
         pvgrad= jax.pmap(jax.vmap(target.grad_nlogp))
         
         def grad(x):
-            l, g = jnp.array(pvgrad(x.reshape(devices, chains // devices, target.d)))
+            l, g = pvgrad(x.reshape(devices, chains // devices, target.d))
             return l.reshape(chains), g.reshape(chains, target.d)
                 
         self.grad_nlogp = grad
@@ -66,7 +66,7 @@ class pmap_target:
 
         if hasattr(target, 'prior_draw'):
             pvdraw= jax.pmap(jax.vmap(target.prior_draw))
-            self.transform = lambda x: jnp.array(pvdraw(x.reshape(devices, chains // devices))).reshape(chains)
+            self.prior_draw = lambda k: jnp.array(pvdraw(k.reshape(devices, chains // devices, 2))).reshape(chains, target.d)
 
 
         if hasattr(target, 'second_moments'):
@@ -322,7 +322,7 @@ class Sampler:
 
 
         
-    def sample(self, num_steps, x_initial='prior', random_key= None, delay = 0.04):
+    def sample(self, num_steps, x_initial='prior', random_key= None, delay = 0.05):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
                num_chains: a tuple (number of superchains, number of chains per superchain)
@@ -335,7 +335,7 @@ class Sampler:
         
         def step(state, useless):
             
-            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
+            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew_slow, key, L, eps, sigma = state
             
             ### two steps of the precise dynamics ###
             xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
@@ -355,7 +355,7 @@ class Sampler:
             ### bias ###
             equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
             equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
-            equi = equi_diag
+            equi = equi_full
 
             bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
             btrue, problems = self.ground_truth_bias(x) #actual bias
@@ -369,15 +369,17 @@ class Sampler:
             #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
             varew1 = self.C * jnp.power(bias, 3./8.)
-            varew2 = jnp.power(varew, 1 - 1/(num_steps - steps)) * jnp.power(self.varew_final, 1/(num_steps - steps))
-            varew = varew1 * decreassing + varew2 * (1-decreassing)
+            pow = 2./(num_steps - steps)
+            varew_slow = decreassing * 1e-7 + (1-decreassing) * jnp.power(varew_slow, 1 - pow) * jnp.power(self.varew_final, pow)
+     
+            varew = varew1 * decreassing + varew_slow * (1-decreassing)
             eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             eps *= eps_factor
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew, key, L, eps, sigma), (eps, vare, varew, L, bias_summary, problems)
+            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew_slow, key, L, eps, sigma), (eps, vare, varew, L, bias_summary, problems, decreassing)
 
 
         # initialize the hyperparameters            
@@ -385,8 +387,8 @@ class Sampler:
         L = self.computeL(x0)
         delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
         print(delay_num)
-        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num * -1) * jnp.inf))
-        state = (0, history, True, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
+        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num -1) * jnp.inf))
+        state = (0, history, True, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, 1e-6, key, L, self.eps_initial, sigma0)
         
         # run the chains
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
@@ -399,14 +401,16 @@ class Sampler:
 
     def analyze_results(self, track):
     
-        eps, vare, varew, L, bias, problems = track
+        eps, vare, varew, L, bias, problems, decreassing = track
+        
+        print("burn-in:" + str(2*jnp.argmin(decreassing).astype(int)))
         
         print(find_crossing(bias['true'][1], 0.01) * 2 * self.grads_per_step)
         #print(find_crossing(bias['richardson'][1], 0.01) * 2)
         
-        print(jnp.sum(problems == self.Target.d-2))
-        print(jnp.sum(problems == self.Target.d-1))
-        print(jnp.sum(problems < self.Target.d-2.5))
+        # print(jnp.sum(problems == self.Target.d-2))
+        # print(jnp.sum(problems == self.Target.d-1))
+        # print(jnp.sum(problems < self.Target.d-2.5))
         
         plt.plot(problems, '.')
         plt.savefig('problems.png')
