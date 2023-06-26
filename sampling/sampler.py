@@ -1,3 +1,5 @@
+## style note: general preference here for functional style (e.g. global function definitions, purity, code sharing)
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -34,14 +36,6 @@ def update_position(eps, u, shift, grad_nlogp):
     return xx, ll, gg
   return update
 
-
-# def random_unit_vector(d, random_key, num_chains):
-#     """Generates a random (isotropic) unit vector."""
-#     key, subkey = jax.random.split(random_key)
-#     u = jax.random.normal(subkey, shape = (num_chains, d), dtype = 'float64')
-#     normed_u = u / jnp.sqrt(jnp.sum(jnp.square(u), axis = 1))[:, None]
-#     return normed_u, key
-
 def random_unit_vector(d):
     def given_key(random_key):
         """Generates a random (isotropic) unit vector."""
@@ -73,14 +67,11 @@ def leapfrog(d, shift, grad_nlogp, eps, sigma):
       def step(u,x,g):
         """leapfrog"""
 
-        # z = x / sigma # go to the latent space
-
         # half step in momentum
         uu, delta_r1 = update_momentum(d, eps * 0.5)(u, g * sigma)
 
         # full step in x
         xx = shift(x, eps * uu*sigma )
-        # xx = sigma * zz # go back to the configuration space
         l, gg = grad_nlogp(xx)
 
         # half step in momentum
@@ -103,7 +94,7 @@ def partially_refresh_momentum(d, nu):
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, shift_fn, masses, L = None, eps = None,
+    def __init__(self, Target, shift_fn = lambda x, y: x + y, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
                  diagonal_preconditioning= True, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
@@ -133,7 +124,7 @@ class Sampler:
         to_particles = lambda x : jnp.reshape(x, (-1, 3))
         from_particles = lambda x : jnp.reshape(x, math.prod(x.shape))
         self.shift = lambda x, y : from_particles(shift_fn(to_particles(x), to_particles(y)))
-        self.masses = masses
+        self.masses = jnp.ones(Target.d)
 
         self.integrator = integrator
 
@@ -168,12 +159,6 @@ class Sampler:
             self.eps = eps
         else: #defualt value (assumes preconditioned target and even then it might not work). Unless you have done a grid search to determine this value we suggest runing sample with the option tune= 'cheap' or tune= 'expensive'.
             self.eps = jnp.sqrt(Target.d) * 0.4
-
-
-
-
-
-    
 
     # naive update
     # def update_momentum(self, eps, g, u):
@@ -211,48 +196,8 @@ class Sampler:
 
         return xx, uu, l, gg, kinetic_change, random_key
 
-    #
-    # def leapfrog_sg(self, x, u, g, random_key, eps, sigma, data):
-    #     """leapfrog"""
-    #
-    #     z = x / sigma # go to the latent space
-    #
-    #     # half step in x
-    #     zz = z + 0.5 * eps * u
-    #     xx = sigma * zz # go back to the configuration space
-    #     l, gg = self.Target.grad_nlogp(xx, data)
-    #
-    #     # half step in momentum
-    #     uu, delta_r = self.update_momentum(eps, gg * sigma, u)
-    #
-    #     # full step in x
-    #     zz += 0.5 * eps * uu
-    #     xx = sigma * zz # go back to the configuration space
-    #
-    #     kinetic_change = delta_r * (self.Target.d-1)
-    #
-    #     return xx, uu, l, gg, kinetic_change, random_key
-
-
-
+   
     
-      
-
-    # def minimal_norm(self, x, u, g, eps, sigma):
-    #     """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
-
-    #     # V T V T V
-    #     uu, r1 = update_momentum(self.Target.d, eps * lambda_c, g * sigma)(u)
-    #     xx, ll, gg = update_position(eps, uu*sigma, self.shift, self.Target.grad_nlogp)(x)
-    #     uu, r2 = update_momentum(self.Target.d, eps * (1 - 2 * lambda_c), gg * sigma)(uu)
-    #     xx, ll, gg = update_position(eps, uu*sigma, self.shift, self.Target.grad_nlogp)(xx)
-    #     uu, r3 = update_momentum(self.Target.d, eps * lambda_c, gg)(uu)
-
-    #     #kinetic energy change
-    #     kinetic_change = (r1 + r2 + r3) * (self.Target.d-1)
-
-    #     return xx, uu, ll, gg, kinetic_change
-
     def dynamics_bounces(self, x, u, g, random_key, time, L, eps, sigma):
         """One step of the dynamics (with bounces)"""
 
@@ -283,7 +228,7 @@ class Sampler:
             self.grad_evals_per_step = 1.0
 
         elif self.integrator== 'MN': #minimal norm integrator (velocity)
-            # jax.debug.print("eps {}\n sigma ={}\n grad_nlogp(1)={}\n x {}", eps, sigma, self.Target.grad_nlogp(x), x)
+
 
             hamiltonian_dynamics = minimal_norm(eps=eps, 
                                                       sigma=sigma, 
@@ -292,14 +237,7 @@ class Sampler:
                                                       d=self.Target.d
                                                       )
             self.grad_evals_per_step = 2.0
-        # # elif integrator == 'RM':
-        # #     self.hamiltonian_dynamics = self.randomized_midpoint
-        # #     self.grad_evals_per_step = 1.0
-        # else:
-        #     raise ValueError('integrator = ' + integrator + 'is not a valid option.')
-
-
-
+       
         # Hamiltonian step
         xx, uu, ll, gg, kinetic_change = hamiltonian_dynamics(x=x,u=u,g=g)  # self.hamiltonian_dynamics(x, u, g, eps, sigma)
 
@@ -308,8 +246,6 @@ class Sampler:
         uu, key = partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=random_key)
 
         return xx, uu, ll, gg, kinetic_change, key, time + eps
-
-
 
     def dynamics_generalized_sg(self, x, u, g, random_key, time, L, eps, sigma):
         """One sweep over the entire dataset. Perfomrs self.Target.num_batches steps with the stochastic gradient."""
@@ -550,7 +486,6 @@ class Sampler:
         else: #fixed stepsize
 
             if output == 'normal' or output == 'detailed':
-                # jax.debug.print("x {}\n\n", x)
                 X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
                 if output == 'detailed':
                     return X, E, L, eps
@@ -577,25 +512,14 @@ class Sampler:
         def step(state, useless):
 
             x, u, l, g, E, key, time = state
-            # jax.debug.print("l {}", l)
-            # jax.debug.print("Energy is \n {}", E)
-            # jax.debug.print("Energy is \n {}", E)
             xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
-            # jax.debug.print("ll {}", ll)
-            # jax.debug.print("kinetic change {}", kinetic_change)
             EE = E + kinetic_change + ll - l
 
             if self.Target.nbrs:
                 self.Target.nbrs = self.Target.nbrs.update(jnp.reshape(xx, (-1,3)), neighbor=self.Target.nbrs)
-            # self.Target.nbrs = jax.lax.cond(
-            #    self.Target.nbrs is None, 
-            #    lambda x : x, 
-            #    lambda x : x.update(xx, neighbor=x),
-            #     self.Target.nbrs )
             return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), ll, EE)
 
         if thinning == 1:
-            # jax.debug.print("initial x {}", x)
             return jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length=num_steps)[1]
 
         else:
@@ -864,12 +788,3 @@ def burn_in_ending(loss):
 
 
 
-def my_while(cond_fun, body_fun, initial_state):
-    """see https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.while_loop.html"""
-
-    state = initial_state
-
-    while cond_fun(state):
-        state = body_fun(state)
-
-    return state

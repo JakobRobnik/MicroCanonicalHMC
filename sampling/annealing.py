@@ -1,14 +1,14 @@
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
-from sampler import update_momentum, update_position, random_unit_vector, minimal_norm, leapfrog
+from sampler import minimal_norm, leapfrog
 
 
 
 class Sampler:
     """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, shift_fn, masses, alpha = 1.0, varE_wanted = 1e-4):
+    def __init__(self, Target, shift_fn = lambda x, y: x + y, alpha = 1.0, varE_wanted = 1e-4):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -16,7 +16,7 @@ class Sampler:
         """
 
         self.Target = Target
-        self.masses = masses
+        self.masses = jnp.ones(self.Target.d)
 
         self.alpha = alpha
         self.L = jnp.sqrt(self.Target.d) * alpha
@@ -26,6 +26,9 @@ class Sampler:
         self.grad_evals_per_step = 1.0 # per chain (leapfrog)
 
         self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
+
+        # adjust L and eps as a funciton of temperature
+        self.temp_func = lambda T, Tprev, L, eps : (L, eps)
 
 
     def random_unit_vector(self, random_key, num_chains):
@@ -42,42 +45,6 @@ class Sampler:
         noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
 
         return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
-
-
-
-    def update_momentum(self, eps, g, u):
-        """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
-        similar to the implementation: https://github.com/gregversteeg/esh_dynamics
-        There are no exponentials e^delta, which prevents overflows when the gradient norm is large."""
-        g_norm = jnp.sqrt(jnp.sum(jnp.square(g), axis=1)).T
-        nonzero = g_norm > 1e-13  # if g_norm is zero (we are at the MAP solution) we also want to set e to zero and the function will return u
-        inv_g_norm = jnp.nan_to_num(1.0 / g_norm) * nonzero
-        e = - g * inv_g_norm[:, None]
-        ue = jnp.sum(u * e, axis=1)
-        delta = eps * g_norm / (self.Target.d - 1)
-        zeta = jnp.exp(-delta)
-        uu = e * ((1 - zeta) * (1 + zeta + ue * (1 - zeta)))[:, None] + 2 * zeta[:, None] * u
-        delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1 - ue) * zeta ** 2)
-        return uu / (jnp.sqrt(jnp.sum(jnp.square(uu), axis=1)).T)[:, None], delta_r
-
-
-    # def hamiltonian_dynamics(self, x, u, g, eps, T):
-    #     """leapfrog"""
-
-    #     # half step in momentum
-    #     uu, delta_r1 = jax.vmap(update_momentum(self.Target.d, eps * 0.5))(u, g)
-
-    #     # full step in x
-    #     xx = self.shift_fn(x, eps * uu)
-    #     l, gg = self.Target.grad_nlogp(xx)
-    #     l, gg = l/T, gg/T
-
-    #     # half step in momentum
-    #     uu, delta_r2 = self.update_momentum(eps * 0.5, gg, uu)
-    #     kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
-
-    #     return xx, uu, l, gg, kinetic_change
-
 
     def dynamics(self, x, u, g, random_key, L, eps, T):
         """One step of the generalized dynamics."""
@@ -143,34 +110,27 @@ class Sampler:
         def step(state, tune):
 
             x, u, l, g, E, key, L, eps = state 
-            # jax.debug.print("l {}", l)
             x, u, ll, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, T)  # update particles by one step
-            # jax.debug.print("ll {}", ll)
+       
+
+            ## eps tuning ###
+            de = jnp.square(kinetic_change + (ll - l)/T) / self.Target.d
+            varE = jnp.average(de) #averaged over the ensamble
+
+                                #if we are in the tuning phase            #else
+            eps *= (tune * jnp.power(varE / self.varEwanted, -1./6.) + (1-tune))
 
 
-            # jax.debug.print("kinetic change: {}", kinetic_change)            
-            # jax.debug.print("E: {}", E)            
+            ### L tuning ###
+            #typical width of the posterior
+            moment1 = jnp.average(x, axis=0)
+            moment2 = jnp.average(jnp.square(x), axis = 0)
+            var= moment2 - jnp.square(moment1)
+            sig = jnp.sqrt(jnp.average(var)) # average over dimensions (= typical width of the posterior)
 
-            ### eps tuning ###
-            # de = jnp.square(kinetic_change + (ll - l)/T) / self.Target.d
-            # varE = jnp.average(de) #averaged over the ensamble
+            Lnew = self.alpha * sig * jnp.sqrt(self.Target.d)
+            L = tune * Lnew + (1-tune) * L #update L if we are in the tuning phase
 
-            #                     #if we are in the tuning phase            #else
-            # eps *= (tune * jnp.power(varE / self.varEwanted, -1./6.) + (1-tune))
-
-
-            # ### L tuning ###
-            # #typical width of the posterior
-            # moment1 = jnp.average(x, axis=0)
-            # moment2 = jnp.average(jnp.square(x), axis = 0)
-            # var= moment2 - jnp.square(moment1)
-            # sig = jnp.sqrt(jnp.average(var)) # average over dimensions (= typical width of the posterior)
-
-            # Lnew = self.alpha * sig * jnp.sqrt(self.Target.d)
-            # L = tune * Lnew + (1-tune) * L #update L if we are in the tuning phase
-            
-            # jax.debug.print("E {}, kinetic {}, ll {}, l {}", E.shape, kinetic_change.shape, ll.shape, l.shape)
-            # print(f"E {E.shape},l { l.shape}",)
 
             EE = E + kinetic_change + (ll - l)/T
 
@@ -195,33 +155,23 @@ class Sampler:
         def temp_level(state, iter):
             x, u, l, g, E, key, L, eps = state
             T, Tprev = temp_schedule_ext[iter], temp_schedule_ext[iter-1]
-            # logw = -(1.0/T - 1.0/Tprev) * l
             
             # L *= jnp.sqrt(T / Tprev)
             # eps *= jnp.sqrt(T / Tprev)
 
-            # eps_in_si = 2*scipy.constants.femto * jnp.sqrt(3 * 688 * scipy.constants.k * (T/0.001987191))
-            # si_to_gmol = jnp.sqrt(1000*scipy.constants.Avogadro)/scipy.constants.angstrom
-            # eps = eps_in_si * si_to_gmol
-            # L = 30*eps
+            L, eps = self.temp_func(T, Tprev, L, eps)
+
 
             # jax.debug.print("eps: {}, L: {}", eps, L)
-
-            # x, u, l, g, key, L, eps, T = resample_particles(logw, x, u, l, g, key, L, eps, T)
+            # if self.resample:
+            #     logw = -(1.0/T - 1.0/Tprev) * l
+            #     x, u, l, g, key, L, eps, T = resample_particles(logw, x, u, l, g, key, L, eps, T)
 
 
 
             next_state, (xs, EE) = self.sample_temp_level(steps_at_each_temp, tune_steps, x, u, l, g, E, key, L, eps, T)
 
             return next_state, (xs, EE)
-
-            # return self.sample_temp_level(steps_at_each_temp, tune_steps, x, u, l, g, key, L, eps, T), None
-
-        
-        # do the sampling and return the final x of all the chains
-        # return jax.lax.scan(temp_level, init= (x0, u0, l0, g0, key0, self.L, self.eps_initial), xs= jnp.arange(1, len(temp_schedule_ext)))[0][0]
-
-        # jax.debug.print("x {}\n\n", x0)
 
         return jax.lax.scan(temp_level, init= (x0, u0, l0, g0, jnp.zeros(x0.shape[0]), key0, self.L, self.eps_initial), xs= jnp.arange(1, len(temp_schedule_ext)))[1]
         
