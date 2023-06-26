@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from correlation_length import ess_corr
+from sampling.correlation_length import ess_corr
 
 
 jax.config.update('jax_enable_x64', True)

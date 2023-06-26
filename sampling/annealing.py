@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
-from sampler import minimal_norm, leapfrog
+from sampling.sampler import minimal_norm, leapfrog
 
 
 
