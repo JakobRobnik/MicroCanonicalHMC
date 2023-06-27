@@ -34,10 +34,10 @@ def run_sequential(L_factor, chain_length, old):
     eps = 0.1
 
     if old:
-        sampler = OldSampler(target, frac_tune1=0.0, frac_tune2=0.0, frac_tune3=0.0, L = L_factor*eps,
+        sampler = OldSampler(target, integrator = 'MN', frac_tune1=0.0, frac_tune2=0.0, frac_tune3=0.0, L = L_factor*eps,
                   eps=eps)    
     else:
-        sampler = Sampler(target, frac_tune1=0.0, frac_tune2=0.0, frac_tune3=0.0, L = L_factor*eps, eps=eps)
+        sampler = Sampler(target, integrator = 'MN', frac_tune1=0.0, frac_tune2=0.0, frac_tune3=0.0, L = L_factor*eps, eps=eps)
     num_chains = 1
     samples, energy, L, _ = sampler.sample(chain_length, num_chains, output= 'detailed', random_key=jax.random.PRNGKey(0))
 

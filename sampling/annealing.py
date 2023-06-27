@@ -1,14 +1,15 @@
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
-from sampling.sampler import minimal_norm, leapfrog
+from sampling.dynamics import random_unit_vector
+from sampling.sampler import hamiltonian_dynamics, grad_evals
 
 
 
 class Sampler:
     """Ensamble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, shift_fn = lambda x, y: x + y, alpha = 1.0, varE_wanted = 1e-4):
+    def __init__(self, Target, shift_fn = lambda x, y: x + y, alpha = 1.0, varE_wanted = 1e-4, integrator='MN'):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -23,7 +24,9 @@ class Sampler:
         self.varEwanted = varE_wanted
         self.shift_fn = shift_fn
 
-        self.grad_evals_per_step = 1.0 # per chain (leapfrog)
+        self.integrator = integrator
+
+        self.grad_evals_per_step = grad_evals[self.integrator]
 
         self.eps_initial = jnp.sqrt(self.Target.d)    # this will be changed during the burn-in
 
@@ -46,25 +49,12 @@ class Sampler:
 
         return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
 
-    def dynamics(self, x, u, g, random_key, L, eps, T):
+    def dynamics(self, hamiltonian_dynamics, x, u, g, random_key, L, eps, T):
         """One step of the generalized dynamics."""
 
-        def energy_at_temperature(x):
-           l, g = self.Target.grad_nlogp(x)
-           return l/T, g/T
-
-
-        # jax.debug.print("eps {}\n, sigma ={}\n, grad_nlogp(1)={}\n, x {}", eps, 1/jnp.sqrt(self.masses), energy_at_temperature(x), x)
-              
-        hd = jax.vmap(minimal_norm(d=self.Target.d, shift=self.shift_fn, grad_nlogp=energy_at_temperature, eps=eps, sigma=1/jnp.sqrt(self.masses)))
-
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change = hd(x=x,u=u,g=g/T)
-        # jax.debug.print("ll {}", ll)
-        # self.hamiltonian_dynamics(x, u, g/T, eps, T)
+        xx, uu, ll, gg, kinetic_change = hamiltonian_dynamics(x=x,u=u,g=g/T, eps=jnp.repeat(eps, x.shape[0]))
         ll, gg = ll * T,  gg * T
-        # jax.debug.print("\n\n\nll 2 {}\n\n\n", ll)
-        # hd(x=x,u=u,g=g)
 
         # bounce
         nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
@@ -98,6 +88,10 @@ class Sampler:
 
         ### initial velocity ###
         u, key = self.random_unit_vector(key, num_chains)  # random velocity orientations
+        
+        ## if you want to use random_unit_vector from dynamics, this is how
+        # keys = jax.random.split(key, num=num_chains+1)
+        # u, key = jax.vmap(random_unit_vector(self.Target.d))(keys[1:])  # random velocity orientations
 
 
         return x, u, l, g, key
@@ -106,13 +100,18 @@ class Sampler:
 
     def sample_temp_level(self, num_steps, tune_steps, x0, u0, l0, g0, E0, key0, L0, eps0, T):
 
+        def energy_at_temperature(x):
+           l, g = self.Target.grad_nlogp(x)
+           return l/T, g/T
+
+        hd = jax.vmap(hamiltonian_dynamics(integrator=self.integrator, sigma=1/jnp.sqrt(self.masses), grad_nlogp=energy_at_temperature, shift=self.shift_fn, d=self.Target.d))
+                                   
 
         def step(state, tune):
 
             x, u, l, g, E, key, L, eps = state 
-            x, u, ll, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, T)  # update particles by one step
+            x, u, ll, g, kinetic_change, key = self.dynamics(hd, x, u, g, key, L, eps, T)  # update particles by one step
        
-
             ## eps tuning ###
             de = jnp.square(kinetic_change + (ll - l)/T) / self.Target.d
             varE = jnp.average(de) #averaged over the ensamble
