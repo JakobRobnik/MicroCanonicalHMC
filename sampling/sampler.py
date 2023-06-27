@@ -789,15 +789,15 @@ class Sampler:
         #bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
         bsq = jnp.median(results, axis = 0)
         
-        plt.plot(bsq)
-        plt.plot([0, len(bsq)], np.ones(2) * 0.01, '--', color = 'black')
-        plt.yscale('log')
-        plt.tight_layout()
-        plt.savefig('plots/tst_ensemble/sequential/' + self.Target.name + '.png')
-        plt.close()
+        # plt.plot(bsq)
+        # plt.plot([0, len(bsq)], np.ones(2) * 0.01, '--', color = 'black')
+        # plt.yscale('log')
+        # plt.tight_layout()
+        # plt.savefig('plots/tst_ensemble/sequential/' + self.Target.name + '.png')
+        # plt.close()
 
         cutoff_reached = bsq[-1] < 0.01
-        return ((find_crossing(bsq, 0.01) * self.grad_evals_per_step) / 100. ) * cutoff_reached
+        return (100. / (find_crossing(bsq, 0.01) * self.grad_evals_per_step)) * cutoff_reached
 
 
 def find_crossing(array, cutoff):

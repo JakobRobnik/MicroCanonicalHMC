@@ -322,7 +322,7 @@ class Sampler:
 
 
         
-    def sample(self, num_steps, x_initial='prior', random_key= None, delay = 0.05):
+    def sample(self, num_steps, x_initial='prior', random_key= None, thinning = 1, delay = 0.05):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
                num_chains: a tuple (number of superchains, number of chains per superchain)
@@ -333,7 +333,7 @@ class Sampler:
         x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
         
         
-        def step(state, useless):
+        def step(state):
             
             steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew_slow, key, L, eps, sigma = state
             
@@ -366,7 +366,6 @@ class Sampler:
             ### hyperparameters for the next step ###
             history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
             decreassing *= (history[-1] > history[0]) 
-            #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
             varew1 = self.C * jnp.power(bias, 3./8.)
             pow = 2./(num_steps - steps)
@@ -379,7 +378,7 @@ class Sampler:
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew_slow, key, L, eps, sigma), (eps, vare, varew, L, bias_summary, problems, decreassing)
+            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew_slow, key, L, eps, sigma), (self.Target.transform(x), eps, vare, varew, L, bias_summary, problems, decreassing)
 
 
         # initialize the hyperparameters            
@@ -393,28 +392,31 @@ class Sampler:
         # run the chains
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
         
-        self.analyze_results(track)
+        grads = self.analyze_results(track)
         
-        #return state[0]
+        x = jnp.swapaxes(track[0], 0, 1)
+        
+        return x, grads
     
     
 
     def analyze_results(self, track):
     
-        eps, vare, varew, L, bias, problems, decreassing = track
+        _, eps, vare, varew, L, bias, problems, decreassing = track
         
         print("burn-in:" + str(2*jnp.argmin(decreassing).astype(int)))
         
-        print(find_crossing(bias['true'][1], 0.01) * 2 * self.grads_per_step)
+        grads = find_crossing(bias['true'][1], 0.01) * 2 * self.grads_per_step
+        print(grads)
         #print(find_crossing(bias['richardson'][1], 0.01) * 2)
         
         # print(jnp.sum(problems == self.Target.d-2))
         # print(jnp.sum(problems == self.Target.d-1))
         # print(jnp.sum(problems < self.Target.d-2.5))
         
-        plt.plot(problems, '.')
-        plt.savefig('problems.png')
-        plt.close()
+        # plt.plot(problems, '.')
+        # plt.savefig('problems.png')
+        # plt.close()
         num = 4
         plt.figure(figsize= (6, 3 * num))
 
@@ -470,6 +472,8 @@ class Sampler:
         plt.tight_layout()
         plt.savefig('plots/tst_ensemble/' + self.Target.name + '_base.png')
         plt.close()
+        
+        return grads
 
         
 
@@ -484,3 +488,15 @@ def switch(tru, x, u, l, g, xx, uu, ll, gg):
     
     return X, U, L, G
 
+def scan_with_thinning(step, track_func, init, length, thinning):
+    
+    _step = lambda x, useless: (step(x), None)
+    
+    def step_thinning(state_initial, useless):
+        
+        # do the step several times
+        state_final = jax.lax.scan(_step, init = state_initial, xs = None, length = thinning)[0]
+        
+        return state_final, track_func(state_final)
+    
+    return jax.lax.scan(step_thinning, init = init, xs = None, length = length//thinning)
