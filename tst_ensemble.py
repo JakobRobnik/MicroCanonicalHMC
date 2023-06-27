@@ -53,14 +53,13 @@ def ess_cross_chain(x, chains = 128, nt = 100):
     
     
 def ensemble_run():
-    chains = 4096
+    chains = 2048
 
     for i in [0, ]:
         target, num_steps, _ = targets[i]
         print(target.name)
         sampler = EnsembleSampler(target, chains)
-        x, grads = sampler.sample(num_steps)
-        np.save('x.npy', x)
+        x = sampler.sample(num_steps)
         #ess_cross_chain(x)
         #print(grads, ess)
 

@@ -368,9 +368,7 @@ class Sampler:
             decreassing *= (history[-1] > history[0]) 
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
             varew1 = self.C * jnp.power(bias, 3./8.)
-            pow = 2./(num_steps - steps)
-            varew_slow = decreassing * 1e-7 + (1-decreassing) * jnp.power(varew_slow, 1 - pow) * jnp.power(self.varew_final, pow)
-     
+
             varew = varew1 * decreassing + varew_slow * (1-decreassing)
             eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
@@ -392,11 +390,9 @@ class Sampler:
         # run the chains
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
         
-        grads = self.analyze_results(track)
+        self.analyze_results(track)
         
-        x = jnp.swapaxes(track[0], 0, 1)
-        
-        return x, grads
+        return state[3]
     
     
 
@@ -487,16 +483,3 @@ def switch(tru, x, u, l, g, xx, uu, ll, gg):
     G = jnp.nan_to_num(gg) * tru + g * false
     
     return X, U, L, G
-
-def scan_with_thinning(step, track_func, init, length, thinning):
-    
-    _step = lambda x, useless: (step(x), None)
-    
-    def step_thinning(state_initial, useless):
-        
-        # do the step several times
-        state_final = jax.lax.scan(_step, init = state_initial, xs = None, length = thinning)[0]
-        
-        return state_final, track_func(state_final)
-    
-    return jax.lax.scan(step_thinning, init = init, xs = None, length = length//thinning)
