@@ -1,24 +1,20 @@
-## style note: general preference here for functional style (e.g. global function definitions, purity, code sharing)
-
 import jax
 import jax.numpy as jnp
 import numpy as np
-import math
 
-from sampling.dynamics import update_momentum, hamiltonian_dynamics, grad_evals, update_position, random_unit_vector, minimal_norm, leapfrog, partially_refresh_momentum
 from sampling.correlation_length import ess_corr
-
 
 
 jax.config.update('jax_enable_x64', True)
 
+lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
 
 
 
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, shift_fn = lambda x, y: x + y, L = None, eps = None,
+    def __init__(self, Target, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
                  diagonal_preconditioning= True, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
@@ -45,19 +41,21 @@ class Sampler:
         """
 
         self.Target = Target
-        to_particles = lambda x : jnp.reshape(x, (-1, 3))
-        from_particles = lambda x : jnp.reshape(x, math.prod(x.shape))
-        self.shift = lambda x, y : from_particles(shift_fn(to_particles(x), to_particles(y)))
-        self.masses = jnp.ones(Target.d)
-        self.sigma = 1/jnp.sqrt(self.masses)
-
-        self.integrator = integrator
 
         ### integrator ###
-        ## NOTE: sigma does not arise from any tuning here: it is a fixed parameter
-        self.hamiltonian_dynamics = hamiltonian_dynamics(integrator=self.integrator, sigma=self.sigma, grad_nlogp=self.Target.grad_nlogp, shift=self.shift, d=self.Target.d)
+        if integrator == "LF": #leapfrog (first updates the velocity)
+            self.hamiltonian_dynamics = self.leapfrog
+            self.grad_evals_per_step = 1.0
 
-        self.grad_evals_per_step = grad_evals[self.integrator]
+        elif integrator== 'MN': #minimal norm integrator (velocity)
+            self.hamiltonian_dynamics = self.minimal_norm
+            self.grad_evals_per_step = 2.0
+        # elif integrator == 'RM':
+        #     self.hamiltonian_dynamics = self.randomized_midpoint
+        #     self.grad_evals_per_step = 1.0
+        else:
+            raise ValueError('integrator = ' + integrator + 'is not a valid option.')
+
 
         ### option of stochastic gradient ###
         self.sg = sg
@@ -91,6 +89,23 @@ class Sampler:
         else: #defualt value (assumes preconditioned target and even then it might not work). Unless you have done a grid search to determine this value we suggest runing sample with the option tune= 'cheap' or tune= 'expensive'.
             self.eps = jnp.sqrt(Target.d) * 0.4
 
+
+
+    def random_unit_vector(self, random_key):
+        """Generates a random (isotropic) unit vector."""
+        key, subkey = jax.random.split(random_key)
+        u = jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
+        u /= jnp.sqrt(jnp.sum(jnp.square(u)))
+        return u, key
+
+
+    def partially_refresh_momentum(self, u, nu, random_key):
+        """Adds a small noise to u and normalizes."""
+        key, subkey = jax.random.split(random_key)
+        z = nu * jax.random.normal(subkey, shape = (self.Target.d, ), dtype = 'float64')
+
+        return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
+
     # naive update
     # def update_momentum(self, eps, g, u):
     #     """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
@@ -105,16 +120,67 @@ class Sampler:
     #     return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), delta_r
 
 
+    def update_momentum(self, eps, g, u):
+        """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
+        similar to the implementation: https://github.com/gregversteeg/esh_dynamics
+        There are no exponentials e^delta, which prevents overflows when the gradient norm is large."""
+        g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
+        e = - g / g_norm
+        ue = jnp.dot(u, e)
+        delta = eps * g_norm / (self.Target.d-1)
+        zeta = jnp.exp(-delta)
+        uu = e *(1-zeta)*(1+zeta + ue * (1-zeta)) + 2*zeta* u
+        delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1-ue)*zeta**2)
+        return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r
 
 
-    # eventually, this should also be moved to dynamics
+    def leapfrog(self, x, u, g, random_key, eps, sigma):
+        """leapfrog"""
+
+        z = x / sigma # go to the latent space
+
+        # half step in momentum
+        uu, delta_r1 = self.update_momentum(eps * 0.5, g * sigma, u)
+
+        # full step in x
+        zz = z + eps * uu
+        xx = sigma * zz # go back to the configuration space
+        l, gg = self.Target.grad_nlogp(xx)
+
+        # half step in momentum
+        uu, delta_r2 = self.update_momentum(eps * 0.5, gg * sigma, uu)
+        kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
+
+        return xx, uu, l, gg, kinetic_change, random_key
+
+    # def leapfrog(self, x, u, g, random_key, eps, sigma):
+    #     """leapfrog"""
+    #
+    #     z = x / sigma  # go to the latent space
+    #
+    #     # half step in x
+    #     zz = z + 0.5 * eps * u
+    #     l, gg = self.Target.grad_nlogp(sigma * zz)
+    #
+    #     # full step in momentum
+    #     uu, delta_r = self.update_momentum(eps, gg * sigma, u)
+    #
+    #     # half step in x
+    #     zz += 0.5 * eps * uu
+    #     xx = sigma * zz  # go back to the configuration space
+    #
+    #     l = self.Target.nlogp(xx)
+    #     kinetic_change = delta_r * (self.Target.d - 1)
+    #
+    #     return xx, uu, l, gg, kinetic_change, random_key
+
     def leapfrog_sg(self, x, u, g, random_key, eps, sigma, data):
         """leapfrog"""
 
         z = x / sigma # go to the latent space
 
         # half step in momentum
-        uu, delta_r1 = update_momentum(self.target.d, eps * 0.5, g * sigma, u)
+        uu, delta_r1 = self.update_momentum(eps * 0.5, g * sigma, u)
 
         # full step in x
         zz = z + eps * uu
@@ -122,21 +188,92 @@ class Sampler:
         l, gg = self.Target.grad_nlogp(xx, data)
 
         # half step in momentum
-        uu, delta_r2 = update_momentum(self.target.d, eps * 0.5, gg * sigma, uu)
+        uu, delta_r2 = self.update_momentum(eps * 0.5, gg * sigma, uu)
         kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
 
         return xx, uu, l, gg, kinetic_change, random_key
 
-   
-    
+    #
+    # def leapfrog_sg(self, x, u, g, random_key, eps, sigma, data):
+    #     """leapfrog"""
+    #
+    #     z = x / sigma # go to the latent space
+    #
+    #     # half step in x
+    #     zz = z + 0.5 * eps * u
+    #     xx = sigma * zz # go back to the configuration space
+    #     l, gg = self.Target.grad_nlogp(xx, data)
+    #
+    #     # half step in momentum
+    #     uu, delta_r = self.update_momentum(eps, gg * sigma, u)
+    #
+    #     # full step in x
+    #     zz += 0.5 * eps * uu
+    #     xx = sigma * zz # go back to the configuration space
+    #
+    #     kinetic_change = delta_r * (self.Target.d-1)
+    #
+    #     return xx, uu, l, gg, kinetic_change, random_key
+
+
+
+    def minimal_norm(self, x, u, g, random_key, eps, sigma):
+        """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
+
+        # V T V T V
+        z = x / sigma # go to the latent space
+
+        #V (momentum update)
+        uu, r1 = self.update_momentum(eps * lambda_c, g * sigma, u)
+
+        #T (postion update)
+        zz = z + 0.5 * eps * uu
+        xx = sigma * zz # go back to the configuration space
+        ll, gg = self.Target.grad_nlogp(xx)
+
+        #V (momentum update)
+        uu, r2 = self.update_momentum(eps * (1 - 2 * lambda_c), gg * sigma, uu)
+
+        #T (postion update)
+        zz = zz + 0.5 * eps * uu
+        xx = sigma * zz  # go back to the configuration space
+        ll, gg = self.Target.grad_nlogp(xx)
+
+        #V (momentum update)
+        uu, r3 = self.update_momentum(eps * lambda_c, gg * sigma, uu)
+
+        #kinetic energy change
+        kinetic_change = (r1 + r2 + r3) * (self.Target.d-1)
+
+        return xx, uu, ll, gg, kinetic_change, random_key
+
+
+    #
+    # def randomized_midpoint(self, x, u, g, r, key):
+    #
+    #     key1, key2 = jax.random.split(key)
+    #
+    #     xx = x + jax.random.uniform(key2) * self.eps * u
+    #
+    #     gg = self.Target.grad_nlogp(xx)
+    #
+    #     uu, r1 = self.update_momentum(self.eps, gg, u)
+    #
+    #     xx = self.update_position_RM(xx, )
+    #
+    #
+    #     return xx, uu, gg, r1 * (self.Target.d-1), key1
+
+
+
     def dynamics_bounces(self, x, u, g, random_key, time, L, eps, sigma):
         """One step of the dynamics (with bounces)"""
 
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
 
         # bounce
-        u_bounce, key = random_unit_vector(self.Target.d)(random_key)
+        u_bounce, key = self.random_unit_vector(key)
         time += eps
         do_bounce = time > L
         time = time * (1 - do_bounce)  # reset time if the bounce is done
@@ -148,15 +285,16 @@ class Sampler:
     def dynamics_generalized(self, x, u, g, random_key, time, L, eps, sigma):
         """One step of the generalized dynamics."""
 
-       
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps)  # self.hamiltonian_dynamics(x, u, g, eps, sigma)
+        xx, uu, ll, gg, kinetic_change, key = self.hamiltonian_dynamics(x, u, g, random_key, eps, sigma)
 
         # Langevin-like noise
         nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
-        uu, key = partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=random_key)
+        uu, key = self.partially_refresh_momentum(uu, nu, key)
 
         return xx, uu, ll, gg, kinetic_change, key, time + eps
+
+
 
     def dynamics_generalized_sg(self, x, u, g, random_key, time, L, eps, sigma):
         """One sweep over the entire dataset. Perfomrs self.Target.num_batches steps with the stochastic gradient."""
@@ -174,8 +312,7 @@ class Sampler:
 
             # Langevin-like noise
             nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
-            uu, key =  partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=key)
-            
+            uu, key = self.partially_refresh_momentum(uu, nu, key)
 
             return (xx, uu, ll, gg, key, K + dK, t + eps), None
 
@@ -253,7 +390,7 @@ class Sampler:
         else:
             l, g = self.Target.grad_nlogp(x)
 
-        u, key = random_unit_vector(self.Target.d)(key)
+        u, key = self.random_unit_vector(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
 
         return x, u, l, g, key
@@ -294,8 +431,17 @@ class Sampler:
         if num_chains == 1:
             results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning, adaptive) #the function which actually does the sampling
             if output == 'ess':
-                return self.bias_plot(results)
+                import matplotlib.pyplot as plt
+                plt.plot(jnp.sqrt(results))
+                plt.plot([0, len(results)], np.ones(2) * 0.1, '--', color='black', alpha=0.5)
+                plt.yscale('log')
+                plt.tight_layout()
+                plt.savefig('ess.png')
+                plt.close()
+                #plt.show()
 
+                cutoff_reached = results[-1] < 0.01
+                return (100.0 / (find_crossing(results, 0.01) * self.grad_evals_per_step)) * cutoff_reached
             else:
                 return results
         else:
@@ -324,7 +470,16 @@ class Sampler:
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
                 if output == 'ess' or output == 'ess funnel':
-                    return self.bias_plot(results.reshape(num_chains, num_steps))
+                    bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
+
+                    import matplotlib.pyplot as plt
+                    plt.plot(jnp.sqrt(bsq))
+                    plt.plot([0, len(bsq)], np.ones(2) * 0.1, '--', color = 'black', alpha= 0.5)
+                    plt.yscale('log')
+                    plt.show()
+
+                    cutoff_reached = bsq[-1] < 0.01
+                    return (100.0 / (find_crossing(bsq, 0.01) * self.grad_evals_per_step) ) * cutoff_reached
 
                 ### reshape results ###
                 if type(results) is tuple: #each chain returned a tuple
@@ -340,13 +495,7 @@ class Sampler:
 
             else: #run chains serially on a single core
 
-                results = jax.vmap(f)(jnp.arange(num_chains))
-
-                if output == 'ess' or output == 'ess funnel':
-                    return self.bias_plot(results)
-
-                else: 
-                    return results
+                return jax.vmap(f)(jnp.arange(num_chains))
 
 
 
@@ -357,7 +506,7 @@ class Sampler:
         x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
         L, eps = self.L, self.eps #the initial values, given at the class initialization (or set to the default values)
 
-        sigma = 1/jnp.sqrt(self.masses) # jnp.ones(self.Target.d)  # no diagonal preconditioning
+        sigma = jnp.ones(self.Target.d)  # no diagonal preconditioning
 
         ### auto-tune the hyperparameters L and eps ###
         if self.frac_tune1 + self.frac_tune2 + self.frac_tune3 != 0.0:
@@ -413,20 +562,13 @@ class Sampler:
         
         def step(state, useless):
 
-            x, u, l, g, key, time = state
+            x, u, l, g, E, key, time = state
             xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
-
-            # left in as a comment since it may be useful when experimenting with neighbour lists in MD
-            # if self.Target.nbrs:
-            #     self.Target.nbrs = self.Target.nbrs.update(jnp.reshape(xx, (-1,3)), neighbor=self.Target.nbrs)
-            
-            de = kinetic_change + ll - l
-            
-            return (xx, uu, ll, gg, key, time), (self.Target.transform(xx), ll, de)
-
+            EE = E + kinetic_change + ll - l
+            return (xx, uu, ll, gg, EE, key, time), (self.Target.transform(xx), ll, EE)
 
         if thinning == 1:
-            return jax.lax.scan(step, init=(x, u, l, g, random_key, 0.0), xs=None, length=num_steps)[1]
+            return jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length=num_steps)[1]
 
         else:
             return self.sample_thinning(num_steps, x, u, l, g, random_key, L, eps, sigma, thinning)
@@ -438,16 +580,16 @@ class Sampler:
         def step(state, useless):
 
             def substep(state, useless):
-                x, u, l, g, _, key, time = state
+                x, u, l, g, E, key, time = state
                 xx, uu, ll, gg, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps, sigma)
-                de = kinetic_change + ll - l
-                return (xx, uu, ll, gg, de, key, time), None
+                EE = E + kinetic_change + ll - l
+                return (xx, uu, ll, gg, EE, key, time), None
 
             state = jax.lax.scan(substep, init=state, xs=None, length= thinning)[0] #do 'thinning' steps without saving
 
             return state, (self.Target.transform(state[0]), state[2], state[4]) #save one sample
 
-        return jax.lax.scan(step, init=(x, u, l, g, 0., random_key, 0.), xs=None, length= num_steps // thinning)[1]
+        return jax.lax.scan(step, init=(x, u, l, g, 0.0, random_key, 0.0), xs=None, length= num_steps // thinning)[1]
 
 
 
@@ -481,8 +623,8 @@ class Sampler:
             F2 = (W * F2 + jnp.square(self.Target.transform(x))) / (W + 1)  # Update <f(x)> with a Kalman filter
             W += 1
             bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
-            bias = jnp.average(bias_d)
-            #bias = jnp.max(bias_d)
+            #bias = jnp.average(bias_d)
+            bias = jnp.max(bias_d)
 
             return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
 
@@ -655,20 +797,6 @@ class Sampler:
 
 
 
-    def bias_plot(self, results):
-        #bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
-        bsq = jnp.median(results, axis = 0)
-        
-        # plt.plot(bsq)
-        # plt.plot([0, len(bsq)], np.ones(2) * 0.01, '--', color = 'black')
-        # plt.yscale('log')
-        # plt.tight_layout()
-        # plt.savefig('plots/tst_ensemble/sequential/' + self.Target.name + '.png')
-        # plt.close()
-
-        cutoff_reached = bsq[-1] < 0.01
-        return (100. / (find_crossing(bsq, 0.01) * self.grad_evals_per_step)) * cutoff_reached
-
 
 def find_crossing(array, cutoff):
     """the smallest M such that array[m] < cutoff for all m > M"""
@@ -699,6 +827,23 @@ def burn_in_ending(loss):
     loss_avg = jnp.median(loss[len(loss)//2:])
     return 2 * find_crossing(loss - loss_avg, 0.0) #we add a safety factor of 2
 
+    ### plot the removal ###
+    # t= np.arange(len(loss))
+    # plt.plot(t[:i*2], loss[:i*2], color= 'tab:red')
+    # plt.plot(t[i*2:], loss[i*2:], color= 'tab:blue')
+    # plt.yscale('log')
+    # plt.show()
 
+
+
+def my_while(cond_fun, body_fun, initial_state):
+    """see https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.while_loop.html"""
+
+    state = initial_state
+
+    while cond_fun(state):
+        state = body_fun(state)
+
+    return state
 
 
