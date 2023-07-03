@@ -40,6 +40,13 @@ def random_unit_vector(d):
         return u, key
     return given_key
 
+# should eventually be merged with the above
+def random_unit_vector_broadcast(d, random_key, num_chains):
+        """Generates a random (isotropic) unit vector."""
+        key, subkey = jax.random.split(random_key)
+        u = jax.random.normal(subkey, shape = (num_chains, d), dtype = 'float64')
+        normed_u = u / jnp.sqrt(jnp.sum(jnp.square(u), axis = 1))[:, None]
+        return normed_u, key
 
 def minimal_norm(d, shift, grad_nlogp, sigma):
       def step(u,x,g, eps):
@@ -105,3 +112,110 @@ def partially_refresh_momentum(d, nu):
 
       return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
     return func 
+
+##################
+## resampling code
+##################
+
+def systematic_resampling(logw, random_key):
+    # Normalize weights
+    w = jnp.exp(logw - jax.scipy.special.logsumexp(logw))
+
+    # Compute cumulative sum
+    cumsum_w = jnp.cumsum(w)
+
+    # Number of particles
+    N = len(logw)
+
+    # Generate N uniform random numbers, then transform them appropriately
+    key, subkey = jax.random.split(random_key)
+    u = (jnp.arange(N) + jax.random.uniform(subkey)) / N
+
+    # Compute resampled indices
+    indices = jnp.searchsorted(cumsum_w, u)
+
+    return indices, key
+
+def resample_particles(logw, x, u, l, g, key, L, eps, T):
+
+            indices, key = systematic_resampling(logw, key)
+
+            x_resampled = jnp.take(x, indices, axis=0)
+            u_resampled = jnp.take(u, indices, axis=0)
+            l_resampled = jnp.take(l, indices)
+            g_resampled = jnp.take(g, indices, axis=0)
+
+            return (x_resampled, u_resampled, l_resampled, g_resampled, key, L, eps, T)
+
+##################
+## next temperature choice
+##################
+
+def bisection(f, a, b, tol=1e-3, max_iter=100):
+
+    def cond_fn(inputs):
+        a, b, _, iter_count = inputs
+        return (jnp.abs(a - b) > tol * a) & (iter_count < max_iter)
+
+    def body_fn(inputs):
+        a, b, midpoint, iter_count = inputs
+        midpoint = (a + b) / 2.0
+        a, b = jax.lax.cond(f(midpoint) > 0, lambda _: (a, midpoint), lambda _: (midpoint, b), operand=())
+
+        #jax.debug.print("a: {}, b: {}, midpoint: {}, iter: {}", a, b, midpoint, iter_count)
+        return a, b, midpoint, iter_count + 1
+
+    #a, b, midpoint, iter_count = jax.lax.while_loop(cond_fn, body_fn, (a, b, 0.0, 0))
+    # Use cond to decide which path to follow, note the condition is now f(b) <= 0
+    a, b, midpoint, iter_count = jax.lax.cond(f(b) <= 0, 
+                                              lambda _: (b, b, b, 0), 
+                                              lambda _: jax.lax.while_loop(cond_fn, body_fn, (a, b, 0.0, 0)), 
+                                              operand=())
+
+    return midpoint
+
+def solve_ess(Tprev, ess, l):
+      def get_ess(beta):
+                logw = -(beta - 1.0/Tprev) * l 
+                weights = jnp.exp(logw - jax.scipy.special.logsumexp(logw))
+                #jax.debug.print("estimate: {}, ess: {}", 1.0 / jnp.sum(weights**2) / len(weights), ess)
+                return ess * len(weights) - 1.0 / jnp.sum(weights**2)
+      return get_ess
+
+def update_temp(Tprev, ess, l, target_temp):
+
+            beta = bisection(solve_ess(Tprev, ess, l), 1.0/Tprev, 1.0/target_temp)
+            return 1.0 / beta
+
+def initialize(Target, random_key, x_initial, num_chains):
+
+
+        if random_key is None:
+            key = jax.random.PRNGKey(0)
+        else:
+            key = random_key
+
+        if isinstance(x_initial, str):
+            if x_initial == 'prior':  # draw the initial x from the prior
+                keys_all = jax.random.split(key, num_chains + 1)
+                x = jax.vmap(Target.prior_draw)(keys_all[1:])
+                key = keys_all[0]
+
+            else:  # if not 'prior' the x_initial should specify the initial condition
+                raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
+
+        else:  # initial x is given
+            x = jnp.copy(x_initial)
+
+        l, g = jax.vmap(Target.grad_nlogp)(x)
+
+
+        ### initial velocity ###
+        u, key = random_unit_vector_broadcast(Target.d, key, num_chains)  # random velocity orientations
+        
+        ## if you want to use random_unit_vector from dynamics, this is how
+        # keys = jax.random.split(key, num=num_chains+1)
+        # u, key = jax.vmap(random_unit_vector(self.Target.d))(keys[1:])  # random velocity orientations
+
+
+        return x, u, l, g, key

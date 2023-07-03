@@ -17,7 +17,7 @@ jax.config.update('jax_enable_x64', True)
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, shift_fn = lambda x, y: x + y, L = None, eps = None,
+    def __init__(self, Target, shift_fn = lambda x, y: x + y, masses = None, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
                  diagonal_preconditioning= True, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
@@ -47,7 +47,10 @@ class Sampler:
         to_particles = lambda x : jnp.reshape(x, (-1, 3))
         from_particles = lambda x : jnp.reshape(x, math.prod(x.shape))
         self.shift = lambda x, y : from_particles(shift_fn(to_particles(x), to_particles(y)))
-        self.masses = jnp.ones(Target.d)
+        if masses is not None:
+            self.masses = masses
+        else:
+            self.masses = jnp.ones_like(self.Target.d)
         self.sigma = 1/jnp.sqrt(self.masses)
 
         self.integrator = integrator
@@ -149,7 +152,7 @@ class Sampler:
 
        
         # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps)  # self.hamiltonian_dynamics(x, u, g, eps, sigma)
+        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps) 
 
         # Langevin-like noise
         nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)

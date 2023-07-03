@@ -1,7 +1,8 @@
+import jaxlib
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
-from sampling.dynamics import random_unit_vector
+from sampling.dynamics import initialize, random_unit_vector, update_temp
 from sampling.sampler import hamiltonian_dynamics, grad_evals
 
 
@@ -33,21 +34,15 @@ class Sampler:
         # adjust L and eps as a funciton of temperature
         self.temp_func = lambda T, Tprev, L, eps : (L, eps)
 
-
-    def random_unit_vector(self, random_key, num_chains):
-        """Generates a random (isotropic) unit vector."""
-        key, subkey = jax.random.split(random_key)
-        u = jax.random.normal(subkey, shape = (num_chains, self.Target.d), dtype = 'float64')
-        normed_u = u / jnp.sqrt(jnp.sum(jnp.square(u), axis = 1))[:, None]
-        return normed_u, key
-
+        self.resample_particles = lambda logw, x, u, l, g, key, L, eps, T : (x, u, l, g, key, L, eps, T)
 
     def partially_refresh_momentum(self, u, random_key, nu):
         """Adds a small noise to u and normalizes."""
         key, subkey = jax.random.split(random_key)
         noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
 
-        return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
+        out =  (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None]
+        return out, key
 
     def dynamics(self, hamiltonian_dynamics, x, u, g, random_key, L, eps, T):
         """One step of the generalized dynamics."""
@@ -62,42 +57,6 @@ class Sampler:
 
         return xx, uu, ll, gg, kinetic_change, key
 
-
-    def initialize(self, random_key, x_initial, num_chains):
-
-
-        if random_key is None:
-            key = jax.random.PRNGKey(0)
-        else:
-            key = random_key
-
-        if isinstance(x_initial, str):
-            if x_initial == 'prior':  # draw the initial x from the prior
-                keys_all = jax.random.split(key, num_chains + 1)
-                x = jax.vmap(self.Target.prior_draw)(keys_all[1:])
-                key = keys_all[0]
-
-            else:  # if not 'prior' the x_initial should specify the initial condition
-                raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
-
-        else:  # initial x is given
-            x = jnp.copy(x_initial)
-
-        l, g = jax.vmap(self.Target.grad_nlogp)(x)
-
-
-        ### initial velocity ###
-        u, key = self.random_unit_vector(key, num_chains)  # random velocity orientations
-        
-        ## if you want to use random_unit_vector from dynamics, this is how
-        # keys = jax.random.split(key, num=num_chains+1)
-        # u, key = jax.vmap(random_unit_vector(self.Target.d))(keys[1:])  # random velocity orientations
-
-
-        return x, u, l, g, key
-
-
-
     def sample_temp_level(self, num_steps, tune_steps, x0, u0, l0, g0, E0, key0, L0, eps0, T):
 
         def energy_at_temperature(x):
@@ -109,62 +68,84 @@ class Sampler:
 
         def step(state, tune):
 
-            x, u, l, g, E, key, L, eps = state 
+            x, u, l, g, E, key, L, eps, T = state 
             x, u, ll, g, kinetic_change, key = self.dynamics(hd, x, u, g, key, L, eps, T)  # update particles by one step
        
-            ## eps tuning ###
-            de = jnp.square(kinetic_change + (ll - l)/T) / self.Target.d
-            varE = jnp.average(de) #averaged over the ensamble
+            # ## eps tuning ###
+            # de = jnp.square(kinetic_change + (ll - l)/T) / self.Target.d
+            # varE = jnp.average(de) #averaged over the ensamble
 
-                                #if we are in the tuning phase            #else
-            eps *= (tune * jnp.power(varE / self.varEwanted, -1./6.) + (1-tune))
+            #                     #if we are in the tuning phase            #else
+            # eps *= (tune * jnp.power(varE / self.varEwanted, -1./6.) + (1-tune))
 
 
-            ### L tuning ###
-            #typical width of the posterior
-            moment1 = jnp.average(x, axis=0)
-            moment2 = jnp.average(jnp.square(x), axis = 0)
-            var= moment2 - jnp.square(moment1)
-            sig = jnp.sqrt(jnp.average(var)) # average over dimensions (= typical width of the posterior)
+            # ### L tuning ###
+            # #typical width of the posterior
+            # moment1 = jnp.average(x, axis=0)
+            # moment2 = jnp.average(jnp.square(x), axis = 0)
+            # var= moment2 - jnp.square(moment1)
+            # sig = jnp.sqrt(jnp.average(var)) # average over dimensions (= typical width of the posterior)
 
-            Lnew = self.alpha * sig * jnp.sqrt(self.Target.d)
-            L = tune * Lnew + (1-tune) * L #update L if we are in the tuning phase
+            # Lnew = self.alpha * sig * jnp.sqrt(self.Target.d)
+            # L = tune * Lnew + (1-tune) * L #update L if we are in the tuning phase
 
 
             EE = E + kinetic_change + (ll - l)/T
 
-            return (x, u, ll, g, EE, key, L, eps), (x, EE)
+
+
+            return (x, u, ll, g, EE, key, L, eps, T), (x, EE)
 
 
                                                 #tuning                     #no tuning
         tune_schedule = jnp.concatenate((jnp.ones(tune_steps), jnp.zeros(num_steps - tune_steps)))
 
-        return jax.lax.scan(step, init= (x0, u0, l0, g0, E0, key0, L0, eps0), xs= tune_schedule, length= num_steps)
+        return jax.lax.scan(step, init= (x0, u0, l0, g0, E0, key0, L0, eps0, T), xs= tune_schedule, length= num_steps)
 
 
+    def sample(self, steps_at_each_temp, tune_steps, num_chains, temp_schedule, x_initial= 'prior', random_key= None, ess=0.9, num_temps=10):
 
+        """
+        temp schedule: either list of temps, e.g. [3.0,2.0,1.0] or tuple of inital and target, e.g. (3.0, 1.0)
+        """
 
-    def sample(self, steps_at_each_temp, tune_steps, num_chains, temp_schedule, x_initial= 'prior', random_key= None):
+        x0, u0, l0, g0, key0 = initialize(self.Target, random_key, x_initial, num_chains) #initialize the chains
 
-        x0, u0, l0, g0, key0 = self.initialize(random_key, x_initial, num_chains) #initialize the chains
+        if type(temp_schedule) is list:
+            self.fixed_schedule = True
+            self.initial_temp = temp_schedule[0]
+            temp_schedule = jnp.array(temp_schedule)
+        elif type(temp_schedule) is tuple and len(temp_schedule)==2:
+            self.fixed_schedule = False
+            self.initial_temp = temp_schedule[0]
+            self.target_temp = temp_schedule[1]
+        else:
+            print(type(temp_schedule))
+            raise Exception("Invalid temp_schedule: must be list of temperatures or pair of initial and target temperatures")
 
-        temp_schedule_ext = jnp.insert(temp_schedule, 0, temp_schedule[0]) # as if the temp level before the first temp level was the same
+        if self.fixed_schedule:
+            temp_schedule_ext = jnp.insert(temp_schedule, 0, temp_schedule[0]) # as if the temp level before the first temp level was the same
 
 
         def temp_level(state, iter):
-            x, u, l, g, E, key, L, eps = state
-            T, Tprev = temp_schedule_ext[iter], temp_schedule_ext[iter-1]
+            x, u, l, g, E, key, L, eps, Tprev = state
+
+            if self.fixed_schedule:
+                T = temp_schedule_ext[iter]
+            else:
+                T = update_temp(Tprev, ess, l, self.target_temp)
+            # , temp_schedule_ext[iter-1]
+
             
             # L *= jnp.sqrt(T / Tprev)
             # eps *= jnp.sqrt(T / Tprev)
 
             L, eps = self.temp_func(T, Tprev, L, eps)
+            jax.debug.print("eps: {}, L: {}, T: {}", eps, L, Tprev)
 
 
-            # jax.debug.print("eps: {}, L: {}", eps, L)
-            # if self.resample:
-            #     logw = -(1.0/T - 1.0/Tprev) * l
-            #     x, u, l, g, key, L, eps, T = resample_particles(logw, x, u, l, g, key, L, eps, T)
+            logw = -(1.0/T - 1.0/Tprev) * l
+            x, u, l, g, key, L, eps, T = self.resample_particles(logw, x, u, l, g, key, L, eps, T)
 
 
 
@@ -172,5 +153,10 @@ class Sampler:
 
             return next_state, (xs, EE)
 
-        return jax.lax.scan(temp_level, init= (x0, u0, l0, g0, jnp.zeros(x0.shape[0]), key0, self.L, self.eps_initial), xs= jnp.arange(1, len(temp_schedule_ext)))[1]
+
+        if self.fixed_schedule:
+            num_temps = len(temp_schedule_ext)
+
+        # jax.debug.print("x {}", x0[0])
+        return jax.lax.scan(temp_level, init= (x0, u0, l0, g0, jnp.zeros(x0.shape[0]), key0, self.L, self.eps_initial, self.initial_temp), xs= jnp.arange(1, num_temps))[1]
         

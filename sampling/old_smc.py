@@ -256,12 +256,13 @@ class Sampler:
             x, u, l, g, key, L, eps, Tprev = state
 
             T, logw = update_temp_and_compute_logw(state)
-            jax.debug.print("T: {}", T)
+            jax.debug.print("old smc T: {}", T)
 
-            L *= jnp.sqrt(T / Tprev)
-            eps *= jnp.sqrt(T / Tprev)
+            # L *= jnp.sqrt(T / Tprev)
+            # eps *= jnp.sqrt(T / Tprev)
 
             x, u, l, g, key, L, eps, T = resample_particles(logw, x, u, l, g, key, L, eps, T)
+
 
             x, u, l, g, key, L, eps = self.sample_temp_level(steps_at_each_temp, tune_steps, x, u, l, g, key, L, eps, T)
 
@@ -269,7 +270,7 @@ class Sampler:
 
             return (x, u, l, g, key, L, eps, T)
 
-        
+        # jax.debug.print("x smc {}", x0[0])
         # do the sampling and return the final x of all the chains
         return jax.lax.while_loop(cond_fun=not_terminate, 
                                   body_fun=temp_level, 
