@@ -9,7 +9,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp 
 
 
-num_cores = 128 #specific to my PC
+num_cores = 4 #specific to my PC
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 from sampling.ensemble import Sampler as EnsembleSampler
@@ -89,12 +89,7 @@ def sequential_run():
 
 
 if __name__ == '__main__':
-    x= np.swapaxes(np.load('x.npy'), 0, 1)
-    grads = ess_cross_chain(x, 128, 30)
-    print(grads)
 
-    
-    
-    #ensemble_run()
+    ensemble_run()
     
     #sequential_run()

@@ -9,16 +9,14 @@ from sampling.dynamics import update_momentum, hamiltonian_dynamics, grad_evals,
 from sampling.correlation_length import ess_corr
 
 
-
-jax.config.update('jax_enable_x64', True)
-
+#jax.config.update('jax_enable_x64', True)
 
 
 
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, shift_fn = lambda x, y: x + y, L = None, eps = None,
+    def __init__(self, Target, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
                  diagonal_preconditioning= True, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
@@ -45,17 +43,13 @@ class Sampler:
         """
 
         self.Target = Target
-        to_particles = lambda x : jnp.reshape(x, (-1, 3))
-        from_particles = lambda x : jnp.reshape(x, math.prod(x.shape))
-        self.shift = lambda x, y : from_particles(shift_fn(to_particles(x), to_particles(y)))
-        self.masses = jnp.ones(Target.d)
-        self.sigma = 1/jnp.sqrt(self.masses)
+        self.sigma = jnp.ones(Target.d)
 
         self.integrator = integrator
 
         ### integrator ###
         ## NOTE: sigma does not arise from any tuning here: it is a fixed parameter
-        self.hamiltonian_dynamics = hamiltonian_dynamics(integrator=self.integrator, sigma=self.sigma, grad_nlogp=self.Target.grad_nlogp, shift=self.shift, d=self.Target.d)
+        self.hamiltonian_dynamics = hamiltonian_dynamics(integrator=self.integrator, sigma=self.sigma, grad_nlogp=self.Target.grad_nlogp, d=self.Target.d)
 
         self.grad_evals_per_step = grad_evals[self.integrator]
 
@@ -357,13 +351,16 @@ class Sampler:
         x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
         L, eps = self.L, self.eps #the initial values, given at the class initialization (or set to the default values)
 
-        sigma = 1/jnp.sqrt(self.masses) # jnp.ones(self.Target.d)  # no diagonal preconditioning
+        sigma = jnp.ones(self.Target.d) # jnp.ones(self.Target.d)  # no diagonal preconditioning
 
         ### auto-tune the hyperparameters L and eps ###
         if self.frac_tune1 + self.frac_tune2 + self.frac_tune3 != 0.0:
-            L, eps, sigma, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, sigma, (int)(num_steps * self.frac_tune1), (int)(num_steps * self.frac_tune2)) #the cheap tuning (100 steps)
+            steps1 = (int)(num_steps * self.frac_tune1)
+            steps2 = (int)(num_steps * self.frac_tune2)
+            L, eps, sigma, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, sigma, steps1, steps2) #the cheap tuning (100 steps)
             if self.frac_tune3 != 0: #if we want to further improve L tuning we go to the second stage (which is a bit slower)
-                L, x, u, l, g, key = self.tune3(x, u, l, g, key, L, eps, sigma, (int)(num_steps * self.frac_tune3))
+                steps3 = (int)(num_steps * self.frac_tune3)
+                L, x, u, l, g, key = self.tune3(x, u, l, g, key, L, eps, sigma, steps3)
 
         ### sampling ###
 

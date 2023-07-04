@@ -24,9 +24,9 @@ def update_momentum(d, eps):
   
   return update
 
-def update_position(eps, u, shift, grad_nlogp):
+def update_position(eps, u, grad_nlogp):
   def update(x):
-    xx = shift(x, eps * u)
+    xx = x + eps * u
     ll, gg = grad_nlogp(xx)
     return xx, ll, gg
   return update
@@ -41,16 +41,16 @@ def random_unit_vector(d):
     return given_key
 
 
-def minimal_norm(d, shift, grad_nlogp, sigma):
+def minimal_norm(d, grad_nlogp, sigma):
       def step(u,x,g, eps):
         
           """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
           # V T V T V
           uu, r1 = update_momentum(d, eps * lambda_c)(u, g * sigma)
-          xx, ll, gg = update_position(eps, 0.5*uu*sigma, shift, grad_nlogp)(x)
+          xx, ll, gg = update_position(eps, 0.5*uu*sigma, grad_nlogp)(x)
           uu, r2 = update_momentum(d, eps * (1 - 2 * lambda_c))(uu, gg * sigma)
-          xx, ll, gg = update_position(eps, 0.5*uu*sigma, shift, grad_nlogp)(xx)
+          xx, ll, gg = update_position(eps, 0.5*uu*sigma, grad_nlogp)(xx)
           uu, r3 = update_momentum(d, eps * lambda_c)(uu, gg * sigma)
 
           #kinetic energy change
@@ -59,7 +59,7 @@ def minimal_norm(d, shift, grad_nlogp, sigma):
           return xx, uu, ll, gg, kinetic_change
       return step
 
-def leapfrog(d, shift, grad_nlogp, sigma):
+def leapfrog(d, grad_nlogp, sigma):
       def step(u,x,g, eps):
         """leapfrog"""
 
@@ -67,7 +67,7 @@ def leapfrog(d, shift, grad_nlogp, sigma):
         uu, delta_r1 = update_momentum(d, eps * 0.5)(u, g * sigma)
 
         # full step in x
-        xx, l, gg = update_position(eps, uu*sigma, shift, grad_nlogp)(x)
+        xx, l, gg = update_position(eps, uu*sigma, grad_nlogp)(x)
 
         # half step in momentum
         uu, delta_r2 = update_momentum(d, eps * 0.5)(uu, gg * sigma)
@@ -76,12 +76,11 @@ def leapfrog(d, shift, grad_nlogp, sigma):
         return xx, uu, l, gg, kinetic_change
       return step
 
-def hamiltonian_dynamics(integrator, sigma, grad_nlogp, shift, d):
+def hamiltonian_dynamics(integrator, sigma, grad_nlogp, d):
     if integrator == "LF": #leapfrog (first updates the velocity)
         return leapfrog( 
                                                       sigma=sigma, 
                                                       grad_nlogp=grad_nlogp,
-                                                      shift=shift,
                                                       d=d
                                                       )
 
@@ -91,7 +90,6 @@ def hamiltonian_dynamics(integrator, sigma, grad_nlogp, shift, d):
         return minimal_norm(
                                                       sigma=sigma, 
                                                       grad_nlogp=grad_nlogp,
-                                                      shift=shift,
                                                       d=d
                                                       )
     else:
