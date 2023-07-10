@@ -18,7 +18,7 @@ class Sampler:
 
     def __init__(self, Target, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
-                 diagonal_preconditioning= True, sg = False,
+                 diagonal_preconditioning= False, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
         """Args:
                 Target: the target distribution class
