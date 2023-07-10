@@ -273,7 +273,7 @@ class Sampler:
                         'expectation': exepcted value of transform(x)
                             most memory efficient. If you are after memory it might be usefull to turn off the third tuning stage
 
-                        'detailed': samples, energy for each step, L and eps used for sampling
+                        'detailed': samples, energy error for each step, L and eps used for sampling
 
                         'ess': Effective Sample Size per gradient evaluation, float.
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
