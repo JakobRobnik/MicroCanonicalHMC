@@ -5,8 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 import math
 
-from sampling.dynamics import update_momentum, hamiltonian_dynamics, grad_evals, update_position, random_unit_vector, minimal_norm, leapfrog, partially_refresh_momentum
-from sampling.correlation_length import ess_corr
+from .dynamics import update_momentum, hamiltonian_dynamics, grad_evals, update_position, random_unit_vector, minimal_norm, leapfrog, partially_refresh_momentum
+from .correlation_length import ess_corr
 
 
 #jax.config.update('jax_enable_x64', True)
