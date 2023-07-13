@@ -116,7 +116,7 @@ class Sampler:
         self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
         #factor= jnp.power(2., -6.)
         self.C = 0.1 #* factor# proportionality constant in determining the stepsize (varew \propto C)
-        self.varew_final = 1e-2 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
+        self.varew_final = 1e-6 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
         
         
     def random_unit_vector(self, random_key, num_chains):
@@ -127,13 +127,22 @@ class Sampler:
         return normed_u, key
 
 
+    # def partially_refresh_momentum(self, u, random_key, nu):
+    #     """Adds a small noise to u and normalizes."""
+    #     key, subkey = jax.random.split(random_key)
+    #     noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
+
+    #     return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
+
+
     def partially_refresh_momentum(self, u, random_key, nu):
         """Adds a small noise to u and normalizes."""
         key, subkey = jax.random.split(random_key)
-        noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
+        quarter = u.shape[0]//4
+        noise1 = nu * jax.random.normal(subkey, shape= (3 * quarter, u.shape[1]), dtype=u.dtype)
+        noise = jnp.concatenate((noise1[:quarter], noise1)) # (chains1, chains2, chains3, chains4). 1 is coupled to 2. 3 and 4 are control (not coupled).
 
         return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
-
 
 
     def update_momentum(self, eps, g, u):
@@ -350,7 +359,7 @@ class Sampler:
             ### bias ###
             equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
             equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
-            equi = equi_diag
+            equi = equi_full
 
             btrue = self.ground_truth_bias(x) #actual bias
             bias_summary = {'true': btrue, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
@@ -358,7 +367,8 @@ class Sampler:
             
             ### hyperparameters for the next step ###
             history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
-            decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
+            #decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
+            decreassing = steps < 300
             #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
             varew = self.C * jnp.power(bias, 3./8.)
@@ -369,7 +379,7 @@ class Sampler:
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary)
+            return (steps + 2, history, decreassing, x, u, l, g, vare, key, L, eps, sigma), (x, eps, vare, varew, L, bias_summary)
 
         delay = 0.05
         delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
@@ -390,14 +400,34 @@ class Sampler:
 
     def analyze_results(self, track):
     
-        eps, vare, varew, L, bias = track
+        x, eps, vare, varew, L, bias = track
+        steps = jnp.arange(0, 2*len(eps), 2)
+        
+        ### chain coupling ###
+        color = ['tab:blue', 'tab:red']
+        name = ['coupled', 'not coupled']
+        chains = jnp.shape(x)[1]
+        quarter = chains//4
+        for i in range(2):
+            start = 2 * quarter * i
+            diff= jnp.sqrt(jnp.sum(jnp.square(x[:, start : start + quarter, :] - x[:, start + quarter : start + 2*quarter, :]), axis = 2))
+            dif = jnp.sort(diff, axis = 1)
+            plt.fill_between(steps, dif[:, quarter // 4], dif[:, quarter * 3 // 4], color = color[i], alpha = 0.3)
+            plt.plot(steps, dif[:, quarter // 2], color = color[i], label = name[i])
+        
+        plt.yscale('log')
+        plt.legend()
+        plt.xlabel('gradient calls')
+        plt.ylabel('distance between coupled chains')
+        plt.savefig('coupledSV.png')
+        plt.close()
+        
         
         print(find_crossing(bias['true'][1], 0.01) * 2)
         
         num = 4
         plt.figure(figsize= (6, 3 * num))
 
-        steps = jnp.arange(0, 2*len(eps), 2)
         
         ### bias ###
         plt.subplot(num, 1, 1)
