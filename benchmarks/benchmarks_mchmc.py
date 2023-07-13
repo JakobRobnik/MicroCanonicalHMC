@@ -113,6 +113,7 @@ class IllConditionedESH():
 
 
 
+
 class IllConditionedGaussianGamma():
     """Inference gym's Ill conditioned Gaussian"""
 
@@ -155,6 +156,7 @@ class IllConditionedGaussianGamma():
 
     def transform(self, x):
         return x
+    
     
 
 

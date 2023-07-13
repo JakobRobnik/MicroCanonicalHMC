@@ -50,7 +50,7 @@ class pmap_target:
         pvgrad= jax.pmap(jax.vmap(target.grad_nlogp))
         
         def grad(x):
-            l, g = pvgrad(x.reshape(devices, chains // devices, target.d))
+            l, g = jnp.array(pvgrad(x.reshape(devices, chains // devices, target.d)))
             return l.reshape(chains), g.reshape(chains, target.d)
                 
         self.grad_nlogp = grad
@@ -66,7 +66,7 @@ class pmap_target:
 
         if hasattr(target, 'prior_draw'):
             pvdraw= jax.pmap(jax.vmap(target.prior_draw))
-            self.prior_draw = lambda k: jnp.array(pvdraw(k.reshape(devices, chains // devices, 2))).reshape(chains, target.d)
+            self.transform = lambda x: jnp.array(pvdraw(x.reshape(devices, chains // devices))).reshape(chains)
 
 
         if hasattr(target, 'second_moments'):
@@ -81,7 +81,7 @@ class pmap_target:
 class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, chains, alpha = 1., integrator = 'LF'):
+    def __init__(self, Target, chains, alpha = 1., integrator = 'MN'):
         """Args:
                 Target: the target distribution class.
                 alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
@@ -99,11 +99,11 @@ class Sampler:
         ### integrator ###
         if integrator == "LF": #leapfrog (first updates the velocity)
             self.hamiltonian_dynamics = self.leapfrog
-            self.grads_per_step = 1 #per chain
+            self.grads_per_step = 1.0 #per chain
 
         elif integrator== 'MN': #minimal norm integrator (velocity)
             self.hamiltonian_dynamics = self.minimal_norm
-            self.grads_per_step = 2
+            self.grads_per_step = 2.0
         else:
             raise ValueError('integrator = ' + integrator + 'is not a valid option.')
 
@@ -116,8 +116,7 @@ class Sampler:
         self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
         #factor= jnp.power(2., -6.)
         self.C = 0.1 #* factor# proportionality constant in determining the stepsize (varew \propto C)
-        self.varew_final = 1e-8 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
-        
+        self.varew_final = 1e-2 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
         
         
     def random_unit_vector(self, random_key, num_chains):
@@ -260,9 +259,6 @@ class Sampler:
     def computeL(self, x):
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
 
-    def computeL(self, x):
-        return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
-
 
     def equipartition_fullrank(self, x, g, random_key):
         """loss = Tr[(1 - E)^T (1 - E)] / d^2
@@ -306,7 +302,7 @@ class Sampler:
         bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
         bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
 
-        return [bias_avg, bias_max], jnp.argmax(bias_d)
+        return bias_avg, bias_max
 
 
 
@@ -325,7 +321,7 @@ class Sampler:
 
 
         
-    def sample(self, num_steps, x_initial='prior', random_key= None, thinning = 1, delay = 0.05):
+    def sample(self, num_steps, x_initial='prior', random_key= None):
         """Args:
                num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
                num_chains: a tuple (number of superchains, number of chains per superchain)
@@ -338,7 +334,7 @@ class Sampler:
         
         def step(state, useless):
             
-            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew_slow, key, L, eps, sigma = state
+            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
             
             ### two steps of the precise dynamics ###
             xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
@@ -358,67 +354,57 @@ class Sampler:
             ### bias ###
             equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
             equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
-            equi = equi_full
+            equi = equi_diag
 
             bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
-            btrue, problems = self.ground_truth_bias(x) #actual bias
+            btrue = self.ground_truth_bias(x) #actual bias
             brichardson = self.richardson_bias(x, x2) #actual bias
             bias_summary = {'pair': bpair, 'true': btrue, 'richardson': brichardson, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
             
             
             ### hyperparameters for the next step ###
             history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
-            decreassing *= (history[-1] > history[0]) 
+            decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
+            #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
-            varew1 = self.C * jnp.power(bias, 3./8.)
-
-            varew = varew1 * decreassing + varew_slow * (1-decreassing)
+            varew = self.C * jnp.power(bias, 3./8.)
+            varew = self.varew_final * (1-decreassing) + varew * decreassing
             eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             eps *= eps_factor
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew_slow, key, L, eps, sigma), (self.Target.transform(x), eps, vare, varew, L, bias_summary, problems, decreassing)
+            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary)
 
-
+        delay = 0.05
+        delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
         # initialize the hyperparameters            
         sigma0 = jnp.ones(self.Target.d)
         L = self.computeL(x0)
-        delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
-        print(delay_num)
-        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num -1) * jnp.inf))
-        state = (0, history, True, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, 1e-6, key, L, self.eps_initial, sigma0)
+        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num-1) * jnp.inf))
+        state = (0, history, True, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
         
         # run the chains
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
         
         self.analyze_results(track)
         
-        return state[3]
+        #return state[0]
+    
     
 
     def analyze_results(self, track):
     
-        _, eps, vare, varew, L, bias, problems, decreassing = track
+        eps, vare, varew, L, bias = track
         
-        print("burn-in:" + str(2*jnp.argmin(decreassing).astype(int)))
+        print(find_crossing(bias['true'][1], 0.01) * 2)
+        print(find_crossing(bias['richardson'][1], 0.01) * 2)
         
-        grads = find_crossing(bias['true'][1], 0.01) * 2 * self.grads_per_step
-        print(grads)
-        #print(find_crossing(bias['richardson'][1], 0.01) * 2)
-        
-        # print(jnp.sum(problems == self.Target.d-2))
-        # print(jnp.sum(problems == self.Target.d-1))
-        # print(jnp.sum(problems < self.Target.d-2.5))
-        
-        # plt.plot(problems, '.')
-        # plt.savefig('problems.png')
-        # plt.close()
         num = 4
         plt.figure(figsize= (6, 3 * num))
 
-        steps = jnp.arange(0, 2*len(eps), 2) * self.grads_per_step
+        steps = jnp.arange(0, 2*len(eps), 2)
         
         ### bias ###
         plt.subplot(num, 1, 1)
@@ -470,8 +456,6 @@ class Sampler:
         plt.tight_layout()
         plt.savefig('plots/tst_ensemble/' + self.Target.name + '_base.png')
         plt.close()
-        
-        return grads
 
         
 
