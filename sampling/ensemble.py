@@ -334,7 +334,7 @@ class Sampler:
         
         def step(state, useless):
             
-            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
+            steps, history, decreassing, x, u, l, g, vare, key, L, eps, sigma = state
             
             ### two steps of the precise dynamics ###
             xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
@@ -342,13 +342,9 @@ class Sampler:
             varee = jnp.average(de)
             xx, uu, ll, gg, _, key = self.dynamics(xx, uu, gg, key, L, eps, sigma)
         
-            ### one step of the sloppy dynamics ###
-            xx2, uu2, ll2, gg2, _, key = self.dynamics(x2, u2, g2, key, L, 2 * eps, sigma)
-                        
             ### if there were nans we don't do the step ###
-            nonans = jnp.all(jnp.isfinite(xx)) & jnp.all(jnp.isfinite(xx2))
+            nonans = jnp.all(jnp.isfinite(xx)) 
             x, u, l, g = switch(nonans, x, u, l, g, xx, uu, ll, gg)
-            x2, u2, l2, g2 = switch(nonans, x2, u2, l2, g2, xx2, uu2, ll2, gg2)
             vare = jnp.nan_to_num(varee) * nonans + vare * (1-nonans)
             
             ### bias ###
@@ -356,10 +352,8 @@ class Sampler:
             equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
             equi = equi_diag
 
-            bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
             btrue = self.ground_truth_bias(x) #actual bias
-            brichardson = self.richardson_bias(x, x2) #actual bias
-            bias_summary = {'pair': bpair, 'true': btrue, 'richardson': brichardson, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
+            bias_summary = {'true': btrue, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
             
             
             ### hyperparameters for the next step ###
@@ -375,7 +369,7 @@ class Sampler:
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary)
+            return (steps + 2, history, decreassing, x, u, l, g, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary)
 
         delay = 0.05
         delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
@@ -383,7 +377,7 @@ class Sampler:
         sigma0 = jnp.ones(self.Target.d)
         L = self.computeL(x0)
         history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num-1) * jnp.inf))
-        state = (0, history, True, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
+        state = (0, history, True, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
         
         # run the chains
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
@@ -399,7 +393,6 @@ class Sampler:
         eps, vare, varew, L, bias = track
         
         print(find_crossing(bias['true'][1], 0.01) * 2)
-        print(find_crossing(bias['richardson'][1], 0.01) * 2)
         
         num = 4
         plt.figure(figsize= (6, 3 * num))
@@ -411,13 +404,6 @@ class Sampler:
         plt.title('bias')
         plt.plot(steps, bias['true'][0], color = 'tab:blue', label= 'average')
         plt.plot(steps, bias['true'][1], color = 'tab:red', label = 'max')
-        
-        marker = ['--', ':']
-        name= ['richardson', 'pair']
-        for i in range(2):
-            plt.plot(steps, bias[name[i]][0], marker[i], color = 'tab:blue')
-            plt.plot(steps, bias[name[i]][1], marker[i], color = 'tab:red')
-            plt.plot([], [], marker[i], color = 'grey', label= name[i])
 
         plt.plot(steps, bias['equipartition diagonal'], color = 'tab:olive', label = 'diagonal equipartition')
         plt.plot(steps, bias['equipartition full'], '--', color = 'tab:green', label = 'full rank equipartition')
