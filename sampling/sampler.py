@@ -5,8 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 import math
 
-from sampling.dynamics import update_momentum, hamiltonian_dynamics, grad_evals, update_position, random_unit_vector, minimal_norm, leapfrog, partially_refresh_momentum
-from sampling.correlation_length import ess_corr
+from .dynamics import update_momentum, hamiltonian_dynamics, grad_evals, update_position, random_unit_vector, minimal_norm, leapfrog, partially_refresh_momentum
+from .correlation_length import ess_corr
 
 
 #jax.config.update('jax_enable_x64', True)
@@ -18,7 +18,7 @@ class Sampler:
 
     def __init__(self, Target, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
-                 diagonal_preconditioning= True, sg = False,
+                 diagonal_preconditioning= False, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
         """Args:
                 Target: the target distribution class
@@ -273,7 +273,7 @@ class Sampler:
                         'expectation': exepcted value of transform(x)
                             most memory efficient. If you are after memory it might be usefull to turn off the third tuning stage
 
-                        'detailed': samples, energy for each step, L and eps used for sampling
+                        'detailed': samples, energy error for each step, L and eps used for sampling
 
                         'ess': Effective Sample Size per gradient evaluation, float.
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
