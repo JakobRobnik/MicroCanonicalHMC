@@ -260,6 +260,9 @@ class Sampler:
     def computeL(self, x):
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
 
+    def computeL(self, x):
+        return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
+
 
     def equipartition_fullrank(self, x, g, random_key):
         """loss = Tr[(1 - E)^T (1 - E)] / d^2
@@ -333,7 +336,7 @@ class Sampler:
         x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
         
         
-        def step(state):
+        def step(state, useless):
             
             steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, varew_slow, key, L, eps, sigma = state
             
@@ -393,7 +396,6 @@ class Sampler:
         self.analyze_results(track)
         
         return state[3]
-    
     
 
     def analyze_results(self, track):
