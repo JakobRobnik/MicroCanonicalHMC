@@ -379,7 +379,7 @@ class Sampler:
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, vare, key, L, eps, sigma), (x, eps, vare, varew, L, bias_summary)
+            return (steps + 2, history, decreassing, x, u, l, g, vare, key, L, eps, sigma), (self.Target.transform(x), eps, vare, varew, L, bias_summary)
 
         delay = 0.05
         delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
@@ -401,26 +401,9 @@ class Sampler:
     def analyze_results(self, track):
     
         x, eps, vare, varew, L, bias = track
+        jnp.save('plots/x_SV.npy', jnp.swapaxes(x, 0, 1))
+        
         steps = jnp.arange(0, 2*len(eps), 2)
-        
-        ### chain coupling ###
-        color = ['tab:blue', 'tab:red']
-        name = ['coupled', 'not coupled']
-        chains = jnp.shape(x)[1]
-        quarter = chains//4
-        for i in range(2):
-            start = 2 * quarter * i
-            diff= jnp.sqrt(jnp.sum(jnp.square(x[:, start : start + quarter, :] - x[:, start + quarter : start + 2*quarter, :]), axis = 2))
-            dif = jnp.sort(diff, axis = 1)
-            plt.fill_between(steps, dif[:, quarter // 4], dif[:, quarter * 3 // 4], color = color[i], alpha = 0.3)
-            plt.plot(steps, dif[:, quarter // 2], color = color[i], label = name[i])
-        
-        plt.yscale('log')
-        plt.legend()
-        plt.xlabel('gradient calls')
-        plt.ylabel('distance between coupled chains')
-        plt.savefig('coupledSV.png')
-        plt.close()
         
         
         print(find_crossing(bias['true'][1], 0.01) * 2)
