@@ -8,7 +8,9 @@ import jax.numpy as jnp
 num_cores = 6 #specific to my PC
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
-
+import sys,os
+home = os.getcwd() + '/../'
+sys.path.append(home)
 from sampling import sampler as mchmc
 from sampling import standardKinetic
 from sampling.benchmark_targets import *
