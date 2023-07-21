@@ -151,6 +151,7 @@ class Sampler:
 
         return xx, uu, ll, gg, kinetic_change, key, time + eps
 
+
     def dynamics_generalized_sg(self, x, u, g, random_key, time, L, eps, sigma):
         """One sweep over the entire dataset. Perfomrs self.Target.num_batches steps with the stochastic gradient."""
 
@@ -192,29 +193,30 @@ class Sampler:
                jnp.nan_to_num(kk) * tru
 
 
-    def dynamics_adaptive(self, state, L, sigma):
-        """One step of the dynamics with the adaptive stepsize"""
+    # def dynamics_adaptive(self, state, L, sigma):
+    #     """One step of the dynamics with the adaptive stepsize"""
 
-        x, u, l, g, E, Feps, Weps, eps_max, key, t = state
+    #     x, u, l, g, E, Feps, Weps, eps_max, key, t = state
 
-        eps = jnp.power(Feps/Weps, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
-        eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
+    #     eps = jnp.power(Feps/Weps, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
+    #     eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
 
-        # dynamics
-        xx, uu, ll, gg, kinetic_change, key, tt = self.dynamics(x, u, g, key, t, L, eps, sigma)
+    #     # dynamics
+    #     xx, uu, ll, gg, kinetic_change, key, tt = self.dynamics(x, u, g, key, t, L, eps, sigma)
 
-        # step updating
-        success, xx, uu, ll, gg, time, eps_max, kinetic_change = self.nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kinetic_change)
+    #     # step updating
+    #     success, xx, uu, ll, gg, time, eps_max, kinetic_change = self.nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kinetic_change)
 
-        DE = kinetic_change + ll - l  # energy difference
-        EE = E + DE  # energy
-        # Warning: var = 0 if there were nans, but we will give it a very small weight
-        xi = ((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
-        w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * self.sigma_xi)))  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
-        Feps = self.gamma * Feps + w * (xi/jnp.power(eps, 6.0))  # Kalman update the linear combinations
-        Weps = self.gamma * Weps + w
+    #     DE = kinetic_change + ll - l  # energy difference
+    #     EE = E + DE  # energy
+    #     # Warning: var = 0 if there were nans, but we will give it a very small weight
+    #     xi = ((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
+    #     w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * self.sigma_xi)))  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
+    #     Feps = self.gamma * Feps + w * (xi/jnp.power(eps, 6.0))  # Kalman update the linear combinations
+    #     Weps = self.gamma * Weps + w
 
-        return xx, uu, ll, gg, EE, Feps, Weps, eps_max, key, time, eps * success
+    #     return xx, uu, ll, gg, EE, Feps, Weps, eps_max, key, time, eps * success
+
 
 
 

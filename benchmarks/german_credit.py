@@ -10,7 +10,7 @@ import numpy as np
 import os
 
 from HMC.mchmc_to_numpyro import mchmc_target_to_numpyro
-from NUTS import sample_nuts
+from HMC.NUTS import sample_nuts
 
 dirr = os.path.dirname(os.path.realpath(__file__))
 
@@ -34,6 +34,7 @@ target_nlog_prob_grad_fn = jax.grad(target_nlog_prob_fn)
 class Target():
 
     def __init__(self):
+        """local scales (25), global scale (1), unscaled weights (25)"""
         self.d = 51
         self.name = name
 
