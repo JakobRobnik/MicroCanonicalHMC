@@ -116,7 +116,7 @@ class Sampler:
         self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
         #factor= jnp.power(2., -6.)
         self.C = 0.1 #* factor# proportionality constant in determining the stepsize (varew \propto C)
-        self.varew_final = 1e-2 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
+        self.varew_final = 1e-6 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
         
         
     def random_unit_vector(self, random_key, num_chains):
@@ -127,13 +127,22 @@ class Sampler:
         return normed_u, key
 
 
+    # def partially_refresh_momentum(self, u, random_key, nu):
+    #     """Adds a small noise to u and normalizes."""
+    #     key, subkey = jax.random.split(random_key)
+    #     noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
+
+    #     return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
+
+
     def partially_refresh_momentum(self, u, random_key, nu):
         """Adds a small noise to u and normalizes."""
         key, subkey = jax.random.split(random_key)
-        noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
+        quarter = u.shape[0]//4
+        noise1 = nu * jax.random.normal(subkey, shape= (3 * quarter, u.shape[1]), dtype=u.dtype)
+        noise = jnp.concatenate((noise1[:quarter], noise1)) # (chains1, chains2, chains3, chains4). 1 is coupled to 2. 3 and 4 are control (not coupled).
 
         return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
-
 
 
     def update_momentum(self, eps, g, u):
@@ -334,7 +343,7 @@ class Sampler:
         
         def step(state, useless):
             
-            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
+            steps, history, decreassing, x, u, l, g, vare, key, L, eps, sigma = state
             
             ### two steps of the precise dynamics ###
             xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
@@ -342,29 +351,24 @@ class Sampler:
             varee = jnp.average(de)
             xx, uu, ll, gg, _, key = self.dynamics(xx, uu, gg, key, L, eps, sigma)
         
-            ### one step of the sloppy dynamics ###
-            xx2, uu2, ll2, gg2, _, key = self.dynamics(x2, u2, g2, key, L, 2 * eps, sigma)
-                        
             ### if there were nans we don't do the step ###
-            nonans = jnp.all(jnp.isfinite(xx)) & jnp.all(jnp.isfinite(xx2))
+            nonans = jnp.all(jnp.isfinite(xx)) 
             x, u, l, g = switch(nonans, x, u, l, g, xx, uu, ll, gg)
-            x2, u2, l2, g2 = switch(nonans, x2, u2, l2, g2, xx2, uu2, ll2, gg2)
             vare = jnp.nan_to_num(varee) * nonans + vare * (1-nonans)
             
             ### bias ###
             equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
             equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
-            equi = equi_diag
+            equi = equi_full
 
-            bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
             btrue = self.ground_truth_bias(x) #actual bias
-            brichardson = self.richardson_bias(x, x2) #actual bias
-            bias_summary = {'pair': bpair, 'true': btrue, 'richardson': brichardson, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
+            bias_summary = {'true': btrue, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
             
             
             ### hyperparameters for the next step ###
             history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
-            decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
+            #decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
+            decreassing = steps < 300
             #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
             varew = self.C * jnp.power(bias, 3./8.)
@@ -375,7 +379,7 @@ class Sampler:
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma), (eps, vare, varew, L, bias_summary)
+            return (steps + 2, history, decreassing, x, u, l, g, vare, key, L, eps, sigma), (self.Target.transform(x), eps, vare, varew, L, bias_summary)
 
         delay = 0.05
         delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
@@ -383,7 +387,7 @@ class Sampler:
         sigma0 = jnp.ones(self.Target.d)
         L = self.computeL(x0)
         history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num-1) * jnp.inf))
-        state = (0, history, True, x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
+        state = (0, history, True, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
         
         # run the chains
         state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
@@ -396,28 +400,23 @@ class Sampler:
 
     def analyze_results(self, track):
     
-        eps, vare, varew, L, bias = track
+        x, eps, vare, varew, L, bias = track
+        jnp.save('plots/x_SV.npy', jnp.swapaxes(x, 0, 1))
+        
+        steps = jnp.arange(0, 2*len(eps), 2)
+        
         
         print(find_crossing(bias['true'][1], 0.01) * 2)
-        print(find_crossing(bias['richardson'][1], 0.01) * 2)
         
         num = 4
         plt.figure(figsize= (6, 3 * num))
 
-        steps = jnp.arange(0, 2*len(eps), 2)
         
         ### bias ###
         plt.subplot(num, 1, 1)
         plt.title('bias')
         plt.plot(steps, bias['true'][0], color = 'tab:blue', label= 'average')
         plt.plot(steps, bias['true'][1], color = 'tab:red', label = 'max')
-        
-        marker = ['--', ':']
-        name= ['richardson', 'pair']
-        for i in range(2):
-            plt.plot(steps, bias[name[i]][0], marker[i], color = 'tab:blue')
-            plt.plot(steps, bias[name[i]][1], marker[i], color = 'tab:red')
-            plt.plot([], [], marker[i], color = 'grey', label= name[i])
 
         plt.plot(steps, bias['equipartition diagonal'], color = 'tab:olive', label = 'diagonal equipartition')
         plt.plot(steps, bias['equipartition full'], '--', color = 'tab:green', label = 'full rank equipartition')
