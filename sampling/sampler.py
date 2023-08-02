@@ -18,7 +18,8 @@ class Sampler:
     def __init__(self, Target, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
                  diagonal_preconditioning= False, sg = False,
-                 frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1):
+                 frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
+                 gna = False):
         """Args:
                 Target: the target distribution class
 
@@ -53,8 +54,8 @@ class Sampler:
         self.grad_evals_per_step = grad_evals[self.integrator]
 
         ### option of stochastic gradient ###
-        self.sg = sg
-        self.dynamics = self.dynamics_generalized_sg if sg else self.dynamics_generalized
+        self.sg= False
+        self.dynamics = self.dynamics_generalized_gna if gna else self.dynamics_generalized
 
         ### preconditioning ###
         self.diagonal_preconditioning = diagonal_preconditioning
@@ -77,26 +78,12 @@ class Sampler:
         ### default eps and L ###
         if L != None:
             self.L = L
-        else: #default value (works if the target is well preconditioned). If you are not happy with the default value and have not run the grid search we suggest runing sample with the option tune= 'expensive'.
+        else: #default value (works if the target is well preconditioned). If you are not happy with the default value and have not run the grid search we suggest using the autotuning
             self.L = jnp.sqrt(Target.d)
         if eps != None:
             self.eps = eps
-        else: #defualt value (assumes preconditioned target and even then it might not work). Unless you have done a grid search to determine this value we suggest runing sample with the option tune= 'cheap' or tune= 'expensive'.
+        else: #defualt value (assumes preconditioned target and even then it might not work). Unless you have done a grid search to determine this value we suggest using the autotuning
             self.eps = jnp.sqrt(Target.d) * 0.4
-
-    # naive update
-    # def update_momentum(self, eps, g, u):
-    #     """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)"""
-    #     g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
-    #     e = - g / g_norm
-    #     ue = jnp.dot(u, e)
-    #     sh = jnp.sinh(eps * g_norm / (self.Target.d-1))
-    #     ch = jnp.cosh(eps * g_norm / (self.Target.d-1))
-    #     th = jnp.tanh(eps * g_norm / (self.Target.d-1))
-    #     delta_r = jnp.log(ch) + jnp.log1p(ue * th)
-    #
-    #     return (u + e * (sh + ue * (ch - 1))) / (ch + ue * sh), delta_r
-
 
 
 
@@ -138,9 +125,9 @@ class Sampler:
         return xx, u_return, ll, gg, kinetic_change, key, time
 
 
+
     def dynamics_generalized(self, x, u, g, random_key, time, L, eps, sigma):
         """One step of the generalized dynamics."""
-
        
         # Hamiltonian step
         xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps)  # self.hamiltonian_dynamics(x, u, g, eps, sigma)
@@ -150,6 +137,23 @@ class Sampler:
         uu, key = partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=random_key)
 
         return xx, uu, ll, gg, kinetic_change, key, time + eps
+
+
+    def dynamics_generalized_gna(self, x, u, g, random_key, time, L, eps_factor, sigma):
+        """One step of the generalized dynamics."""
+       
+        gnorm = jnp.sqrt(jnp.sum(jnp.square(g)))
+        eps = eps_factor / gnorm
+        
+        # Hamiltonian step
+        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps)  # self.hamiltonian_dynamics(x, u, g, eps, sigma)
+
+        # Langevin-like noise
+        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
+        uu, key = partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=random_key)
+
+        return xx, uu, ll, gg, kinetic_change, key, time + eps
+
 
 
     def dynamics_generalized_sg(self, x, u, g, random_key, time, L, eps, sigma):
@@ -193,30 +197,29 @@ class Sampler:
                jnp.nan_to_num(kk) * tru
 
 
-    # def dynamics_adaptive(self, state, L, sigma):
-    #     """One step of the dynamics with the adaptive stepsize"""
+    def dynamics_adaptive(self, state, L, sigma):
+        """One step of the dynamics with the adaptive stepsize"""
 
-    #     x, u, l, g, E, Feps, Weps, eps_max, key, t = state
+        x, u, l, g, E, Feps, Weps, eps_max, key, t = state
 
-    #     eps = jnp.power(Feps/Weps, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
-    #     eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
+        eps = jnp.power(Feps/Weps, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
+        eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
 
-    #     # dynamics
-    #     xx, uu, ll, gg, kinetic_change, key, tt = self.dynamics(x, u, g, key, t, L, eps, sigma)
+        # dynamics
+        xx, uu, ll, gg, kinetic_change, key, tt = self.dynamics(x, u, g, key, t, L, eps, sigma)
 
-    #     # step updating
-    #     success, xx, uu, ll, gg, time, eps_max, kinetic_change = self.nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kinetic_change)
+        # step updating
+        success, xx, uu, ll, gg, time, eps_max, kinetic_change = self.nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kinetic_change)
 
-    #     DE = kinetic_change + ll - l  # energy difference
-    #     EE = E + DE  # energy
-    #     # Warning: var = 0 if there were nans, but we will give it a very small weight
-    #     xi = ((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
-    #     w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * self.sigma_xi)))  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
-    #     Feps = self.gamma * Feps + w * (xi/jnp.power(eps, 6.0))  # Kalman update the linear combinations
-    #     Weps = self.gamma * Weps + w
+        DE = kinetic_change + ll - l  # energy difference
+        EE = E + DE  # energy
+        # Warning: var = 0 if there were nans, but we will give it a very small weight
+        xi = ((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
+        w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * self.sigma_xi)))  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
+        Feps = self.gamma * Feps + w * (xi/jnp.power(eps, 6.0))  # Kalman update the linear combinations
+        Weps = self.gamma * Weps + w
 
-    #     return xx, uu, ll, gg, EE, Feps, Weps, eps_max, key, time, eps * success
-
+        return xx, uu, ll, gg, EE, Feps, Weps, eps_max, key, time, eps * success
 
 
 
@@ -490,69 +493,6 @@ class Sampler:
         #nans = jnp.any(jnp.isnan(b))
 
         return b #+ nans * 1e5 #return a large bias if there were nans
-
-
-    def sample_ess_funnel(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
-        """Stores the bias of the second moments for each step."""
-
-        def step(state_track, useless):
-            x, u, l, g, E, key, time = state_track[0]
-            eps1 = eps * jnp.exp(0.5 * x[-1])
-            eps_max = eps *0.5#* jnp.exp(0.5)
-            too_large = eps1 > eps_max
-            eps_real = eps1 * (1-too_large) + eps_max * too_large
-            x, u, ll, g, kinetic_change, key, time = self.dynamics(x, u, g, key, time, L, eps_real, sigma)
-            W, F2 = state_track[1]
-            F2 = (W * F2 + eps_real * jnp.square(self.Target.transform(x))) / (W + eps_real)  # Update <f(x)> with a Kalman filter
-            W += eps_real
-            bias = jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance))
-            # bias = jnp.average((F2 - self.Target.variance) / self.Target.variance)
-
-            return ((x, u, ll, g, E + kinetic_change + ll - l, key, time), (W, F2)), bias
-
-        _, b = jax.lax.scan(step, init=((x, u, l, g, 0.0, random_key, 0.0), (eps * jnp.exp(0.5 * x[-1]), jnp.square(self.Target.transform(x)))),
-                            xs=None, length=num_steps)
-
-        return b  # + nans * 1e5 #return a large bias if there were nans
-
-
-    def sample_adaptive_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
-        """Stores transform(x) for each iteration. It uses the adaptive stepsize."""
-
-        def step(state, useless):
-            
-            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state, L, sigma)
-
-            return (x, u, l, g, E, Feps, Weps, eps_max, key, time), (self.Target.transform(x), l, E, eps)
-
-        state, track = jax.lax.scan(step, init=(x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0), xs=None, length=num_steps)
-        X, nlogp, E, eps = track
-        W = jnp.concatenate((0.5 * (eps[1:] + eps[:-1]), 0.5 * eps[-1:]))  # weights (because Hamiltonian time does not flow uniformly if the step size changes)
-        
-        return X, W, nlogp, E
-
-
-    def sample_adaptive_ess(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
-        """Stores the bias of the second moments for each step."""
-
-        def step(state, useless):
-            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L, sigma)
-
-            W, F2 = state[1]
-            w = eps
-            F2 = (W * F2 + w * jnp.square(self.Target.transform(x))) / (W + w)  # Update <f(x)> with a Kalman filter
-            W += w
-            bias = jnp.average(jnp.square((F2 - self.Target.variance) / self.Target.variance))
-
-            return ((x, u, l, g, E, Feps, Weps, eps_max, key, time), (W, F2)), bias
-
-
-
-        _, b = jax.lax.scan(step, init= ((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0),
-                                                 (eps, jnp.square(self.Target.transform(x)))),
-                                    xs=None, length=num_steps)
-
-        return b  # + nans * 1e5 #return a large bias if there were nans
 
 
     ### tuning phase: ###

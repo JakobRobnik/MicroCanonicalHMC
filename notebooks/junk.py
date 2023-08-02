@@ -7,10 +7,10 @@ from benchmarks.benchmarks_mchmc import *
 
 
 target = IllConditionedGaussian(d = 100, condition_number= 100.)
-sampler = Sampler(target, L = jnp.sqrt(target.d), eps = 1., diagonal_preconditioning= False, frac_tune1 = 0, frac_tune2 = 0, frac_tune3 = 0)
-sampler.sample(10000, output = 'normal')
+sampler = Sampler(target)#, L = jnp.sqrt(target.d), eps = 1., diagonal_preconditioning= False)#, frac_tune1 = 0, frac_tune2 = 0, frac_tune3 = 0)
+x = sampler.sample(10000)#, output = 'normal')
 
-
+print(x.shape)
 exit()
 hmc = pd.read_csv('submission/MCHMC/Table HMC_LF.csv')
 mchmc = pd.read_csv('submission/MCHMC/Table MCHMC q = 0.csv', sep = '\t')
