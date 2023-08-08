@@ -9,8 +9,6 @@ from .dynamics import update_momentum, hamiltonian_dynamics, grad_evals, update_
 from .correlation_length import ess_corr
 
 
-#jax.config.update('jax_enable_x64', True)
-
 
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""

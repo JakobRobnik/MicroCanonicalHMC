@@ -152,7 +152,7 @@ class Sampler:
     def random_unit_vector(self, random_key, num_chains):
         """Generates a random (isotropic) unit vector."""
         key, subkey = jax.random.split(random_key)
-        u = jax.random.normal(subkey, shape = (num_chains, self.Target.d), dtype = 'float64')
+        u = jax.random.normal(subkey, shape = (num_chains, self.Target.d))
         normed_u = u / jnp.sqrt(jnp.sum(jnp.square(u), axis = 1))[:, None]
         return normed_u, key
 
@@ -356,27 +356,25 @@ class Sampler:
 
         return bias_avg, bias_max
 
-
-
-    def richardson_bias(self, x, x2):
-        """use richardson extrapolation to improve accuracy of the computed expected values: 
-            see for example: https://en.wikipedia.org/wiki/Richardson_extrapolation"""
-            
-        moments1 = jnp.average(jnp.square(self.Target.transform(x)), axis = 0)
-        moments2 = jnp.average(jnp.square(self.Target.transform(x2)), axis = 0)
-        order = 2
-        moments = (moments1 - moments2 * 0.5**order) / (1. - 0.5**order)
-        bias_d = jnp.square(moments - self.Target.second_moments) / self.Target.variance_second_moments
-        bias_avg, bias_max = jnp.average(bias_d), jnp.max(bias_d)
-
-        return bias_avg, bias_max
-
-
+    
+    def compute_diagnostics(self, x, g, x2):
         
+        ### diagnostics ###
+        equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
+        equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
+        
+        bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
+        btrue = self.ground_truth_bias(x) #actual bias
+        
+        varew = self.C * jnp.power(equi_full, 3./8.)
+
+        return varew, bpair[0], bpair[1], btrue[0], btrue[1], equi_diag, equi_full
+    
+
     def sample(self, num_steps, x_initial='prior', random_key= None):
         """Args:
-               num_steps: number of integration steps to take during the sampling. There will be some additional steps during the first stage of the burn-in (max 200).
-               num_chains: a tuple (number of superchains, number of chains per superchain)
+               num_steps: number of integration steps to take during the sampling
+               num_chains: number of chains
                x_initial: initial condition for x, shape: (num_chains, d). Defaults to 'prior' in which case the initial condition is drawn with self.Target.prior_draw.
                random_key: jax random seed, defaults to jax.random.PRNGKey(0).
            Returns:
@@ -387,7 +385,7 @@ class Sampler:
         x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
         
         
-        def step1(state, useless):
+        def step1(state):
             steps, history, decreassing, dyn, hyp = state
             dyn, nonans = self.paired_dynamics(dyn, hyp)
             x, g, vare = dyn['x'], dyn['g'], dyn['vare']
@@ -413,22 +411,12 @@ class Sampler:
             
             state = step1(state) # run step1
             steps, history, decreassing, dyn, hyp = state #unpack
-            x, g, x2, vare = dyn['x'], dyn['g'], dyn['x2'], dyn['vare']
             
-            ### diagnostics ###
-            equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
-            equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
-            
-            bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
-            btrue = self.ground_truth_bias(x) #actual bias
-            
-            varew = self.C * jnp.power(equi_full, 3./8.)
-
-            diagnostics.append([hyp['eps'], vare, varew, hyp['L'], bpair[0], bpair[1], btrue[0], btrue[1], equi_diag, equi_full])
+            diagnostics.append([hyp['eps'], hyp['L'], dyn['vare']] + self.compute_diagnostics(dyn['x'], dyn['g'], dyn['x2']))
             
             return state
-
-
+        
+        
 
         def cond(state):
             steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
@@ -451,31 +439,22 @@ class Sampler:
         
         
         def step2(state, useless):
+            loss, dyn, hyp = state
+            dyn_new = jax.lax.scan(lambda _dyn, _useless: (self.paired_dynamics(_dyn, hyp)[0], None), xinit = dyn, steps = n, xs = None)[0]
+                        
+            loss_new = self.discretization_bias(dyn['x'], dyn['x2'])
             
-            steps, history, decreassing, dyn, hyp = state
-            dyn, nonans = self.paired_dynamics(dyn, hyp)
-            x, g, vare = dyn['x'], dyn['g'], dyn['vare']
-            
-            
-            ### bias ###
+            success = loss_new < loss
 
-            bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
+            dyn = dyn_new * success + dyn * (1-success)
+            loss = loss_new * success + loss * (1-success)
             
-            ### hyperparameters for the next step ###
-            history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
-            decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
-            #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
-            bias = equi# * (1-phase2) + disrcretization_bias * phase2
-            varew = self.C * jnp.power(bias, 3./8.)
-            varew = self.varew_final * (1-decreassing) + varew * decreassing
-            eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
-            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
-            eps *= eps_factor
+            eps_factor = 1 * success + 0.5 * (1-success)
+            hyp['eps'] = hyp['eps'] * eps_factor
             
-            L = self.computeL(x)
-            
-            return (steps + 2, history, decreassing, dyn, hyp)
+            return (loss, dyn, hyp), None
 
+        
 
         x_final = state[-2][0]
         

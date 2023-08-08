@@ -123,7 +123,7 @@ targets = [[Banana(prior = 'prior'), 100],
 if __name__ == '__main__':
     chains = 2048
 
-    for i in [5,]:
+    for i in [0, 1, 2, 3, 4, 5]:
         target, num_steps = targets[i]
         print(target.name)
         sampler = EnsembleSampler(target, chains)

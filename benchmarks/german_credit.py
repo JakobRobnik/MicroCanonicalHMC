@@ -10,7 +10,7 @@ import numpy as np
 import os
 
 from HMC.mchmc_to_numpyro import mchmc_target_to_numpyro
-from HMC.NUTS import sample_nuts
+#from HMC.NUTS import sample_nuts
 
 dirr = os.path.dirname(os.path.realpath(__file__))
 

@@ -81,10 +81,10 @@ class IllConditionedGaussian():
             self.prior_draw = lambda key: jnp.zeros(self.d)
 
         elif prior == 'posterior':
-            self.prior_draw = lambda key: self.R @ (jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.sqrt(eigs))
+            self.prior_draw = lambda key: self.R @ (jax.random.normal(key, shape=(self.d,)) * jnp.sqrt(eigs))
 
         else: # N(0, sigma_true_max)
-            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(jnp.sqrt(eigs))
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,)) * jnp.max(jnp.sqrt(eigs))
 
 
 
@@ -145,10 +145,10 @@ class IllConditionedGaussianGamma():
             self.prior_draw = lambda key: jnp.zeros(self.d)
 
         elif prior == 'posterior':
-            self.prior_draw = lambda key: R @ (jax.random.normal(key, shape=(self.d,), dtype='float64') / jnp.sqrt(eigs))
+            self.prior_draw = lambda key: R @ (jax.random.normal(key, shape=(self.d,)) / jnp.sqrt(eigs))
 
         else: # N(0, sigma_true_max)
-            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.max(1.0/jnp.sqrt(eigs))
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,)) * jnp.max(1.0/jnp.sqrt(eigs))
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -177,7 +177,7 @@ class Banana():
         elif prior == 'posterior':
             self.prior_draw = lambda key: self.posterior_draw(key)
         elif prior == 'prior':
-            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64') * jnp.array([10.0, 5.0]) * 2
+            self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,)) * jnp.array([10.0, 5.0]) * 2
         else:
             raise ValueError('prior = '+prior +' is not defined.')
 
@@ -222,7 +222,7 @@ class Cauchy():
         self.nlogp = lambda x: jnp.sum(jnp.log(1. + jnp.square(x)))
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
         self.transform = lambda x: x        
-        self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64')
+        self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,))
 
 
 
@@ -257,7 +257,7 @@ class HardConvex():
     def prior_draw(self, key):
         """Gaussian prior with approximately estimating the variance along each dimension"""
         scale = jnp.concatenate((jnp.ones(self.d-1), jnp.ones(1) * jnp.sqrt(2.0 * self.kappa / 3.0)))
-        return jax.random.normal(key, shape=(self.d,), dtype='float64') * scale
+        return jax.random.normal(key, shape=(self.d,)) * scale
 
 
 
@@ -413,7 +413,7 @@ class Funnel_with_Data():
 
     def prior_draw(self, key):
         key1, key2 = jax.random.split(key)
-        theta = jax.random.normal(key1, dtype= 'float64') * self.sigma_theta
+        theta = jax.random.normal(key1) * self.sigma_theta
         z = jax.random.normal(key2, shape = (self.d-1, )) * jnp.exp(theta * 0.5)
         return jnp.concatenate((z, theta))
 
