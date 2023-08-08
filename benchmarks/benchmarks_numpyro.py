@@ -30,6 +30,10 @@ def ill_conditioned_gaussian(d, condition_number):
     numpyro.sample('x', dist.MultivariateNormal(jnp.zeros(d), rotated_Cov))
 
 
+def cauchy(d):
+    numpyro.sample("x", dist.Cauchy(jnp.zeros(d)))
+
+
 def bimodal(d, mu):
     avg = np.zeros(d)
     avg[0] = mu

@@ -213,6 +213,20 @@ class Banana():
 
 
 
+class Cauchy():
+    """d indpendent copies of the standard Cauchy distribution"""
+
+    def __init__(self, d):
+        self.d = d
+
+        self.nlogp = lambda x: jnp.sum(jnp.log(1. + jnp.square(x)))
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+        self.transform = lambda x: x        
+        self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,), dtype='float64')
+
+
+
+
 class HardConvex():
 
     def __init__(self, d, kappa, theta = 0.1):

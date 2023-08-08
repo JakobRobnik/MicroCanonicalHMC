@@ -1,9 +1,14 @@
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
+import numpy as np
 from sampling.sampler import find_crossing
 
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
+
+
+#TODO: parallelize paired chains
+
 
 
 class vmap_target:
@@ -81,11 +86,24 @@ class pmap_target:
 class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, chains, alpha = 1., integrator = 'MN'):
+    def __init__(self, Target, chains, 
+                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
+                 debug= True, plotdir = 'plots/tst_ensemble/'):
         """Args:
-                Target: the target distribution class.
-                alpha: the momentum decoherence scale L = alpha sqrt(d). Optimal alpha is typically around 1, but can also be 10 or so.
+                Target: The target distribution class.
+                chains: The number of chains to run in parallel. 
+                        If multiple devices are available (as seen by jax.local_device_count()),
+                        pmap will be used to distribute the computation over the devices.
+                        
+                alpha: The momentum decoherence scale L = alpha sqrt(d). 
+                       Optimal alpha is typically around 1, but can also be 10 or so.
+                integrator: 'LF' (leapfrog) or 'MN' (minimal norm). LF is expected to perform better.
+                isotropic_u0: If True, initial velocity will be randomly oriented for each particle. If False, it will be aligned or anti-aligned with the gradient, depending on the initial equipartition.
+                C: Proportionality constant for the stepsize.
+                equipartition_definition: 'full' or 'diagonal'. See the paper.
                 
+                debug: If True, the non-jax while loop will be run in sample. Diagnostics like the energy error, bias and stepsize will be saved at each step.
+                plotdir: If debug, diagnostics plots will be produced and saved in plotdir.
         """
 
         self.chains = chains
@@ -109,14 +127,26 @@ class Sampler:
 
 
         # initialization
-        self.isotropic_u0 = False # isotropic direction of the initial velocity (if false, aligned with the gradient)
+        self.isotropic_u0 = isotropic_u0 # isotropic direction of the initial velocity (if false, aligned with the gradient)
         self.eps_initial = 0.01 * jnp.sqrt(self.Target.d) # stepsize of the first step
 
         # hyperparameters
         self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
         #factor= jnp.power(2., -6.)
-        self.C = 0.1 #* factor# proportionality constant in determining the stepsize (varew \propto C)
-        self.varew_final = 1e-6 #* factor # targeted Var[E]/d in the final stage. eps \propto varew^1/6
+        self.C = C #* factor# proportionality constant in determining the stepsize (varew \propto C)
+
+        self.debug = debug 
+        if debug:
+            self.plotdir = plotdir + self.Target.name
+        
+        if equipartition_definition == 'full':
+            self.equipartition = self.equipartition_fullrank
+        elif equipartition_definition == 'diagonal':
+            self.equipartition = self.equipartition_diagonal
+        else:
+            raise ValueError('equipartition_definition = ' + equipartition_definition + "is not a valid option, should be either 'full' or 'diagonal'.")
+
+        
         
         
     def random_unit_vector(self, random_key, num_chains):
@@ -127,22 +157,13 @@ class Sampler:
         return normed_u, key
 
 
-    # def partially_refresh_momentum(self, u, random_key, nu):
-    #     """Adds a small noise to u and normalizes."""
-    #     key, subkey = jax.random.split(random_key)
-    #     noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
-
-    #     return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
-
-
     def partially_refresh_momentum(self, u, random_key, nu):
         """Adds a small noise to u and normalizes."""
         key, subkey = jax.random.split(random_key)
-        quarter = u.shape[0]//4
-        noise1 = nu * jax.random.normal(subkey, shape= (3 * quarter, u.shape[1]), dtype=u.dtype)
-        noise = jnp.concatenate((noise1[:quarter], noise1)) # (chains1, chains2, chains3, chains4). 1 is coupled to 2. 3 and 4 are control (not coupled).
+        noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
 
         return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
+
 
 
     def update_momentum(self, eps, g, u):
@@ -228,6 +249,28 @@ class Sampler:
 
         return xx, uu, ll, gg, kinetic_change, key
 
+
+    def paired_dynamics(self, dyn, hyp):
+        """run two sets of chains with different stepsizes."""
+        x, u, l, g, x2, u2, l2, g2, vare, key = dyn
+        L, eps, sigma = hyp
+        ### two steps of the precise dynamics ###
+        xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
+        de = jnp.square(dK + ll - l) / self.Target.d
+        varee = jnp.average(de)
+        xx, uu, ll, gg, _, key = self.dynamics(xx, uu, gg, key, L, eps, sigma)
+    
+        ### one step of the sloppy dynamics ###
+        xx2, uu2, ll2, gg2, _, key = self.dynamics(x2, u2, g2, key, L, 2 * eps, sigma)
+                    
+        ### if there were nans we don't do the step ###
+        nonans = jnp.all(jnp.isfinite(xx)) & jnp.all(jnp.isfinite(xx2))
+        x, u, l, g = switch(nonans, x, u, l, g, xx, uu, ll, gg)
+        x2, u2, l2, g2 = switch(nonans, x2, u2, l2, g2, xx2, uu2, ll2, gg2)
+        vare = jnp.nan_to_num(varee) * nonans + vare * (1-nonans)
+        
+        return (x, u, l, g, x2, u2, l2, g2, vare, key), nonans
+            
 
     def initialize(self, random_key, x_initial):
         """initialize the ensemble"""
@@ -336,39 +379,91 @@ class Sampler:
                num_chains: a tuple (number of superchains, number of chains per superchain)
                x_initial: initial condition for x, shape: (num_chains, d). Defaults to 'prior' in which case the initial condition is drawn with self.Target.prior_draw.
                random_key: jax random seed, defaults to jax.random.PRNGKey(0).
+           Returns:
+               final x: shape = (num_chains, d)
+               If debug, additional diagnostics plots will be produced.
         """
 
         x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
         
         
-        def step(state, useless):
+        def step1(state, useless):
+            steps, history, decreassing, dyn, hyp = state
+            dyn, nonans = self.paired_dynamics(dyn, hyp)
+            x, g, vare = dyn['x'], dyn['g'], dyn['vare']
             
-            steps, history, decreassing, x, u, l, g, vare, key, L, eps, sigma = state
+            ### hyperparameters for the next step ###
+            equi, key = self.equipartition(x, g, key) #estimate the bias from the equipartition loss
+
+            history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
+            decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
+
+            varew = self.C * jnp.power(equi, 3./8.)
+            eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
+            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
+            hyp['eps'] = eps_factor * hyp['eps']
             
-            ### two steps of the precise dynamics ###
-            xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
-            de = jnp.square(dK + ll - l) / self.Target.d
-            varee = jnp.average(de)
-            xx, uu, ll, gg, _, key = self.dynamics(xx, uu, gg, key, L, eps, sigma)
-        
-            ### if there were nans we don't do the step ###
-            nonans = jnp.all(jnp.isfinite(xx)) 
-            x, u, l, g = switch(nonans, x, u, l, g, xx, uu, ll, gg)
-            vare = jnp.nan_to_num(varee) * nonans + vare * (1-nonans)
+            hyp['L'] = self.computeL(x)
             
-            ### bias ###
+            return (steps + 2, history, decreassing, dyn, hyp)
+
+
+        def step1_debug(state):
+            """step1 and diagnostics"""
+            
+            state = step1(state) # run step1
+            steps, history, decreassing, dyn, hyp = state #unpack
+            x, g, x2, vare = dyn['x'], dyn['g'], dyn['x2'], dyn['vare']
+            
+            ### diagnostics ###
             equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
             equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
-            equi = equi_full
-
-            btrue = self.ground_truth_bias(x) #actual bias
-            bias_summary = {'true': btrue, 'equipartition diagonal': equi_diag, 'equipartition full': equi_full}
             
+            bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
+            btrue = self.ground_truth_bias(x) #actual bias
+            
+            varew = self.C * jnp.power(equi_full, 3./8.)
+
+            diagnostics.append([hyp['eps'], vare, varew, hyp['L'], bpair[0], bpair[1], btrue[0], btrue[1], equi_diag, equi_full])
+            
+            return state
+
+
+
+        def cond(state):
+            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
+            return decreassing and (steps < num_steps)
+        
+            
+        delay = 0.05
+        delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
+        # initialize the hyperparameters            
+        sigma0 = jnp.ones(self.Target.d)
+        L = self.computeL(x0)
+        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num-1) * jnp.inf))
+        state = (0, history, True, (x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key), (L, self.eps_initial, sigma0))
+        
+        if self.debug:
+            diagnostics = []
+            state = mywhile(cond, step1_debug, state)
+        else:
+            state = jax.lax.while_loop(cond, step1, state)
+        
+        
+        def step2(state, useless):
+            
+            steps, history, decreassing, dyn, hyp = state
+            dyn, nonans = self.paired_dynamics(dyn, hyp)
+            x, g, vare = dyn['x'], dyn['g'], dyn['vare']
+            
+            
+            ### bias ###
+
+            bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
             
             ### hyperparameters for the next step ###
             history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
-            #decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
-            decreassing = steps < 300
+            decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
             #phase2 = (1 - decreassing) * (disrcretization_bias < initialization_bias)
             bias = equi# * (1-phase2) + disrcretization_bias * phase2
             varew = self.C * jnp.power(bias, 3./8.)
@@ -379,47 +474,46 @@ class Sampler:
             
             L = self.computeL(x)
             
-            return (steps + 2, history, decreassing, x, u, l, g, vare, key, L, eps, sigma), (self.Target.transform(x), eps, vare, varew, L, bias_summary)
+            return (steps + 2, history, decreassing, dyn, hyp)
 
-        delay = 0.05
-        delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
-        # initialize the hyperparameters            
-        sigma0 = jnp.ones(self.Target.d)
-        L = self.computeL(x0)
-        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num-1) * jnp.inf))
-        state = (0, history, True, x0, u0, l0, g0, 1e-3, key, L, self.eps_initial, sigma0)
+
+        x_final = state[-2][0]
         
-        # run the chains
-        state, track = jax.lax.scan(step, init= state, xs= None, length= num_steps//2)
-        
-        self.analyze_results(track)
-        
-        #return state[0]
+        if self.debug:
+            self.debug_plots(diagnostics)
+            return x_final
+        else:    
+            return x_final
     
     
 
-    def analyze_results(self, track):
+    def debug_plots(self, diagnostics):
     
-        x, eps, vare, varew, L, bias = track
-        jnp.save('plots/x_SV.npy', jnp.swapaxes(x, 0, 1))
+        eps, vare, varew, L, bpair_avg, bpair_max, btrue_avg, btrue_max, equi_diag, equi_full = np.array(diagnostics).T
         
-        steps = jnp.arange(0, 2*len(eps), 2)
-        
-        
-        print(find_crossing(bias['true'][1], 0.01) * 2)
+        print(find_crossing(btrue_max, 0.01) * 2)
         
         num = 4
         plt.figure(figsize= (6, 3 * num))
 
+        steps = jnp.arange(0, 2*len(eps), 2)
         
         ### bias ###
         plt.subplot(num, 1, 1)
         plt.title('bias')
-        plt.plot(steps, bias['true'][0], color = 'tab:blue', label= 'average')
-        plt.plot(steps, bias['true'][1], color = 'tab:red', label = 'max')
+        
+        # true
+        plt.plot(steps, btrue_avg, color = 'tab:blue', label= 'average')
+        plt.plot(steps, btrue_max, color = 'tab:red', label = 'max')
+        
+        # pair
+        plt.plot(steps, bpair_avg, '--', color = 'tab:blue')
+        plt.plot(steps, bpair_max, '--', color = 'tab:red')
+        plt.plot([], [], '--', color = 'grey', label= 'pair')
 
-        plt.plot(steps, bias['equipartition diagonal'], color = 'tab:olive', label = 'diagonal equipartition')
-        plt.plot(steps, bias['equipartition full'], '--', color = 'tab:green', label = 'full rank equipartition')
+        # equipartition
+        plt.plot(steps, equi_diag, color = 'tab:olive', label = 'diagonal equipartition')
+        plt.plot(steps, equi_full, '--', color = 'tab:green', label = 'full rank equipartition')
         
         plt.plot(steps, jnp.ones(steps.shape) * 1e-2, '-', color = 'black')
         plt.legend()
@@ -453,7 +547,7 @@ class Sampler:
         #plt.yscale('log')
         plt.xlabel('# gradient evaluations')
         plt.tight_layout()
-        plt.savefig('plots/tst_ensemble/' + self.Target.name + '_base.png')
+        plt.savefig(self.plot_dir)
         plt.close()
 
         
@@ -468,3 +562,10 @@ def switch(tru, x, u, l, g, xx, uu, ll, gg):
     G = jnp.nan_to_num(gg) * tru + g * false
     
     return X, U, L, G
+
+
+def mywhile(cond_fun, body_fun, init_val):
+    val = init_val
+    while cond_fun(val):
+        val = body_fun(val)
+    return val
