@@ -87,8 +87,8 @@ class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, chains, 
-                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
-                 debug= True, plotdir = 'plots/tst_ensemble/'):
+                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full', delay_frac = 0.05,
+                 debug= True, plotdir = None):
         """Args:
                 Target: The target distribution class.
                 chains: The number of chains to run in parallel. 
@@ -101,6 +101,7 @@ class Sampler:
                 isotropic_u0: If True, initial velocity will be randomly oriented for each particle. If False, it will be aligned or anti-aligned with the gradient, depending on the initial equipartition.
                 C: Proportionality constant for the stepsize.
                 equipartition_definition: 'full' or 'diagonal'. See the paper.
+                delay_frac: TODO
                 
                 debug: If True, the non-jax while loop will be run in sample. Diagnostics like the energy error, bias and stepsize will be saved at each step.
                 plotdir: If debug, diagnostics plots will be produced and saved in plotdir.
@@ -132,13 +133,16 @@ class Sampler:
 
         # hyperparameters
         self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
-        #factor= jnp.power(2., -6.)
-        self.C = C #* factor# proportionality constant in determining the stepsize (varew \propto C)
-
+        self.C = C # proportionality constant in determining the stepsize (varew \propto C)
+        self.delay_frac = 0.05
+        
+        
         self.debug = debug 
         if debug:
-            self.plotdir = plotdir + self.Target.name
-        
+            if plotdir == None:
+                raise ValueError('if debug == True, plotdir must be given.')
+            self.plot_dir = plotdir + self.Target.name
+
         if equipartition_definition == 'full':
             self.equipartition = self.equipartition_fullrank
         elif equipartition_definition == 'diagonal':
@@ -204,7 +208,6 @@ class Sampler:
 
 
 
-
     def minimal_norm(self, x, u, g, eps, sigma):
         """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
@@ -252,8 +255,8 @@ class Sampler:
 
     def paired_dynamics(self, dyn, hyp):
         """run two sets of chains with different stepsizes."""
-        x, u, l, g, x2, u2, l2, g2, vare, key = dyn
-        L, eps, sigma = hyp
+        x, u, l, g, x2, u2, l2, g2, vare, key = dyn['x'], dyn['u'], dyn['l'], dyn['g'], dyn['x2'], dyn['u2'], dyn['l2'], dyn['g2'], dyn['vare'], dyn['key']
+        L, eps, sigma = hyp['L'], hyp['eps'], hyp['sigma']
         ### two steps of the precise dynamics ###
         xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
         de = jnp.square(dK + ll - l) / self.Target.d
@@ -265,11 +268,12 @@ class Sampler:
                     
         ### if there were nans we don't do the step ###
         nonans = jnp.all(jnp.isfinite(xx)) & jnp.all(jnp.isfinite(xx2))
-        x, u, l, g = switch(nonans, x, u, l, g, xx, uu, ll, gg)
-        x2, u2, l2, g2 = switch(nonans, x2, u2, l2, g2, xx2, uu2, ll2, gg2)
-        vare = jnp.nan_to_num(varee) * nonans + vare * (1-nonans)
+
+        x, u, l, g, x2, u2, l2, g2, vare = jax.tree_map(lambda new, old: jax.lax.select(nonans, jnp.nan_to_num(new), old), 
+                                                        (xx, uu, ll, gg, xx2, uu2, ll2, gg2, varee), #if no nans
+                                                        (x, u, l, g, x2, u2, l2, g2, vare)) #if nans
         
-        return (x, u, l, g, x2, u2, l2, g2, vare, key), nonans
+        return {'x': x, 'u': u, 'l': l, 'g': g, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'vare': vare, 'key': key}, nonans
             
 
     def initialize(self, random_key, x_initial):
@@ -306,6 +310,24 @@ class Sampler:
             u = u * sgn[None, :] #if the equipartition in that direction is smaller than 1, we flip the direction of the momentum in that direction
        
         return x, u, l, g, key
+    
+    
+
+    def initialize_paired(self, num_steps, random_key, x_initial):
+            
+        delay_num = jnp.rint(self.delay_frac * num_steps / self.grads_per_step).astype(int)
+        
+        x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
+
+        sigma0 = jnp.ones(self.Target.d)
+        L = self.computeL(x0)
+        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num-1) * jnp.inf)) # loss history
+        dyn0 = {'x': x0, 'u': u0, 'l': l0, 'g': g0, 'x2': x0, 'u2': u0, 'l2': l0, 'g2': g0, 'vare': 1e-3, 'key': key} #dynamical variables
+        hyp0 = {'L': L, 'eps': self.eps_initial, 'sigma': sigma0} #hyperparameters
+        state = (0, history, True, dyn0, hyp0)
+        
+        return state
+
 
 
     def computeL(self, x):
@@ -357,7 +379,8 @@ class Sampler:
         return bias_avg, bias_max
 
     
-    def compute_diagnostics(self, x, g, x2):
+    def compute_diagnostics(self, dyn, hyp):
+        x, g, x2, key = dyn['x'], dyn['g'], dyn['x2'], dyn['key']
         
         ### diagnostics ###
         equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
@@ -367,8 +390,10 @@ class Sampler:
         btrue = self.ground_truth_bias(x) #actual bias
         
         varew = self.C * jnp.power(equi_full, 3./8.)
-
-        return varew, bpair[0], bpair[1], btrue[0], btrue[1], equi_diag, equi_full
+        
+        dyn['key'] = key
+        
+        return [hyp['eps'], hyp['L'], dyn['vare'], varew, bpair[0], bpair[1], btrue[0], btrue[1], equi_diag, equi_full], dyn
     
 
     def sample(self, num_steps, x_initial='prior', random_key= None):
@@ -382,54 +407,40 @@ class Sampler:
                If debug, additional diagnostics plots will be produced.
         """
 
-        x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
+        state = self.initialize_paired(num_steps, random_key, x_initial)
         
         
         def step1(state):
             steps, history, decreassing, dyn, hyp = state
             dyn, nonans = self.paired_dynamics(dyn, hyp)
-            x, g, vare = dyn['x'], dyn['g'], dyn['vare']
             
             ### hyperparameters for the next step ###
-            equi, key = self.equipartition(x, g, key) #estimate the bias from the equipartition loss
+            equi, dyn['key'] = self.equipartition(dyn['x'], dyn['g'], dyn['key']) #estimate the bias from the equipartition loss
 
             history = jnp.concatenate((jnp.ones(1) * equi, history[:-1]))
-            decreassing *= (jnp.log10(history[-1] / history[0]) / delay_num > 0.0)
+            decreassing *= (history[-1] > history[0])
 
             varew = self.C * jnp.power(equi, 3./8.)
-            eps_factor = jnp.power(varew / vare, 1./6.) * nonans + (1-nonans) * 0.5
+            eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             hyp['eps'] = eps_factor * hyp['eps']
             
-            hyp['L'] = self.computeL(x)
+            hyp['L'] = self.computeL(dyn['x'])
             
             return (steps + 2, history, decreassing, dyn, hyp)
 
-
         def step1_debug(state):
-            """step1 and diagnostics"""
+            state = step1(state)
+            steps, history, decreassing, dyn, hyp = state
+            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp) 
+            diagnostics.append(_diagnostics)
+            return (steps, history, decreassing, dyn, hyp)
             
-            state = step1(state) # run step1
-            steps, history, decreassing, dyn, hyp = state #unpack
-            
-            diagnostics.append([hyp['eps'], hyp['L'], dyn['vare']] + self.compute_diagnostics(dyn['x'], dyn['g'], dyn['x2']))
-            
-            return state
-        
-        
 
         def cond(state):
-            steps, history, decreassing, x, u, l, g, x2, u2, l2, g2, vare, key, L, eps, sigma = state
-            return decreassing and (steps < num_steps)
+            steps, history, decreassing, dyn, hyp = state
+            return decreassing & (steps < num_steps * 0.8)
         
-            
-        delay = 0.05
-        delay_num = jnp.rint(delay * num_steps / self.grads_per_step).astype(int)
-        # initialize the hyperparameters            
-        sigma0 = jnp.ones(self.Target.d)
-        L = self.computeL(x0)
-        history = jnp.concatenate((jnp.ones(1) * 1e50, jnp.ones(delay_num-1) * jnp.inf))
-        state = (0, history, True, (x0, u0, l0, g0, x0, u0, l0, g0, 1e-3, key), (L, self.eps_initial, sigma0))
         
         if self.debug:
             diagnostics = []
@@ -437,33 +448,66 @@ class Sampler:
         else:
             state = jax.lax.while_loop(cond, step1, state)
         
-        
-        def step2(state, useless):
-            loss, dyn, hyp = state
-            dyn_new = jax.lax.scan(lambda _dyn, _useless: (self.paired_dynamics(_dyn, hyp)[0], None), xinit = dyn, steps = n, xs = None)[0]
-                        
-            loss_new = self.discretization_bias(dyn['x'], dyn['x2'])
-            
-            success = loss_new < loss
+        steps_used, history, decreassing, dyn, hyp = state
+        loss0 = self.discretization_bias(dyn['x'], dyn['x2'])[1]
 
-            dyn = dyn_new * success + dyn * (1-success)
-            loss = loss_new * success + loss * (1-success)
+        num_reps = 20
+        n = (num_steps - steps_used) // num_reps # some fraction of the steps left
+        
+        
+        def step2_hyp(l, d, dd, hyp):
+            """loss, dyn, dyn_new, hyp"""
             
-            eps_factor = 1 * success + 0.5 * (1-success)
+            ### if the loss did not decrease, don't accept those steps and decrease the stepsize###
+            ll = self.discretization_bias(dd['x'], dd['x2'])[1]
+            accept = ll < l
+            dd, ll, eps_factor = jax.tree_map(lambda new, old: jax.lax.select(accept, new, old), 
+                                                                 (dd, ll, 1.), (d, l, 0.5))
             hyp['eps'] = hyp['eps'] * eps_factor
             
-            return (loss, dyn, hyp), None
-
+            return ll, dd, hyp
         
-
-        x_final = state[-2][0]
-        
-        if self.debug:
-            self.debug_plots(diagnostics)
-            return x_final
-        else:    
-            return x_final
     
+        if not self.debug:
+            
+            def step2(state, useless):
+                loss, dyn, hyp = state
+                
+                ### do some number of steps ###
+                dyn_new = jax.lax.scan(lambda _dyn, _useless: (self.paired_dynamics(_dyn, hyp)[0], None), init = dyn, length = n, xs = None)[0]
+                
+                loss, dyn, hyp = step2_hyp(loss, dyn, dyn_new, hyp)
+                
+                return (loss, dyn, hyp), None
+
+            state2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = num_reps, xs = None)[0]
+            
+            return state2[-2]['x']
+        
+        else:
+                        
+            def step2_debug(state, useless):
+                loss, dyn, hyp = state
+                
+                def substep(_state, useless):
+                    _dyn = self.paired_dynamics(_state[-2], _state[-1])[0]
+                    d2, _dyn = self.compute_diagnostics(_dyn, hyp)
+                    return (_dyn, _state[-1]), d2
+                    
+                ### do some number of steps ###
+                _state, d1 = jax.lax.scan(substep, init = (dyn, hyp), length = n, xs = None)
+                dyn_new = _state[0]
+                    
+                loss, dyn, hyp = step2_hyp(loss, dyn, dyn_new, hyp)
+                
+                return (loss, dyn, hyp), d1
+            
+            state2, track = jax.lax.scan(step2_debug, init = (loss0, dyn, hyp), length = num_reps, xs = None)
+            diagnostics = np.concatenate((np.array(diagnostics), np.array(track).reshape(num_reps * n, 10)))
+
+            self.debug_plots(diagnostics)
+            return state[-2]['x']
+
     
 
     def debug_plots(self, diagnostics):
@@ -529,18 +573,6 @@ class Sampler:
         plt.savefig(self.plot_dir)
         plt.close()
 
-        
-
-def switch(tru, x, u, l, g, xx, uu, ll, gg):
-    """if there are nans we don't want to update the state"""
-
-    false = (1 - tru)
-    X = jnp.nan_to_num(xx) * tru + x * false
-    U = jnp.nan_to_num(uu) * tru + u * false
-    L = jnp.nan_to_num(ll) * tru + l * false
-    G = jnp.nan_to_num(gg) * tru + g * false
-    
-    return X, U, L, G
 
 
 def mywhile(cond_fun, body_fun, init_val):

@@ -123,8 +123,8 @@ targets = [[Banana(prior = 'prior'), 100],
 if __name__ == '__main__':
     chains = 2048
 
-    for i in [0, 1, 2, 3, 4, 5]:
+    for i in [0, ]:
         target, num_steps = targets[i]
         print(target.name)
-        sampler = EnsembleSampler(target, chains)
+        sampler = EnsembleSampler(target, chains, debug= True, plotdir= 'plots/tst_ensemble/')
         x = sampler.sample(num_steps)
