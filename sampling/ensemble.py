@@ -257,6 +257,7 @@ class Sampler:
         """run two sets of chains with different stepsizes."""
         x, u, l, g, x2, u2, l2, g2, vare, key = dyn['x'], dyn['u'], dyn['l'], dyn['g'], dyn['x2'], dyn['u2'], dyn['l2'], dyn['g2'], dyn['vare'], dyn['key']
         L, eps, sigma = hyp['L'], hyp['eps'], hyp['sigma']
+        
         ### two steps of the precise dynamics ###
         xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
         de = jnp.square(dK + ll - l) / self.Target.d
@@ -393,7 +394,7 @@ class Sampler:
         
         dyn['key'] = key
         
-        return [hyp['eps'], hyp['L'], dyn['vare'], varew, bpair[0], bpair[1], btrue[0], btrue[1], equi_diag, equi_full], dyn
+        return jnp.array([hyp['eps'], hyp['L'], dyn['vare'], varew, bpair[0], bpair[1], btrue[0], btrue[1], equi_diag, equi_full]), dyn
     
 
     def sample(self, num_steps, x_initial='prior', random_key= None):
@@ -433,7 +434,7 @@ class Sampler:
             state = step1(state)
             steps, history, decreassing, dyn, hyp = state
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp) 
-            diagnostics.append(_diagnostics)
+            diagnostics.append(np.array(_diagnostics))
             return (steps, history, decreassing, dyn, hyp)
             
 
@@ -451,23 +452,31 @@ class Sampler:
         steps_used, history, decreassing, dyn, hyp = state
         loss0 = self.discretization_bias(dyn['x'], dyn['x2'])[1]
 
-        num_reps = 20
-        n = (num_steps - steps_used) // num_reps # some fraction of the steps left
+        num_reps = 30
+        n = (num_steps - steps_used) // (2*num_reps) # some fraction of the steps left
         
-        
+        # def step2_hyp(l, d, dd, hyp):
+        #     """loss, dyn, dyn_new, hyp"""
+            
+        #     ### if the loss did not decrease, don't accept those steps and decrease the stepsize###
+        #     ll = self.discretization_bias(dd['x'], dd['x2'])[1]
+        #     accept = ll < l
+        #     dd, ll, eps_factor = jax.tree_map(lambda new, old: jax.lax.select(accept, new, old), 
+        #                                                          (dd, ll, 1.), (d, l, 0.5))
+        #     hyp['eps'] = hyp['eps'] * eps_factor
+            
+        #     return ll, dd, hyp
+    
         def step2_hyp(l, d, dd, hyp):
             """loss, dyn, dyn_new, hyp"""
             
-            ### if the loss did not decrease, don't accept those steps and decrease the stepsize###
+            ### if the loss did not decrease, decrease the stepsize###
             ll = self.discretization_bias(dd['x'], dd['x2'])[1]
-            accept = ll < l
-            dd, ll, eps_factor = jax.tree_map(lambda new, old: jax.lax.select(accept, new, old), 
-                                                                 (dd, ll, 1.), (d, l, 0.5))
-            hyp['eps'] = hyp['eps'] * eps_factor
+            hyp['eps'] = hyp['eps'] * jax.lax.select(ll < l, 1., 0.8)
             
             return ll, dd, hyp
         
-    
+        
         if not self.debug:
             
             def step2(state, useless):
@@ -503,18 +512,20 @@ class Sampler:
                 return (loss, dyn, hyp), d1
             
             state2, track = jax.lax.scan(step2_debug, init = (loss0, dyn, hyp), length = num_reps, xs = None)
+         
             diagnostics = np.concatenate((np.array(diagnostics), np.array(track).reshape(num_reps * n, 10)))
-
-            self.debug_plots(diagnostics)
+            self.debug_plots(diagnostics, steps_used)
             return state[-2]['x']
 
     
 
-    def debug_plots(self, diagnostics):
+    def debug_plots(self, diagnostics, steps1):
     
         eps, vare, varew, L, bpair_avg, bpair_max, btrue_avg, btrue_max, equi_diag, equi_full = np.array(diagnostics).T
         
         print(find_crossing(btrue_max, 0.01) * 2)
+        
+        end_stage1 = lambda: plt.plot(steps1 * np.ones(2), plt.gca().get_ylim(), color = 'grey', alpha = 0.2)
         
         num = 4
         plt.figure(figsize= (6, 3 * num))
@@ -543,6 +554,7 @@ class Sampler:
         plt.ylabel(r'$\mathrm{bias}^2$')
         plt.ylim(1e-4, 1e2)
         plt.yscale('log')
+        end_stage1()
         
         ### stepsize tuning ###
         plt.subplot(num, 1, 2)
@@ -558,6 +570,7 @@ class Sampler:
         plt.plot(steps, eps, '.-', color='royalblue')
         plt.ylabel(r"$\epsilon$")
         plt.yscale('log')
+        end_stage1()
         
         ### L tuning ###
         plt.subplot(num, 1, 4)
@@ -565,7 +578,7 @@ class Sampler:
         L0 = self.alpha * jnp.sqrt(jnp.sum(self.Target.second_moments))
         plt.plot(steps, L, '.-', color='tab:orange')
         plt.plot(steps, L0 * jnp.ones(steps.shape), '-', color='black')
-
+        end_stage1()
         plt.ylabel("L")
         #plt.yscale('log')
         plt.xlabel('# gradient evaluations')
