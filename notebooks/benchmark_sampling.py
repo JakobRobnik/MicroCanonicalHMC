@@ -13,11 +13,13 @@ home = os.getcwd() + '/../'
 sys.path.append(home)
 from sampling import sampler as mchmc
 from sampling import standardKinetic
-from sampling.benchmark_targets import *
+from benchmarks.benchmarks_mchmc import *
 from sampling import grid_search
 from HMC import myHMC
-from sampling import german_credit
+from benchmarks import german_credit
 
+
+print(jax.local_device_count())
 ### Runs the bencmark problems. """
 
 def parallel_run(function, values):
@@ -385,6 +387,7 @@ def plot_energy_time_chains():
 
 if __name__ == '__main__':
     #ill_conditioned()
-    ill_conditioned_tuning_free()
+    0
+    #ill_conditioned_tuning_free()
     #table1()
 

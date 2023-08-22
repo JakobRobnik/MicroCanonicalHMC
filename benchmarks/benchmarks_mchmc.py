@@ -587,7 +587,6 @@ class DiagonalPreconditioned():
 
 
 
-
 def get_contour_plot(target, x, y):
     """Args:
             target with target.nlogp defined (configuration space must be two dimensional)
@@ -608,7 +607,6 @@ def get_contour_plot(target, x, y):
 
 
 
-
 def check_gradient(target, x):
     """check the analytical gradient of the target at point x"""
 
@@ -621,7 +619,6 @@ def check_gradient(target, x):
     print('numerical grad: ', approx_grad)
     print('analytical grad: ', grad)
     print('ratio: ', grad / approx_grad)
-
 
 
 

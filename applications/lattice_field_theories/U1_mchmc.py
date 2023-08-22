@@ -49,32 +49,24 @@ def plot_mixing():
 def topo_sus(side, beta):
     """compute topological susceptibility"""
 
-    target = u1.Theory(side, beta)
+    target = u1.Theory(side, beta, observable= 'topo sin')
     alpha = 1.0
-    beta_eps= 0.03
-    sampler = Sampler(target, L= np.sqrt(target.d) * alpha, eps= np.sqrt(target.d) * beta_eps, integrator='LF')
-    #sampler.tune_hyperparameters(dialog= True)
+    beta_eps= 0.1
+    sampler = Sampler(target, L= np.sqrt(target.d) * alpha, eps= np.sqrt(target.d) * beta_eps, integrator='LF', frac_tune1= 0., frac_tune2= 0., frac_tune3= 0., diagonal_preconditioning= False)
 
     samples = 1000000
-    Q, burnin = sampler.sample(samples, num_chains= num_cores, output='normal')
-    mask = burnin < samples//2 #reliable chains
-    if np.sum(mask) < num_cores//2: #most chains are unreliable
-        raise ValueError('Too short sampling')
+    burnin = samples//10
+    Q, E, L, eps = sampler.sample(samples, num_chains= num_cores * 2, output= 'detailed')
+    #print(np.average(np.square(E)) / target.d)
+    Q = Q[:, burnin:, 0]
 
-    burnin= np.max(burnin[mask])
-    Q = Q[mask, burnin:, 0]
-    # charge = np.concatenate(Q)
-    # q_range = [q for q in range(-5, 6)]
-    # prob = np.array([np.sum(np.abs(charge-q) < 1e-3) for q in q_range]) / len(charge)
-    # plt.plot(q_range, prob, 'o')
-    # plt.show()
     return np.average(np.square(Q), axis = 1) / side**2
 
 
 def plot_topo_sus():
     """show topological susceptibility as a function of beta"""
 
-    chi0 = np.loadtxt('theories/topo_susceptibility_ground_truth_L8.csv')
+    chi0 = np.loadtxt(dir + '/theories/topo_susceptibility_ground_truth_L8.csv')
     beta = np.arange(1, 11)
 
     chi = np.array([topo_sus(8, b) for b in beta])
@@ -91,7 +83,4 @@ def plot_topo_sus():
 
 
 
-
-#plot_topo_sus()
-plot_mixing()
-#print(np.average(topo_sus(8, 1.0)))
+plot_topo_sus()
