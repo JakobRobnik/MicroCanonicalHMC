@@ -56,7 +56,7 @@ def topo_sus(side, beta):
 
     samples = 1000000
     burnin = samples//10
-    Q, E, L, eps = sampler.sample(samples, num_chains= num_cores * 2, output= 'detailed')
+    Q, E, L, eps = sampler.sample(samples, num_chains= num_cores * 10, output= 'detailed')
     #print(np.average(np.square(E)) / target.d)
     Q = Q[:, burnin:, 0]
 
