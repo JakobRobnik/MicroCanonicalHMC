@@ -35,7 +35,7 @@ def random_unit_vector(d):
     def given_key(random_key):
         """Generates a random (isotropic) unit vector."""
         key, subkey = jax.random.split(random_key)
-        u = jax.random.normal(subkey, shape = (d, ), dtype = 'float64')
+        u = jax.random.normal(subkey, shape = (d, ))
         u /= jnp.sqrt(jnp.sum(jnp.square(u)))
         return u, key
     return given_key
@@ -99,7 +99,7 @@ def partially_refresh_momentum(d, nu):
     def func(u, random_key):
       """Adds a small noise to u and normalizes."""
       key, subkey = jax.random.split(random_key)
-      z = nu * jax.random.normal(subkey, shape = (d, ), dtype = 'float64')
+      z = nu * jax.random.normal(subkey, shape = (d, ))
 
       return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
     return func 
