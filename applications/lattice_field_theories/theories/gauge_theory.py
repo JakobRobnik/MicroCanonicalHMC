@@ -10,21 +10,28 @@ class Theory:
     """Lattice U(1) Euclidean gauge theory: lagrangian = -(1/2) sum_{mu < nu} F_{mu nu}^2
         References:
              [1] https://arxiv.org/pdf/2101.08176.pdf
+             
+        The variables (links) are described as elements of the Lie algebra theta, such that U = e^{i theta}.
     """
 
-    def __init__(self, L, beta, observable):
+    def __init__(self, Lt, Lx, beta, observable, Oparams = None):
         """Args:
-                L:lattice side
+                lattice size = (Lt, Lx)
                 beta: inverse temperature
                 observable: which quantity to track. Currently supported:
                             'all': all link variables
                             'topo sin': topological charge with the sinus in the definition (easy to compare with ground truth)
                             'topo int': integer valued topological charge definition
+                            'Wilson loop': Wilson loop (averaged over shifts)
+                Oparams: an array of parameters for the observable. Observable will be an array of the same size. 
+                            e.g. Wilson loop depends on the parameters nt and nx. Passing [[3, 3], [5, 3]], will produce observable = [W(3, 3), W(5, 3)].
+                            can also be 'all' for Wilson which will compute all sizes 0 < nt < Lt , 0 < nx <= Lx/2 
         """
-        self.d = 2 * L**2
-        self.L = L
+        self.d = 2 * Lt*Lx
+        self.Lt, self.Lx, self.beta = Lt, Lx, beta
         self.beta = beta
-        self.link_shape = (2, L, L)
+        self.unflatten = lambda links_flattened: links_flattened.reshape(2, Lt, Lx)
+        self.locs = jnp.array([[i//Lx, i%Lx] for i in range(Lt*Lx)]) #the set of all possible lattice sites
 
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
@@ -34,13 +41,22 @@ class Theory:
             self.transform = lambda links: self.topo_charge_sin(links) * jnp.ones(1)
         elif observable == 'topo int':
             self.transform = lambda links: self.topo_charge_int(links) * jnp.ones(1)
+        elif observable == 'Wilson loop':
+            if Oparams == None:
+                raise ValueError('Wilson loop observable requires parameters nt and nx.')
+            elif Oparams == 'all':
+                nmax = Lx // 2
+                sizes = [[1 + i//nmax, 1 + i%nmax] for i in range((Lt-1)*nmax)]
+            else:
+                sizes = Oparams
+            self.transform = lambda links: jnp.array([self.Wilson_loop(links, *ntnx) for ntnx in sizes])
         else:
             raise ValueError('Observable = ' + observable + ' is not valid parameter.')
 
 
     def nlogp(self, links):
         """Equation 27 in reference [1]"""
-        action_density = jnp.cos(self.plaquete(links.reshape(self.link_shape)))
+        action_density = jnp.cos(self.plaquete(self.unflatten(links)))
         return -self.beta * jnp.sum(action_density)
 
 
@@ -55,7 +71,7 @@ class Theory:
     def topo_charge_int(self, links):
         """Topological charge, an integer. Equation 30 in reference [1]."""
 
-        x = self.plaquete(links.reshape(self.link_shape)) / (2 * jnp.pi)
+        x = self.plaquete(self.unflatten(links)) / (2 * jnp.pi)
         x = jnp.remainder(x + 0.5, 1.0) - 0.5
 
         return jnp.sum(x)
@@ -64,17 +80,26 @@ class Theory:
     def topo_charge_sin(self, links):
         """Topological charge, not an integer"""
     
-        x = self.plaquete(links.reshape(self.link_shape))
+        x = self.plaquete(self.unflatten(links))
     
         return jnp.sum(jnp.sin(x)) / (2 * np.pi)
     
     
-    def Willson_loop(self, links):
-        # 
-        
-        links[]
+    def Wilson_loop(self, links_flattened, nt, nx):
+        """average of all possible Wilson loop shifts (to improve the statistic)"""    
     
+        links = self.unflatten(links_flattened)
 
+        def Willson_loop_single(loc):
+            """Real part of the Wilson loop: (T, X) -> (T+nt, X) -> (T+nt, X+nx) -> (T, X+nx) -> (T, X),
+                where loc = [T, X]"""
+            T, X = loc
+            return jnp.cos(jnp.sum(links[0, T:T+nt, X]) + jnp.sum(links[1, T+nt, X:X+nx]) - jnp.sum(links[0, T:T+nt, X + nx]) - jnp.sum(links[1, T, X:X+nx]))
+        
+        return jnp.average(jax.lax.map(Willson_loop_single, self.locs))
+    
+    
+    
     def prior_draw(self, key):
         """uniform angles [0, 2pi)"""
         return 2 * jnp.pi * jax.random.uniform(key, shape = (self.d, ), dtype = 'float64')
