@@ -42,6 +42,10 @@ class Theory:
         elif observable == 'topo int':
             self.transform = lambda links: self.topo_charge_int(links) * jnp.ones(1)
         elif observable == 'Wilson loop':
+            
+            average_shifts = False
+            wl = self.Wilson_loop if average_shifts else self.Wilson_loop_single
+            
             if Oparams == None:
                 raise ValueError('Wilson loop observable requires parameters nt and nx.')
             elif Oparams == 'all':
@@ -49,7 +53,7 @@ class Theory:
                 sizes = [[1 + i//nmax, 1 + i%nmax] for i in range((Lt-1)*nmax)]
             else:
                 sizes = Oparams
-            self.transform = lambda links: jnp.array([self.Wilson_loop(links, *ntnx) for ntnx in sizes])
+            self.transform = lambda links: jnp.array([wl(links, *ntnx) for ntnx in sizes])
         else:
             raise ValueError('Observable = ' + observable + ' is not valid parameter.')
 
@@ -85,18 +89,27 @@ class Theory:
         return jnp.sum(jnp.sin(x)) / (2 * np.pi)
     
     
-    def Wilson_loop(self, links_flattened, nt, nx):
-        """average of all possible Wilson loop shifts (to improve the statistic)"""    
     
-        links = self.unflatten(links_flattened)
-
-        def Willson_loop_single(loc):
-            """Real part of the Wilson loop: (T, X) -> (T+nt, X) -> (T+nt, X+nx) -> (T, X+nx) -> (T, X),
-                where loc = [T, X]"""
-            T, X = loc
-            return jnp.cos(jnp.sum(links[0, T:T+nt, X]) + jnp.sum(links[1, T+nt, X:X+nx]) - jnp.sum(links[0, T:T+nt, X + nx]) - jnp.sum(links[1, T, X:X+nx]))
+    def Wilson_loop_single(self, links_flattened, nt, nx):
+        """Real part of the Wilson loop, averaged over the shifts"""
         
-        return jnp.average(jax.lax.map(Willson_loop_single, self.locs))
+        links = self.unflatten(links_flattened)
+        return jnp.cos(jnp.sum(links[0, :nt, 0]) + jnp.sum(links[1, nt, :nx]) - jnp.sum(links[0, :nt, nx]) - jnp.sum(links[1, 0, :nx]))    
+            
+        
+        
+    def Wilson_loop(self, links_flattened, nt, nx):
+        """Real part of the Wilson loop, averaged over the shifts"""
+        
+        
+        links0 = self.unflatten(links_flattened)
+
+        def Wilson_loop_single(loc):
+            """Real part of the Wilson loop: (0, 0) -> (nt, 0) -> (nt, nx) -> (0, nx) -> (0, 0) shifted to loc = (M, N)"""
+            links = jnp.roll(links0, loc, axis = (0, 1))
+            return jnp.cos(jnp.sum(links[0, :nt, 0]) + jnp.sum(links[1, nt, :nx]) - jnp.sum(links[0, :nt, nx]) - jnp.sum(links[1, 0, :nx]))    
+            
+        return jnp.average(jax.lax.map(Wilson_loop_single, self.locs))
     
     
     
@@ -105,9 +118,12 @@ class Theory:
         return 2 * jnp.pi * jax.random.uniform(key, shape = (self.d, ), dtype = 'float64')
 
 
+
     def chiq(self, Q):
         """topological susceptibility"""
         return jnp.average(jnp.square(Q))
+    
+    
 
 
 def thermodynamic_ground_truth(beta):

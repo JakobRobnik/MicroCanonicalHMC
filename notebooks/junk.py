@@ -4,4 +4,5 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-print(np.reshape(np.arange(12), (4, 3)))
+plt.plot(np.arange(3), np.arange(3))
+plt.show()
