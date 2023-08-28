@@ -41,16 +41,46 @@ class PotentialComputation:
         self.logW = jnp.log(Wavg.reshape(chains, self.Lt-1, self.Lx//2))
         
 
-    def linfit(self):
-        V, errV = jax.vmap(self.linfit_single, 1)(self.logW)
+    def plot_potential(self):
         
+        chains, _, num_nx = self.logW.shape
+        
+        # compute the linear fits to obtain the potential
+        Vdata = jnp.array([[self.linfit(self.logW[i, :, j]) for j in range(num_nx)] for i in range(chains)])
+        
+    
+        # plot the potential
+        ff = 24
+        plt.rcParams['xtick.labelsize'] = ff
+        plt.rcParams['ytick.labelsize'] = ff
+        plt.figure(figsize= (14, 5))
+        ax = plt.gca()
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        
+        plt.title('lattice = 16x16, beta = 4', fontsize = ff)
+
+        nx = np.arange(num_nx) + 1
+        for chain in range(chains):
+            plt.errorbar(nx, Vdata[chain, :, 0], yerr = Vdata[chain, :, 1], fmt = 'o', capsize = 3)
+        
+        
+        plt.xlabel(r'$n_x$', fontsize = ff)
+        plt.ylabel(r'$a V(a n_x)$', fontsize = ff)
+        plt.savefig(dir + '/potential_averaging.png')
+        plt.xlim(0, 8.5)
+        plt.ylim(0, 0.7)
+        plt.tight_layout()
+        plt.show()
 
 
-    def linfit_single(self, _y):
+
+
+    def linfit(self, _y):
         """Seljak notes, lecture 2"""
         
         nonans = jnp.isfinite(_y)
-        x = jnp.arange(1, self.Lt)[nans]
+        x = jnp.arange(1, self.Lt)[nonans]
         y = _y[nonans]
         S = len(x)
         Sx = jnp.sum(x)
@@ -79,23 +109,8 @@ def linfit(_x, _y):
 
 
 
-
 Lt, Lx, beta = 16, 16, 4.
 
 Pot = PotentialComputation(Lt, Lx, beta)
 Pot.mchmc()
-
-
-y = Pot.logW[0, :, 3]
-x = jnp.arange(1, Lt)
-
-plt.title('Euclidean time decay \nnx = 4, beta = 4, lattice = 16x16')
-plt.plot(x, y, 'o')
-
-z, Cov = linfit(x, y)
-plt.plot(x, z[0] + z[1] * x, alpha = 0.7, color = 'black')
-
-plt.xlabel('nt')
-plt.ylabel('-log W')
-plt.savefig(dir + '/Euclidean time decay.png')
-plt.show()
+Pot.plot_potential()

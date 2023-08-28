@@ -36,26 +36,31 @@ def find_crossing(array, cutoff):
     #return jnp.sum(track) #total number of indices for which array[m] < cutoff
 
 
-d = 100
 
-# ground truth for the standard Gaussian
-xsq0 = jnp.ones(d)
-varxsq0 = 2 * xsq0
+def example():
+    d = 100
 
-#exact samples
-num_chains, num_samples = 5, 200
-X = jax.random.normal(key = jax.random.PRNGKey(42), shape = (num_chains, num_samples, d))
+    # ground truth for the standard Gaussian
+    xsq0 = jnp.ones(d)
+    varxsq0 = 2 * xsq0
 
-bsq= get_bias(X, xsq0, varxsq0)
+    #exact samples
+    num_chains, num_samples = 5, 200
+    X = jax.random.normal(key = jax.random.PRNGKey(42), shape = (num_chains, num_samples, d))
 
-print(find_crossing(bsq, 0.01))
-#print('bsq = 0.01 at ' + str(find_crossing(bsq, 0.01) + ' steps.'))
+    bsq= get_bias(X, xsq0, varxsq0)
 
-plt.plot(bsq, 'o-', label = 'exact samples')
-plt.plot(1./np.arange(len(bsq)), color = 'black', label= '1/n')
-plt.legend()
-plt.xlabel('steps')
-plt.ylabel(r'$b^2$')
-plt.xscale('log')
-plt.yscale('log')
-plt.show()
+    print(find_crossing(bsq, 0.01))
+    #print('bsq = 0.01 at ' + str(find_crossing(bsq, 0.01) + ' steps.'))
+
+    plt.plot(bsq, 'o-', label = 'exact samples')
+    plt.plot(1./np.arange(len(bsq)), color = 'black', label= '1/n')
+    plt.legend()
+    plt.xlabel('steps')
+    plt.ylabel(r'$b^2$')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.show()
+
+
+example()

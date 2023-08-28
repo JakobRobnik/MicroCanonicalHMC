@@ -43,7 +43,7 @@ class Theory:
             self.transform = lambda links: self.topo_charge_int(links) * jnp.ones(1)
         elif observable == 'Wilson loop':
             
-            average_shifts = False
+            average_shifts = True
             wl = self.Wilson_loop if average_shifts else self.Wilson_loop_single
             
             if Oparams == None:
