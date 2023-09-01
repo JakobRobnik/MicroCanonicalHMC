@@ -88,8 +88,7 @@ class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, chains, 
-                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full', delay_frac = 0.05,
-                 debug= True, plotdir = None):
+                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full', delay_frac = 0.05, neff = 20, debug= True, plotdir = None):
         """Args:
                 Target: The target distribution class.
                 chains: The number of chains to run in parallel. 
@@ -103,6 +102,7 @@ class Sampler:
                 C: Proportionality constant for the stepsize.
                 equipartition_definition: 'full' or 'diagonal'. See the paper.
                 delay_frac: TODO
+                neff: effective number of steps used to determine the stepsize in the adaptive step
                 
                 debug: If True, the non-jax while loop will be run in sample. Diagnostics like the energy error, bias and stepsize will be saved at each step.
                 plotdir: If debug, diagnostics plots will be produced and saved in plotdir.
@@ -137,6 +137,7 @@ class Sampler:
         self.C = C # proportionality constant in determining the stepsize (varew \propto C)
         self.delay_frac = 0.05
         
+        self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
         
         self.debug = debug 
         if debug:
@@ -451,61 +452,44 @@ class Sampler:
             state = jax.lax.while_loop(cond, step1, state)
         
         steps_used, history, decreassing, dyn, hyp = state
+        steps_left = num_steps - steps_used
         loss0 = self.discretization_bias(dyn['x'], dyn['x2'])[1]
-
-        num_reps = 30
-        n = (num_steps - steps_used) // (2*num_reps) # some fraction of the steps left
         
+        happy = lambda loss_new, loss: jnp.exp(-(loss_new - loss))
+        
+        
+        def step2(state, useless):
+            adap, dyn, hyp = state
+            dyn, nonans = self.paired_dynamics(dyn, hyp)
+            
+            ### hyperparameters for the next step ###
+            
+            loss_new = self.discretization_bias(dyn['x'], dyn['x2'])[1]
+            
+            util = happy(loss_new, adap[0])
+            
+            adap_new = (loss_new, util * hyp['eps'] + self.gamma * adap[1], util + self.gamma * adap[2])
+            hyp['eps'] = adap_new[0] / adap_new[1]
+            
+            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp) 
+
+            return (adap_new, dyn, hyp), _diagnostics
     
-        def step2_hyp(loss_old, loss_new, hyp):
-            """loss, dyn, dyn_new, hyp"""
-            
-            ### if the loss did not decrease, decrease the stepsize###
-            hyp['eps'] = hyp['eps'] * jax.lax.select(loss_new < loss_old, 1., 0.8)
-            
-            return hyp
         
-        
-        if not self.debug:
+        if self.debug:
             
-            def step2(state, useless):
-                loss_old, dyn, hyp = state
-                
-                ### do some number of steps ###
-                dyn = jax.lax.scan(lambda _dyn, _useless: (self.paired_dynamics(_dyn, hyp)[0], None), init = dyn, length = n, xs = None)[0]
-                
-                loss_new = self.discretization_bias(dyn['x'], dyn['x2'])[1]
-                
-                hyp = step2_hyp(loss_new - loss_old, hyp)
-                return (loss_new, dyn, hyp), None
+            adap = (loss0, 0., 0.)
+            state2, diagnostics2 = jax.lax.scan(step2, init = (adap, dyn, hyp), length = steps_left // 2, xs = None)
+            
+            
+            diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
+            self.debug_plots(diagnostics, steps_used)
+            
+            return state[-2]['x']
 
-            state2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = num_reps, xs = None)[0]
-            
-            return state2[-2]['x']
         
         else:
             raise ValueError('debug = False option is not implemented yet.')     
-            # def step2_debug(state, useless):
-            #     loss_old, dyn, hyp = state
-                
-            #     def substep(_state, useless):
-            #         _dyn = self.paired_dynamics(_state[-2], _state[-1])[0]
-            #         d2, _dyn = self.compute_diagnostics(_dyn, hyp)
-            #         return (_dyn, _state[-1]), d2
-                    
-            #     ### do some number of steps ###
-            #     _state, d1 = jax.lax.scan(substep, init = (dyn, hyp), length = n, xs = None)
-            #     dyn = _state[0]
-                    
-            #     hyp, loss_new = step2_hyp(loss_old, hyp)
-                
-            #     return (loss_new, dyn, hyp), d1
-            
-            # state2, track = jax.lax.scan(step2_debug, init = (loss0, dyn, hyp), length = num_reps, xs = None)
-         
-            # diagnostics = np.concatenate((np.array(diagnostics), np.array(track).reshape(num_reps * n, 10)))
-            # self.debug_plots(diagnostics, steps_used)
-            # return state[-2]['x']
 
     
 
