@@ -34,31 +34,14 @@ targets = [[Banana(prior = 'prior'), 100, 30000],
         [StochasticVolatility(), 1500, 50000]]
 
 
-def ess_cross_chain(x, chains = 128, nt = 100):
-    """Number of gradient evaluations (all chains) / effective sample size.
-    Computed from cross chain correlations (using tensorflow probability's effective_sample_size: https://www.tensorflow.org/probability/api_docs/python/tfp/mcmc/effective_sample_size)
-        Args:
-            x: shape = (chains, time, dimensions)
-            chains: how many chains to group together
-            nt: only the last nt time points are taken
-    """
-    chains = 128
-    repeat = x.shape[0]//chains
-    X = jnp.swapaxes(jnp.reshape(x[:, -nt:, :], (repeat, chains, nt, x.shape[2])), 0, 3) # shape = (dimensions, chains, time, repeat)
-    y = jnp.swapaxes(jnp.concatenate((X, jnp.square(X))), 0, 2)  #shape = (time, chains, 2 * dimensions, repeat)
-    y = tf.convert_to_tensor(np.array(y), dtype = 'float64') 
-    ess = tfp.mcmc.effective_sample_size(y, cross_chain_dims= 1, filter_beyond_positive_pairs=True).numpy() #shape = (2 * dimensions, repeat)
-    
-    return 2 * chains * nt / jnp.median(jnp.min(ess, axis = 0))
-    
-    
 def ensemble_run():
-    chains = 4096
+    
+    chains = 2048
 
-    for i in [1, ]:
+    for i in [0, ]:
         target, num_steps, _ = targets[i]
         print(target.name)
-        sampler = EnsembleSampler(target, chains)
+        sampler = EnsembleSampler(target, chains, '.')
         x = sampler.sample(num_steps)
         #ess_cross_chain(x)
         #print(grads, ess)

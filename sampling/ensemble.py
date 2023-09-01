@@ -436,7 +436,7 @@ class Sampler:
             state = step1(state)
             steps, history, decreassing, dyn, hyp = state
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp) 
-            diagnostics.append(np.array(_diagnostics))
+            diagnostics1.append(np.array(_diagnostics))
             return (steps, history, decreassing, dyn, hyp)
             
 
@@ -446,7 +446,7 @@ class Sampler:
         
         
         if self.debug:
-            diagnostics = []
+            diagnostics1 = []
             state = mywhile(cond, step1_debug, state)
         else:
             state = jax.lax.while_loop(cond, step1, state)
@@ -471,7 +471,7 @@ class Sampler:
             adap_new = (loss_new, util * hyp['eps'] + self.gamma * adap[1], util + self.gamma * adap[2])
             hyp['eps'] = adap_new[0] / adap_new[1]
             
-            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp) 
+            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
 
             return (adap_new, dyn, hyp), _diagnostics
     
