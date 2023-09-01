@@ -21,8 +21,7 @@ targets = [[Banana(prior = 'prior'), 100],
         [GermanCredit(), 400],
         [Brownian(), 500],
         [IRT(), 700],
-        [StochasticVolatility(), 2000]]
-
+        [StochasticVolatility(), 1000]]
 
 
 if __name__ == '__main__':
@@ -31,12 +30,16 @@ if __name__ == '__main__':
     for i in [5]:
         target, num_steps = targets[i]
         print(target.name)
-        sampler = EnsembleSampler(target, chains, debug= True, plotdir= 'plots/tst_ensemble/')
+        sampler = EnsembleSampler(target, chains, debug= True, plotdir= 'plots/tst_ensemble/', equipartition_definition)
+        # key = jax.random.PRNGKey(42)
+        # keys_all = jax.random.split(key, sampler.chains + 1)
+        # x = sampler.Target.prior_draw(keys_all[1:])
+        # key = keys_all[0]
+        # l, g = sampler.Target.grad_nlogp(x)
+        # print(l.shape, g.shape)
+
         x = sampler.sample(num_steps)
         
-        
-        
-
 
 # def sequential_run():
 

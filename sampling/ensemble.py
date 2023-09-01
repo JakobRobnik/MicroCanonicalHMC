@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 from sampling.sampler import find_crossing
 
+
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
 
 
@@ -55,7 +56,7 @@ class pmap_target:
         pvgrad= jax.pmap(jax.vmap(target.grad_nlogp))
         
         def grad(x):
-            l, g = jnp.array(pvgrad(x.reshape(devices, chains // devices, target.d)))
+            l, g = pvgrad(x.reshape(devices, chains // devices, target.d))
             return l.reshape(chains), g.reshape(chains, target.d)
                 
         self.grad_nlogp = grad
@@ -71,7 +72,7 @@ class pmap_target:
 
         if hasattr(target, 'prior_draw'):
             pvdraw= jax.pmap(jax.vmap(target.prior_draw))
-            self.transform = lambda x: jnp.array(pvdraw(x.reshape(devices, chains // devices))).reshape(chains)
+            self.prior_draw = lambda keys: jnp.array(pvdraw(keys.reshape(devices, chains // devices, 2))).reshape(chains, target.d)
 
 
         if hasattr(target, 'second_moments'):
@@ -332,7 +333,7 @@ class Sampler:
 
 
     def computeL(self, x):
-        return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0])
+        return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0]) #average over the ensemble, sum over th
 
 
     def equipartition_fullrank(self, x, g, random_key):
@@ -455,73 +456,62 @@ class Sampler:
         num_reps = 30
         n = (num_steps - steps_used) // (2*num_reps) # some fraction of the steps left
         
-        # def step2_hyp(l, d, dd, hyp):
-        #     """loss, dyn, dyn_new, hyp"""
-            
-        #     ### if the loss did not decrease, don't accept those steps and decrease the stepsize###
-        #     ll = self.discretization_bias(dd['x'], dd['x2'])[1]
-        #     accept = ll < l
-        #     dd, ll, eps_factor = jax.tree_map(lambda new, old: jax.lax.select(accept, new, old), 
-        #                                                          (dd, ll, 1.), (d, l, 0.5))
-        #     hyp['eps'] = hyp['eps'] * eps_factor
-            
-        #     return ll, dd, hyp
     
-        def step2_hyp(l, d, dd, hyp):
+        def step2_hyp(loss_old, loss_new, hyp):
             """loss, dyn, dyn_new, hyp"""
             
             ### if the loss did not decrease, decrease the stepsize###
-            ll = self.discretization_bias(dd['x'], dd['x2'])[1]
-            hyp['eps'] = hyp['eps'] * jax.lax.select(ll < l, 1., 0.8)
+            hyp['eps'] = hyp['eps'] * jax.lax.select(loss_new < loss_old, 1., 0.8)
             
-            return ll, dd, hyp
+            return hyp
         
         
         if not self.debug:
             
             def step2(state, useless):
-                loss, dyn, hyp = state
+                loss_old, dyn, hyp = state
                 
                 ### do some number of steps ###
-                dyn_new = jax.lax.scan(lambda _dyn, _useless: (self.paired_dynamics(_dyn, hyp)[0], None), init = dyn, length = n, xs = None)[0]
+                dyn = jax.lax.scan(lambda _dyn, _useless: (self.paired_dynamics(_dyn, hyp)[0], None), init = dyn, length = n, xs = None)[0]
                 
-                loss, dyn, hyp = step2_hyp(loss, dyn, dyn_new, hyp)
+                loss_new = self.discretization_bias(dyn['x'], dyn['x2'])[1]
                 
-                return (loss, dyn, hyp), None
+                hyp = step2_hyp(loss_new - loss_old, hyp)
+                return (loss_new, dyn, hyp), None
 
             state2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = num_reps, xs = None)[0]
             
             return state2[-2]['x']
         
         else:
-                        
-            def step2_debug(state, useless):
-                loss, dyn, hyp = state
+            raise ValueError('debug = False option is not implemented yet.')     
+            # def step2_debug(state, useless):
+            #     loss_old, dyn, hyp = state
                 
-                def substep(_state, useless):
-                    _dyn = self.paired_dynamics(_state[-2], _state[-1])[0]
-                    d2, _dyn = self.compute_diagnostics(_dyn, hyp)
-                    return (_dyn, _state[-1]), d2
+            #     def substep(_state, useless):
+            #         _dyn = self.paired_dynamics(_state[-2], _state[-1])[0]
+            #         d2, _dyn = self.compute_diagnostics(_dyn, hyp)
+            #         return (_dyn, _state[-1]), d2
                     
-                ### do some number of steps ###
-                _state, d1 = jax.lax.scan(substep, init = (dyn, hyp), length = n, xs = None)
-                dyn_new = _state[0]
+            #     ### do some number of steps ###
+            #     _state, d1 = jax.lax.scan(substep, init = (dyn, hyp), length = n, xs = None)
+            #     dyn = _state[0]
                     
-                loss, dyn, hyp = step2_hyp(loss, dyn, dyn_new, hyp)
+            #     hyp, loss_new = step2_hyp(loss_old, hyp)
                 
-                return (loss, dyn, hyp), d1
+            #     return (loss_new, dyn, hyp), d1
             
-            state2, track = jax.lax.scan(step2_debug, init = (loss0, dyn, hyp), length = num_reps, xs = None)
+            # state2, track = jax.lax.scan(step2_debug, init = (loss0, dyn, hyp), length = num_reps, xs = None)
          
-            diagnostics = np.concatenate((np.array(diagnostics), np.array(track).reshape(num_reps * n, 10)))
-            self.debug_plots(diagnostics, steps_used)
-            return state[-2]['x']
+            # diagnostics = np.concatenate((np.array(diagnostics), np.array(track).reshape(num_reps * n, 10)))
+            # self.debug_plots(diagnostics, steps_used)
+            # return state[-2]['x']
 
     
 
     def debug_plots(self, diagnostics, steps1):
     
-        eps, vare, varew, L, bpair_avg, bpair_max, btrue_avg, btrue_max, equi_diag, equi_full = np.array(diagnostics).T
+        eps, L, vare, varew, bpair_avg, bpair_max, btrue_avg, btrue_max, equi_diag, equi_full = np.array(diagnostics).T
         
         print(find_crossing(btrue_max, 0.01) * 2)
         
@@ -563,6 +553,7 @@ class Sampler:
         plt.plot(steps, varew, '.-', color='purple', label = 'targeted')
         plt.ylabel("Var[E]/d")
         plt.yscale('log')
+        end_stage1()
         plt.legend()
         
         plt.subplot(num, 1, 3)

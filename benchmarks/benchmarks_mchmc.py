@@ -537,7 +537,7 @@ class StochasticVolatility():
         params= scales
         walk = random_walk(key_walk, self.d - 2) * params[0]
         return jnp.concatenate((walk, jnp.log(params/scales)))
-
+    
 
 def random_walk(key, num):
     """ Genereting process for the standard normal walk:
