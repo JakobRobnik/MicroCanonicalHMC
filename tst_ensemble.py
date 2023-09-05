@@ -27,10 +27,10 @@ targets = [[Banana(prior = 'prior'), 100],
 if __name__ == '__main__':
     chains = 2048
 
-    for i in [5]:
+    for i in [0, 1, 2, 3, 4, 5]:
         target, num_steps = targets[i]
         print(target.name)
-        sampler = EnsembleSampler(target, chains, debug= True, plotdir= 'plots/tst_ensemble/', equipartition_definition)
+        sampler = EnsembleSampler(target, chains, debug= True, plotdir= 'plots/tst_ensemble/')
         # key = jax.random.PRNGKey(42)
         # keys_all = jax.random.split(key, sampler.chains + 1)
         # x = sampler.Target.prior_draw(keys_all[1:])

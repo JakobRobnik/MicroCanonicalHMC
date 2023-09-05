@@ -528,40 +528,29 @@ class Sampler:
         state, eps = jax.lax.scan(step, init=state, xs= outer_weights, length= num_steps1 + num_steps2)
 
         # determine L
-        F1, F2 = state[1][1], state[1][2]
-        variances = F2 - jnp.square(F1)
-        sigma2 = jnp.average(variances)
-        # print(F1)
-        # print(F2 / self.Target.second_moments)
+        if num_steps2 != 0:
+            
+            F1, F2 = state[1][1], state[1][2]
+            variances = F2 - jnp.square(F1)
+            sigma2 = jnp.average(variances)
 
-        #variances = self.Target.second_moments
-        #resc = jnp.diag(1.0/jnp.sqrt(variances))
-        #Sigma = resc @ self.Target.Cov @ resc
-        #print(jnp.linalg.cond(Sigma) / jnp.linalg.cond(self.Target.Cov))
+            # optionally we do the diagonal preconditioning (and readjust the stepsize)
+            if self.diagonal_preconditioning:
 
-        # optionally we do the diagonal preconditioning (and readjust the stepsize)
-        if self.diagonal_preconditioning:
+                # diagonal preconditioning
+                sigma = jnp.sqrt(variances)
+                L = jnp.sqrt(self.Target.d)
 
-            # diagonal preconditioning
-            sigma = jnp.sqrt(variances)
-            L = jnp.sqrt(self.Target.d)
+                #readjust the stepsize
+                steps = num_steps2 // 3 #we do some small number of steps
+                state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
 
-            # state = ((state[0][0], state[0][1], state[0][2], state[0][3], 0.0, jnp.power(eps[-1], -6.0) * 1e-5, 1e-5, jnp.inf, state[0][-2], 0.0),
-            #         (0.0, jnp.zeros(len(x)), jnp.zeros(len(x))))
+            else:
+                L = jnp.sqrt(sigma2 * self.Target.d)
 
-            # print(L, eps[-1])
-            # print(sigma**2 / self.Target.variance)
-
-            #readjust the stepsize
-            steps = num_steps2 // 3 #we do some small number of steps
-            state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
-
-        else:
-            L = jnp.sqrt(sigma2 * self.Target.d)
-        #print(L, eps[-1])
         xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2] # the final state
         self.gamma = gamma_save #set gamma to the previous value
-        #print(L, eps[-1])
+
         return L, eps[-1], sigma, xx, uu, ll, gg, key #return the tuned hyperparameters and the final state
 
 

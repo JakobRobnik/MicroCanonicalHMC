@@ -88,7 +88,9 @@ class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, chains, 
-                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full', delay_frac = 0.05, neff = 20, debug= True, plotdir = None):
+                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
+                 delay_frac = 0.05, neff = 20, n = 100, 
+                 debug= True, plotdir = None):
         """Args:
                 Target: The target distribution class.
                 chains: The number of chains to run in parallel. 
@@ -103,7 +105,7 @@ class Sampler:
                 equipartition_definition: 'full' or 'diagonal'. See the paper.
                 delay_frac: TODO
                 neff: effective number of steps used to determine the stepsize in the adaptive step
-                
+                n: proportionality factor in converting from bias ratio in successive steps to utility
                 debug: If True, the non-jax while loop will be run in sample. Diagnostics like the energy error, bias and stepsize will be saved at each step.
                 plotdir: If debug, diagnostics plots will be produced and saved in plotdir.
         """
@@ -132,12 +134,16 @@ class Sampler:
         self.isotropic_u0 = isotropic_u0 # isotropic direction of the initial velocity (if false, aligned with the gradient)
         self.eps_initial = 0.01 * jnp.sqrt(self.Target.d) # stepsize of the first step
 
-        # hyperparameters
+        ### hyperparameters ###
         self.alpha = alpha # momentum decoherence scale L = alpha sqrt(Tr[Sigma]), where Sigma is the covariance matrix
+        
+        #first stage
         self.C = C # proportionality constant in determining the stepsize (varew \propto C)
         self.delay_frac = 0.05
         
+        #second stage
         self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
+        self.n = n
         
         self.debug = debug 
         if debug:
@@ -455,7 +461,7 @@ class Sampler:
         steps_left = num_steps - steps_used
         loss0 = self.discretization_bias(dyn['x'], dyn['x2'])[1]
         
-        happy = lambda loss_new, loss: jnp.exp(-(loss_new - loss))
+        utility = lambda loss_new, loss: jnp.exp(- self.n * (loss_new - loss) / loss)
         
         
         def step2(state, useless):
@@ -466,7 +472,7 @@ class Sampler:
             
             loss_new = self.discretization_bias(dyn['x'], dyn['x2'])[1]
             
-            util = happy(loss_new, adap[0])
+            util = utility(loss_new, adap[0])
             
             adap_new = (loss_new, util * hyp['eps'] + self.gamma * adap[1], util + self.gamma * adap[2])
             hyp['eps'] = adap_new[0] / adap_new[1]
