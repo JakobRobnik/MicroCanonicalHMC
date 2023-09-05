@@ -3,20 +3,19 @@ import jax
 import jax.numpy as jnp
 
 def update_momentum_unstable(d, eps):
-    def update(u, g):
-        # delta = eps * jnp.linalg.norm(g)/d
-        # e = -g/jnp.linalg.norm(g)
 
-        g_norm = jnp.sqrt(jnp.sum(jnp.square(g)))
+    def update(u, g):
+        g_norm = jnp.linalg.norm(g)
         e = - g / g_norm
         delta = eps * g_norm / (d-1)
-
         uu = (u + e*(jnp.sinh(delta)+jnp.dot(e,u*(jnp.cosh(delta)-1)))) / (jnp.cosh(delta) + jnp.dot(e,u*jnp.sinh(delta)))
         return uu / jnp.linalg.norm(uu)
+    
     return update
 
 
-def test_1():
+# the numerically efficient version of the momentum update used in the code should match the naive implementation according to the equation in the paper
+def test_momentum_update():
     d = 3
     eps = 1e-3
     u = jax.random.uniform(key=jax.random.PRNGKey(0),shape=(d,))
@@ -26,8 +25,6 @@ def test_1():
     update1 = update_stable(u, g)[0]
     update2 = update_unstable(u, g)
     print(update1, update2)
-    assert jnp.array_equal(update1,update2)
+    assert jnp.allclose(update1,update2)
     
-    assert 1==1
 
-test_1()
