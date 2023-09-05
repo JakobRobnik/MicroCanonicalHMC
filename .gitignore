@@ -1,3 +1,4 @@
+.pytest*
 *__pycache__*
 *.png
 mclmc.egg*
