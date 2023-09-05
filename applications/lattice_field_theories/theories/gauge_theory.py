@@ -23,9 +23,7 @@ class Theory:
                             'topo sin': topological charge with the sinus in the definition (easy to compare with ground truth)
                             'topo int': integer valued topological charge definition
                             'Wilson loop': Wilson loop (averaged over shifts)
-                Oparams: an array of parameters for the observable. Observable will be an array of the same size. 
-                            e.g. Wilson loop depends on the parameters nt and nx. Passing [[3, 3], [5, 3]], will produce observable = [W(3, 3), W(5, 3)].
-                            can also be 'all' for Wilson which will compute all sizes 0 < nt < Lt , 0 < nx <= Lx/2 
+                            'Polyakov loop': autocorrelation of the Polyakov loops: Re{<P(m)P(m+n)*>}
         """
         self.d = 2 * Lt*Lx
         self.Lt, self.Lx, self.beta = Lt, Lx, beta
@@ -42,18 +40,15 @@ class Theory:
         elif observable == 'topo int':
             self.transform = lambda links: self.topo_charge_int(links) * jnp.ones(1)
         elif observable == 'Wilson loop':
-            
+            print('Wilson loop averaging will be slow, can be improved.')
             average_shifts = True
             wl = self.Wilson_loop if average_shifts else self.Wilson_loop_single
             
-            if Oparams == None:
-                raise ValueError('Wilson loop observable requires parameters nt and nx.')
-            elif Oparams == 'all':
-                nmax = Lx // 2
-                sizes = [[1 + i//nmax, 1 + i%nmax] for i in range((Lt-1)*nmax)]
-            else:
-                sizes = Oparams
+            nmax = Lx // 2
+            sizes = [[1 + i//nmax, 1 + i%nmax] for i in range((Lt-1)*nmax)]
             self.transform = lambda links: jnp.array([wl(links, *ntnx) for ntnx in sizes])
+        elif observable == 'Polyakov loop':
+            self.transform = self.polyakov_autocorr
         else:
             raise ValueError('Observable = ' + observable + ' is not valid parameter.')
 
@@ -112,6 +107,17 @@ class Theory:
         return jnp.average(jax.lax.map(Wilson_loop_single, self.locs))
     
     
+    def polyakov_autocorr(self, links_flattened):
+        
+        links = self.unflatten(links_flattened)
+        
+        polyakov_angle = jnp.sum(links[0], axis = 0)
+        polyakov = jnp.cos(polyakov_angle) + 1j * jnp.sin(polyakov_angle)
+        # the result is the same as using [jnp.real(jnp.average(polyakov * jnp.roll(jnp.conjugate(polyakov), -n))) for n in range(self.Lx)],
+        # but it is computed faster by the fft
+        return jnp.real(jnp.fft.ifft(jnp.square(jnp.abs(jnp.fft.fft(polyakov))))[1:1+self.Lx//2]) / self.Lx # fft based autocorrelation, we only store 1:1+Lx//2 (as the autocorrelation is then periodic)
+
+        
     
     def prior_draw(self, key):
         """uniform angles [0, 2pi)"""
