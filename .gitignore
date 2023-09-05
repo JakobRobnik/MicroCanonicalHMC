@@ -1,6 +1,7 @@
+*__pycache__*
 *.png
+mclmc.egg*
 *.jpg
 *.mp4
 *.npy
-*.txt
 *.pdf
