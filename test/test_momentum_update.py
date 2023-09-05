@@ -1,3 +1,4 @@
+import sampling
 from sampling.dynamics import update_momentum
 import jax 
 import jax.numpy as jnp
@@ -9,7 +10,7 @@ def update_momentum_unstable(d, eps):
         e = - g / g_norm
         delta = eps * g_norm / (d-1)
         uu = (u + e*(jnp.sinh(delta)+jnp.dot(e,u*(jnp.cosh(delta)-1)))) / (jnp.cosh(delta) + jnp.dot(e,u*jnp.sinh(delta)))
-        return uu / jnp.linalg.norm(uu)
+        return uu 
     
     return update
 
@@ -19,6 +20,7 @@ def test_momentum_update():
     d = 3
     eps = 1e-3
     u = jax.random.uniform(key=jax.random.PRNGKey(0),shape=(d,))
+    u = u / jnp.linalg.norm(u)
     g = jax.random.uniform(key=jax.random.PRNGKey(1),shape=(d,))
     update_stable = update_momentum(d, eps)
     update_unstable = update_momentum_unstable(d, eps)
