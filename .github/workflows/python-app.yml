@@ -25,7 +25,6 @@ jobs:
         python-version: "3.10"
     - name: Install dependencies
       run: |
-        PYTHONPATH=. pytest
         python -m pip install --upgrade pip
         pip install pytest
         pip install -r requirements.txt
@@ -33,4 +32,5 @@ jobs:
         pip install jax
     - name: Test with pytest
       run: |
+        PYTHONPATH=. pytest
         pytest
