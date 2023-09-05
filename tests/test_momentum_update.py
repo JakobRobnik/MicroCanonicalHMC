@@ -3,7 +3,7 @@
 # import jax.numpy as jnp
 
 def test_empty():
-    assert True
+    assert False
 
 # def update_momentum_unstable(d, eps):
 
