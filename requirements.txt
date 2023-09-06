@@ -2,4 +2,5 @@ pre-commit
 numpy
 matplotlib
 pandas
+jaxlib
 jax
