@@ -1,6 +1,6 @@
 # MicroCanoncial Hamiltonian Monte Carlo (MCHMC)
 
-![poster](github_poster.png)
+![poster](img/github_poster.png)
 
 
 You can check out the tutorials:
@@ -16,4 +16,4 @@ The associated papers are:
 
 If you have any questions do not hesitate to contact me at jakob_robnik@berkeley.edu
 
-![ensamble](plots/movies/rosenbrock.gif)
+![ensamble](img/rosenbrock.gif)

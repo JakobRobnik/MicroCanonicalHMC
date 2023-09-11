@@ -1,4 +1,5 @@
-**/__pycache__/**
+.pytest*
+*/__pycache__/*
 *__pycache__*
 *.png
 mclmc.egg*
