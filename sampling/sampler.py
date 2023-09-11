@@ -198,7 +198,7 @@ class Sampler:
     def dynamics_adaptive(self, state, L, sigma):
         """One step of the dynamics with the adaptive stepsize"""
 
-        x, u, l, g, E, Feps, Weps, eps_max, key, t = state
+        x, u, l, g, Feps, Weps, eps_max, key, t = state
 
         eps = jnp.power(Feps/Weps, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
         eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
@@ -210,14 +210,14 @@ class Sampler:
         success, xx, uu, ll, gg, time, eps_max, kinetic_change = self.nan_reject(x, u, l, g, t, xx, uu, ll, gg, tt, eps, eps_max, kinetic_change)
 
         DE = kinetic_change + ll - l  # energy difference
-        EE = E + DE  # energy
+
         # Warning: var = 0 if there were nans, but we will give it a very small weight
         xi = ((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
         w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * self.sigma_xi)))  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
         Feps = self.gamma * Feps + w * (xi/jnp.power(eps, 6.0))  # Kalman update the linear combinations
         Weps = self.gamma * Weps + w
 
-        return xx, uu, ll, gg, EE, Feps, Weps, eps_max, key, time, eps * success
+        return xx, uu, ll, gg, DE, Feps, Weps, eps_max, key, time, eps * success
 
 
 
@@ -506,7 +506,7 @@ class Sampler:
 
         def step(state, outer_weight):
             """one adaptive step of the dynamics"""
-            x, u, l, g, E, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L, sigma)
+            x, u, l, g, DE, Feps, Weps, eps_max, key, time, eps = self.dynamics_adaptive(state[0], L, sigma)
             W, F1, F2 = state[1]
             w = outer_weight * eps
             zero_prevention = 1-outer_weight
@@ -514,22 +514,50 @@ class Sampler:
             F2 = (W*F2 + w*jnp.square(x)) / (W + w + zero_prevention)  # Update <f(x)> with a Kalman filter
             W += w
 
-            return ((x, u, l, g, E, Feps, Weps, eps_max, key, time), (W, F1, F2)), eps
+            return ((x, u, l, g, Feps, Weps, eps_max, key, time), (W, F1, F2)), (eps, DE)
 
         L = L_given
 
         # we use the last num_steps2 to compute the diagonal preconditioner
         outer_weights = jnp.concatenate((jnp.zeros(num_steps1), jnp.ones(num_steps2)))
-
+ 
         #initial state
-        state = ((x, u, l, g, 0.0, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x))))
+        state = ((x, u, l, g, jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key, 0.0), (0.0, jnp.zeros(len(x)), jnp.zeros(len(x))))
 
         # run the steps
-        state, eps = jax.lax.scan(step, init=state, xs= outer_weights, length= num_steps1 + num_steps2)
-
+        state, track = jax.lax.scan(step, init=state, xs= outer_weights, length= num_steps1 + num_steps2)
+        eps, de = track
+        
         import matplotlib.pyplot as plt
-        print(1)
-        plt.plot(eps, '.')
+        
+        ff_ticks, ff = 20, 24    
+        plt.rcParams['xtick.labelsize'] = ff_ticks
+        plt.rcParams['ytick.labelsize'] = ff_ticks
+        plt.figure(figsize= (13, 5))
+        n = np.arange(len(eps)) + 1
+        
+        plt.subplot(2, 1, 1)
+        ax = plt.gca()
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        
+        plt.plot(n, eps, '.', markersize = 8, color = 'steelblue')
+        plt.ylabel(r'$\epsilon$', fontsize = ff)
+        plt.ylim(0, 2.3)
+        plt.xlim(0, n[-1] + 1)
+        plt.subplot(2, 1, 2)
+        ax = plt.gca()
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        
+        plt.plot(n, np.square(de) / self.Target.d, '.', markersize = 8, color = 'teal')
+        plt.plot(n, np.ones(len(n)) * self.varEwanted, '-', color = 'black', alpha = 0.5)
+        plt.ylabel(r'$\delta E^2 / d$', fontsize = ff)
+        plt.xlabel('step', fontsize = ff)
+        plt.yscale('log')
+        plt.xlim(0, n[-1] + 1)
+        plt.tight_layout()
+        plt.savefig('../submission/BiasControl/adaptation.pdf')
         plt.show()
 
         # determine L
@@ -628,6 +656,7 @@ def point_reduction(num_points, reduction_factor):
 def burn_in_ending(loss):
     loss_avg = jnp.median(loss[len(loss)//2:])
     return 2 * find_crossing(loss - loss_avg, 0.0) #we add a safety factor of 2
+
 
 
 
