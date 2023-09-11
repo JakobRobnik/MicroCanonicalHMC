@@ -527,6 +527,10 @@ class Sampler:
         # run the steps
         state, eps = jax.lax.scan(step, init=state, xs= outer_weights, length= num_steps1 + num_steps2)
 
+        import matplotlib.pyplot as plt
+        plt.plot(eps, '.')
+        plt.show()
+
         # determine L
         if num_steps2 != 0:
             
