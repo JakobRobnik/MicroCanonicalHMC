@@ -576,7 +576,8 @@ class Sampler:
 
                 #readjust the stepsize
                 steps = num_steps2 // 3 #we do some small number of steps
-                state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
+                state, track = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
+                eps, de = track
 
             else:
                 L = jnp.sqrt(sigma2 * self.Target.d)
