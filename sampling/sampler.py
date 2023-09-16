@@ -543,7 +543,7 @@ class Sampler:
         
         plt.plot(n, eps, '.', markersize = 8, color = 'steelblue')
         plt.ylabel(r'$\epsilon$', fontsize = ff)
-        plt.ylim(0, 2.3)
+        #plt.ylim(0, 2.3)
         plt.xlim(0, n[-1] + 1)
         plt.subplot(2, 1, 2)
         ax = plt.gca()
