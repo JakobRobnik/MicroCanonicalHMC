@@ -17,7 +17,7 @@ class Sampler:
                  integrator = 'MN', varEwanted = 5e-4,
                  diagonal_preconditioning= False, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
-                 neff = 50,
+                 neff = 150,
                  gna = False):
         """Args:
                 Target: the target distribution class
@@ -499,9 +499,6 @@ class Sampler:
         """cheap hyperparameter tuning"""
 
         # during the tuning we will be using a different gamma
-        gamma_save = self.gamma # save the old value
-        neff = 150.0
-        self.gamma = (neff - 1)/(neff + 1.0)
         sigma = sigma_given
 
         def step(state, outer_weight):
@@ -583,7 +580,6 @@ class Sampler:
                 L = jnp.sqrt(sigma2 * self.Target.d)
 
         xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2] # the final state
-        self.gamma = gamma_save #set gamma to the previous value
 
         return L, eps[-1], sigma, xx, uu, ll, gg, key #return the tuned hyperparameters and the final state
 
