@@ -17,6 +17,7 @@ class Sampler:
                  integrator = 'MN', varEwanted = 5e-4,
                  diagonal_preconditioning= False, sg = False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
+                 neff = 50,
                  gna = False):
         """Args:
                 Target: the target distribution class
@@ -31,7 +32,7 @@ class Sampler:
 
                 diagonal_preconditioning: if you already have your own preconditioning or if you suspect diagonal preconditioning is not useful, turn this off as it can also make matters worse
                                           (but it can also be very useful if you did not precondition the parameters (make their posterior variances close to 1))
-
+                
                 frac_tune1: (num_samples * frac_tune1) steps will be used as a burn-in and to autotune the stepsize
 
                 frac_tune2: (num_samples * frac_tune2) steps will be used to autotune L (should be around 10 effective samples long for the optimal performance)
@@ -66,7 +67,6 @@ class Sampler:
         self.frac_tune3 = frac_tune3 # num_samples * frac_tune3 steps will be used to improve L tuning.
 
         self.varEwanted = varEwanted # 1e-3 #targeted energy variance Var[E]/d
-        neff = 50 # effective number of steps used to determine the stepsize in the adaptive step
         self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
         self.sigma_xi= 1.5 # determines how much do we trust the stepsize predictions from the too large and too small stepsizes
 
