@@ -87,11 +87,16 @@ def m():
     mu = numpyro.sample('mu', dist.Normal(3, 1))
     nu = numpyro.sample('nu', dist.Normal(mu+1, 2))
     
-
+import time
 kernel = MCLMC(m)
 # kernel = NUTS(m)
 mcmc = MCMC(kernel, num_warmup=1000, num_samples=1000)
+
+toc = time.time()
 mcmc.run(random.PRNGKey(0))
+tic = time.time()
+print(f"Time to run was {tic-toc} seconds")
 posterior_samples = mcmc.get_samples()
 mcmc.print_summary() 
+
 
