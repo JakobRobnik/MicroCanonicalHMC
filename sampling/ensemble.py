@@ -353,6 +353,19 @@ class Sampler:
         X = z - (g @ z.T).T @ x / x.shape[0]
         return jnp.average(jnp.square(X)) / self.Target.d, key
     
+    
+    def equipartition_fullrank2(self, x, g, random_key):
+        """loss = Tr[(1 - E)^T (1 - E)] / d^2
+            where Eij = <xi gj> is the equipartition patrix.
+            Loss is computed with the Hutchinson's trick."""
+
+        key, key_z = jax.random.split(random_key)
+        z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
+        X = z - (g @ z.T).T @ x / x.shape[0]
+        Y = z - (x @ z.T).T @ g / x.shape[0]
+        return jnp.average(X*Y), key
+    
+    
     def equipartition_diagonal(self, x, g, random_key):
         return jnp.average(jnp.square(1. - jnp.average(x*g, axis = 0))), random_key
     
@@ -475,7 +488,7 @@ class Sampler:
             util = utility(loss_new, adap[0])
             
             adap_new = (loss_new, util * hyp['eps'] + self.gamma * adap[1], util + self.gamma * adap[2])
-            hyp['eps'] = adap_new[0] / adap_new[1]
+            hyp['eps'] = adap_new[1] / adap_new[2]
             
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
 
@@ -483,11 +496,12 @@ class Sampler:
     
         
         if self.debug:
-            
-            adap = (loss0, 0., 0.)
-            state2, diagnostics2 = jax.lax.scan(step2, init = (adap, dyn, hyp), length = steps_left // 2, xs = None)
-            
-            
+            loss, eps = diagnostics[:, 5], diagnostics[1:, 0]
+            w = jnp.power(self.gamma, jnp.arange(len(eps))[::-1]) * utility(loss[1:], loss[:-1])
+            adap1 = jnp.sum(eps * w)
+            adap2 = jnp.sum(w)
+            adap = (loss0, adap1, adap2)
+            state, diagnostics2 = jax.lax.scan(step2, init = (adap, dyn, hyp), length = steps_left // 2, xs = None)
             diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
             self.debug_plots(diagnostics, steps_used)
             
@@ -501,7 +515,7 @@ class Sampler:
 
     def debug_plots(self, diagnostics, steps1):
     
-        eps, L, vare, varew, bpair_avg, bpair_max, btrue_avg, btrue_max, equi_diag, equi_full = np.array(diagnostics).T
+        eps, L, vare, varew, bpair_avg, bpair_max, btrue_avg, btrue_max, equi_diag, equi_full = diagnostics.T
         
         print(find_crossing(btrue_max, 0.01) * 2)
         
