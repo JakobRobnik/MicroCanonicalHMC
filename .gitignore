@@ -6,3 +6,6 @@ mclmc.egg*
 *.mp4
 *.npy
 *.pdf
+.ipynb_checkpoints
+.csv
+.txt
