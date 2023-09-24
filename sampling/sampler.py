@@ -3,7 +3,6 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-import math
 
 from .dynamics import update_momentum, hamiltonian_dynamics, grad_evals, update_position, random_unit_vector, minimal_norm, leapfrog, partially_refresh_momentum
 from .correlation_length import ess_corr
@@ -15,9 +14,9 @@ class Sampler:
 
     def __init__(self, Target, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
-                 diagonal_preconditioning= False, sg = False,
+                 diagonal_preconditioning= False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
-                 gna = False):
+                 ):
         """Args:
                 Target: the target distribution class
 
@@ -66,7 +65,7 @@ class Sampler:
         self.frac_tune3 = frac_tune3 # num_samples * frac_tune3 steps will be used to improve L tuning.
 
         self.varEwanted = varEwanted # 1e-3 #targeted energy variance Var[E]/d
-        neff = 50 # effective number of steps used to determine the stepsize in the adaptive step
+        neff = 150 # effective number of steps used to determine the stepsize in the adaptive step
         self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
         self.sigma_xi= 1.5 # determines how much do we trust the stepsize predictions from the too large and too small stepsizes
 
@@ -85,28 +84,6 @@ class Sampler:
 
 
 
-    # eventually, this should also be moved to dynamics
-    def leapfrog_sg(self, x, u, g, random_key, eps, sigma, data):
-        """leapfrog"""
-
-        z = x / sigma # go to the latent space
-
-        # half step in momentum
-        uu, delta_r1 = update_momentum(self.target.d, eps * 0.5, g * sigma, u)
-
-        # full step in x
-        zz = z + eps * uu
-        xx = sigma * zz # go back to the configuration space
-        l, gg = self.Target.grad_nlogp(xx, data)
-
-        # half step in momentum
-        uu, delta_r2 = update_momentum(self.target.d, eps * 0.5, gg * sigma, uu)
-        kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
-
-        return xx, uu, l, gg, kinetic_change, random_key
-
-   
-    
     def dynamics_bounces(self, x, u, g, random_key, time, L, eps, sigma):
         """One step of the dynamics (with bounces)"""
 
@@ -135,49 +112,6 @@ class Sampler:
         uu, key = partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=random_key)
 
         return xx, uu, ll, gg, kinetic_change, key, time + eps
-
-
-    def dynamics_generalized_gna(self, x, u, g, random_key, time, L, eps_factor, sigma):
-        """One step of the generalized dynamics."""
-       
-        gnorm = jnp.sqrt(jnp.sum(jnp.square(g)))
-        eps = eps_factor / gnorm
-        
-        # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps)  # self.hamiltonian_dynamics(x, u, g, eps, sigma)
-
-        # Langevin-like noise
-        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
-        uu, key = partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=random_key)
-
-        return xx, uu, ll, gg, kinetic_change, key, time + eps
-
-
-
-    def dynamics_generalized_sg(self, x, u, g, random_key, time, L, eps, sigma):
-        """One sweep over the entire dataset. Perfomrs self.Target.num_batches steps with the stochastic gradient."""
-
-        #reshufle data and arange in batches
-
-        key_reshuffle, key = jax.random.split(random_key)
-        data_shape = self.Target.data.shape
-        data = jax.random.permutation(key_reshuffle, self.Target.data).reshape(self.Target.num_batches, data_shape[0]//self.Target.num_batches, data_shape[1])
-
-        def substep(state, data_batch):
-            x, u, l, g, key, K, t = state
-            # Hamiltonian step
-            xx, uu, ll, gg, dK, key = self.leapfrog_sg(x, u, g, key, eps, sigma, data_batch)
-
-            # Langevin-like noise
-            nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
-            uu, key =  partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=key)
-            
-
-            return (xx, uu, ll, gg, key, K + dK, t + eps), None
-
-        xx, uu, ll, gg, key, kinetic_change, time = jax.lax.scan(substep, init= (x, u, 0.0, g, key, 0.0, time), xs= data, length= self.Target.num_batches)[0]
-
-        return xx, uu, ll, gg, kinetic_change, key, time
 
 
 
@@ -256,7 +190,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1, adaptive = False):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -283,12 +217,10 @@ class Sampler:
                 thinning: only one every 'thinning' steps is stored. Defaults to 1.
                         This is not the recommended solution to save memory. It is better to use the transform functionality.
                         If this is not sufficient consider saving only the expected values, by setting output= 'expectation'.
-
-               adaptive: use the adaptive step size for sampling. This is experimental and not well developed yet.
         """
 
         if num_chains == 1:
-            results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning, adaptive) #the function which actually does the sampling
+            results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
             if output == 'ess':
                 return self.bias_plot(results)
 
@@ -314,12 +246,12 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning, adaptive)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
-                if output == 'ess' or output == 'ess funnel':
+                if output == 'ess':
                     return self.bias_plot(results.reshape(num_chains, num_steps))
 
                 ### reshape results ###
@@ -338,7 +270,7 @@ class Sampler:
 
                 results = jax.vmap(f)(jnp.arange(num_chains))
 
-                if output == 'ess' or output == 'ess funnel':
+                if output == 'ess':
                     return self.bias_plot(results)
 
                 else: 
@@ -366,43 +298,20 @@ class Sampler:
 
         ### sampling ###
 
-        if adaptive: #adaptive stepsize
-
-            if output == 'normal' or output == 'detailed':
-                X, W, _, E = self.sample_adaptive_normal(num_steps, x, u, l, g, key, L, eps, sigma)
-
-                if output == 'detailed':
-                    return X, W, E, L
-                else:
-                    return X, W
-
-            elif output == 'ess':  # return the samples X
-                return self.sample_adaptive_ess(num_steps, x, u, l, g, key, L, eps, sigma)
-            elif output == 'expectation':
-                raise ValueError('output = ' + output + ' is not yet implemented for the adaptive step-size. Let me know if you need it.')
+        if output == 'normal' or output == 'detailed':
+            X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
+            if output == 'detailed':
+                return X, E, L, eps
             else:
-                raise ValueError('output = ' + output + ' is not a valid argument for the Sampler.sample')
+                return X
+        elif output == 'expectation':
+            return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
 
+        elif output == 'ess':
+            return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
 
-        else: #fixed stepsize
-
-            if output == 'normal' or output == 'detailed':
-                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
-                if output == 'detailed':
-                    return X, E, L, eps
-                else:
-                    return X
-            elif output == 'expectation':
-                return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
-
-            elif output == 'ess':
-                return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
-
-            elif output == 'ess funnel':
-                return self.sample_ess_funnel(num_steps, x, u, l, g, key, L, eps, sigma)
-
-            else:
-                raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
+        else:
+            raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
 
     ### for loops which do the sampling steps: ###
@@ -497,11 +406,7 @@ class Sampler:
 
     def tune12(self, x, u, l, g, random_key, L_given, eps, sigma_given, num_steps1, num_steps2):
         """cheap hyperparameter tuning"""
-
-        # during the tuning we will be using a different gamma
-        gamma_save = self.gamma # save the old value
-        neff = 150.0
-        self.gamma = (neff - 1)/(neff + 1.0)
+        
         sigma = sigma_given
 
         def step(state, outer_weight):
@@ -548,7 +453,6 @@ class Sampler:
                 L = jnp.sqrt(sigma2 * self.Target.d)
 
         xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2] # the final state
-        self.gamma = gamma_save #set gamma to the previous value
 
         return L, eps[-1], sigma, xx, uu, ll, gg, key #return the tuned hyperparameters and the final state
 
@@ -616,13 +520,3 @@ def point_reduction(num_points, reduction_factor):
     indexes = np.concatenate((np.arange(1, 1 + num_points // reduction_factor, dtype=int),
                               np.arange(1 + num_points // reduction_factor, num_points, reduction_factor, dtype=int)))
     return indexes
-
-
-
-def burn_in_ending(loss):
-    loss_avg = jnp.median(loss[len(loss)//2:])
-    return 2 * find_crossing(loss - loss_avg, 0.0) #we add a safety factor of 2
-
-
-
-
