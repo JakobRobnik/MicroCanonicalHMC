@@ -7,5 +7,5 @@ mclmc.egg*
 *.npy
 *.pdf
 .ipynb_checkpoints
-.csv
-.txt
+*.csv
+*.txt
