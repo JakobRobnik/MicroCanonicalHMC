@@ -528,8 +528,7 @@ class Sampler:
         state, eps = jax.lax.scan(step, init=state, xs= outer_weights, length= num_steps1 + num_steps2)
 
         # determine L
-        if num_steps2 != 0:
-            
+        if num_steps2 != 0.:
             F1, F2 = state[1][1], state[1][2]
             variances = F2 - jnp.square(F1)
             sigma2 = jnp.average(variances)

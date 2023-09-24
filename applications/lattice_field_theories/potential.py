@@ -4,6 +4,7 @@ import pandas as pd
 import jax
 import jax.numpy as jnp
 import os
+from time import time
 from jaxopt import GaussNewton, LevenbergMarquardt
 from scipy.optimize import minimize
 
@@ -18,47 +19,43 @@ from sampling.sampler import Sampler
 dirr = os.path.dirname(os.path.realpath(__file__)) + '/'
 
 
+
 class PotentialComputation:
     
     def __init__(self, Lt, Lx, beta):
 
         self.Lt, self.Lx, self.beta = Lt, Lx, beta
 
-        #self.Vdata = np.load(dirr + 'data_potential/0.npy')
 
 
-    def mchmc(self, vare, name):
+    def mchmc(self, alpha, beta_eps):
         
         key = jax.random.PRNGKey(42)
         
         target = u1.Theory(self.Lt, self.Lx, self.beta, observable= 'Polyakov loop')
         
-        alpha = 1.0
-        beta_eps= 0.1
-        sampler = Sampler(target, L= np.sqrt(target.d) * alpha, eps= np.sqrt(target.d) * beta_eps, integrator='LF', 
-                          frac_tune1= 0.05, frac_tune2= 0., frac_tune3= 0., diagonal_preconditioning= False, varEwanted= vare)
+        alpha = alpha
+        beta_eps= beta_eps
+        sampler = Sampler(target, L= np.sqrt(target.d) * alpha, eps= np.sqrt(target.d) * beta_eps, integrator='MN', 
+                          frac_tune1= 0.0, frac_tune2= 0., frac_tune3= 0., diagonal_preconditioning= False)
     
-        samples = 2*10**5
-        #burnin = samples//10
-        chains = num_cores
+        samples = 1 * 10**7
+        chains = 10#num_cores
+        burnin = samples // 10
+        t = time()
         P, E, L, eps = sampler.sample(samples, num_chains= chains, output= 'detailed', random_key = key)
-        print(E)
-        plt.plot(E)
-        plt.savefig(dirr + 'energy.png')
-        plt.close()
-        autocorr = jnp.average(P, axis = 1)
+        print(time() - t)
+        autocorr = jnp.average(P[:, burnin:, :], axis = -2)
         self.Vdata = -jnp.log(autocorr) / self.Lt
+        np.save(dirr + 'data_potential/long.npy', self.Vdata)
+        #print(np.average(np.square(E)) / target.d)
 
-        np.save(dirr + 'data_potential/'+name+'.npy', self.Vdata)
-        
-        print(np.average(np.square(E)) / target.d)
-        print(eps)
         # plt.plot(E, '.')
         # plt.savefig(dirr + '/energy.png')
         # plt.close()
     
 
-    def plot_potential(self):
+    def plot_potential(self, name):
     
         # plot the potential
         ff = 24
@@ -69,20 +66,25 @@ class PotentialComputation:
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
         
+        print(self.Vdata)
         ### data ###
         chains, num_nx = self.Vdata.shape
         nx = np.arange(num_nx)+1
-        V1, V2 = jnp.average(self.Vdata, axis = 0), jnp.average(jnp.square(self.Vdata), axis = 0)
+        w = 1 - jnp.isnan(self.Vdata)
+        vdata = jnp.nan_to_num(self.Vdata) * w
+        norm = jnp.sum(w, axis = 0)
+        
+        V1, V2 = jnp.sum(vdata, axis = 0) / norm, jnp.sum(jnp.square(vdata), axis = 0) / norm
         V, Verr = V1, jnp.sqrt(V2 - jnp.square(V1))
         plt.errorbar(nx, V, yerr = Verr, fmt = 'o', capsize = 3, color= 'black')
-        
+    
         #### fit ###
         #params = self.fit(V, Verr/jnp.sqrt(chains-1))
         params = self.linfit(V, 4)
         r = jnp.linspace(0, 8, 100)
         plt.plot(r, params[0] + params[1] * r, color = 'tab:blue', label = 'best linear fit ($\kappa = $' +str(np.round(params[1], 3))+')')
         
-        plt.plot(r, self.V0(r, params), color = 'tab:orange', label = 'finite lattice potential (same parameters)' )
+        plt.plot(r, self.V0(r, params), color = 'tab:orange', label = 'finite lattice potential (same parameters)')
      
         plt.xlabel(r'$n$', fontsize = ff)
         plt.ylabel(r'$a V(a n)$', fontsize = ff)
@@ -91,7 +93,7 @@ class PotentialComputation:
         plt.suptitle('U(1) potential with Polyakov loops', fontsize = ff + 2, fontweight="bold") 
         plt.tight_layout()
 
-        plt.savefig(dirr + 'potential.png')
+        plt.savefig(dirr + 'plots/'+name+'.png')
         plt.close()
 
 
@@ -136,12 +138,5 @@ class PotentialComputation:
 Lt, Lx, beta = 16, 16, 7.
 
 Pot = PotentialComputation(Lt, Lx, beta)
-vare = [1e-4, ]#, 5e-4, 1e-3]
-for i in range(len(vare)):
-    print('--------------')
-    print(i)
-    Pot.mchmc(vare[i], str(i))
-
-
-
-#Pot.plot_potential()
+Pot.mchmc(1., 0.2)
+Pot.plot_potential('beta7')
