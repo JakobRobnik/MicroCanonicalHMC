@@ -254,7 +254,6 @@ class Sampler:
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
                 if output == 'ess':
                     return self.bias_plot(results.reshape(num_chains, num_steps))
-
                 ### reshape results ###
                 if type(results) is tuple: #each chain returned a tuple
                     results_reshaped =[]
