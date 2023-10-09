@@ -343,18 +343,18 @@ class Sampler:
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0]) #average over the ensemble, sum over th
 
 
-    def equipartition_fullrank(self, x, g, random_key):
-        """loss = Tr[(1 - E)^T (1 - E)] / d^2
-            where Eij = <xi gj> is the equipartition patrix.
-            Loss is computed with the Hutchinson's trick."""
+    # def equipartition_fullrank(self, x, g, random_key):
+    #     """loss = Tr[(1 - E)^T (1 - E)] / d^2
+    #         where Eij = <xi gj> is the equipartition patrix.
+    #         Loss is computed with the Hutchinson's trick."""
 
-        key, key_z = jax.random.split(random_key)
-        z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
-        X = z - (g @ z.T).T @ x / x.shape[0]
-        return jnp.average(jnp.square(X)) / self.Target.d, key
+    #     key, key_z = jax.random.split(random_key)
+    #     z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
+    #     X = z - (g @ z.T).T @ x / x.shape[0]
+    #     return jnp.average(jnp.square(X)) / self.Target.d, key
     
     
-    def equipartition_fullrank2(self, x, g, random_key):
+    def equipartition_fullrank(self, x, g, random_key):
         """loss = Tr[(1 - E)^T (1 - E)] / d^2
             where Eij = <xi gj> is the equipartition patrix.
             Loss is computed with the Hutchinson's trick."""
@@ -496,7 +496,8 @@ class Sampler:
     
         
         if self.debug:
-            loss, eps = diagnostics[:, 5], diagnostics[1:, 0]
+            dg = jnp.array(diagnostics1)
+            loss, eps = dg[:, 5], dg[1:, 0]
             w = jnp.power(self.gamma, jnp.arange(len(eps))[::-1]) * utility(loss[1:], loss[:-1])
             adap1 = jnp.sum(eps * w)
             adap2 = jnp.sum(w)
