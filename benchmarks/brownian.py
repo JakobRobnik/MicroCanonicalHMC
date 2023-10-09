@@ -4,7 +4,6 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 
-from HMC.mchmc_to_numpyro import mchmc_target_to_numpyro
 from benchmarks.benchmarks_mchmc import random_walk
 #from NUTS import sample_nuts
 
@@ -90,6 +89,9 @@ class Target():
 
 
 def ground_truth(key_num):
+    
+    from HMC.mchmc_to_numpyro import mchmc_target_to_numpyro
+
     key = jax.random.PRNGKey(key_num)
     mchmc_target = Target()
     numpyro_target = mchmc_target_to_numpyro(Target)

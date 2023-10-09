@@ -490,8 +490,8 @@ class Sampler:
             loss, dyn, hyp = state
         
             # do a grid search over the stepsize
-            eps = jnp.logspace(jnp.log10(0.5), jnp.log10(2), 10) * dyn['eps']
-            hyps = [{'L': dyn['L'], 'eps': e, 'sigma': dyn['sigma']} for e in eps]
+            eps = jnp.logspace(jnp.log10(0.5), jnp.log10(2), 10) * hyp['eps']
+            hyps = [{'L': hyp['L'], 'eps': e, 'sigma': hyp['sigma']} for e in eps]
             dyns, nonans = self.vmap_twogroup_dynamics(dyn, hyps)
             
             loss_arr = jax.vmap(lambda _dyn: self.discretization_bias(_dyn['x'], _dyn['x2'])[1])(dyns)
@@ -502,7 +502,7 @@ class Sampler:
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
 
             return (loss, dyn, hyp), _diagnostics
-            
+        
         
         if self.debug:
             
