@@ -4,7 +4,6 @@ import jax.numpy as jnp
 import numpy as np
 import os
 
-from HMC.mchmc_to_numpyro import mchmc_target_to_numpyro
 #from NUTS import sample_nuts
 
 dirr = os.path.dirname(os.path.realpath(__file__))
@@ -89,6 +88,9 @@ def map_solution():
 
 
 def ground_truth(key_num):
+    
+    from HMC.mchmc_to_numpyro import mchmc_target_to_numpyro
+
     key = jax.random.PRNGKey(key_num)
     mchmc_target = Target()
     numpyro_taget = mchmc_target_to_numpyro(Target)

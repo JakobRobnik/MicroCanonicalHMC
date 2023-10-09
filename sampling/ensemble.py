@@ -145,6 +145,9 @@ class Sampler:
         self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
         self.n = n
         
+        self.vmap_twogroup_dynamics = jax.vmap(self.twogroup_dynamics, (None, 0))
+        
+        
         self.debug = debug 
         if debug:
             if plotdir == None:
@@ -158,7 +161,7 @@ class Sampler:
         else:
             raise ValueError('equipartition_definition = ' + equipartition_definition + "is not a valid option, should be either 'full' or 'diagonal'.")
 
-        
+
         
         
     def random_unit_vector(self, random_key, num_chains):
@@ -261,8 +264,9 @@ class Sampler:
         return xx, uu, ll, gg, kinetic_change, key
 
 
-    def paired_dynamics(self, dyn, hyp):
-        """run two sets of chains with different stepsizes."""
+    def twogroup_dynamics(self, dyn, hyp):
+        """do two steps with hyp['eps'] for one group of chains and one step with hyp['eps'] for the other group"""
+        
         x, u, l, g, x2, u2, l2, g2, vare, key = dyn['x'], dyn['u'], dyn['l'], dyn['g'], dyn['x2'], dyn['u2'], dyn['l2'], dyn['g2'], dyn['vare'], dyn['key']
         L, eps, sigma = hyp['L'], hyp['eps'], hyp['sigma']
         
@@ -283,7 +287,9 @@ class Sampler:
                                                         (x, u, l, g, x2, u2, l2, g2, vare)) #if nans
         
         return {'x': x, 'u': u, 'l': l, 'g': g, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'vare': vare, 'key': key}, nonans
-            
+        
+        
+        
 
     def initialize(self, random_key, x_initial):
         """initialize the ensemble"""
@@ -343,18 +349,18 @@ class Sampler:
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0]) #average over the ensemble, sum over th
 
 
-    def equipartition_fullrank(self, x, g, random_key):
-        """loss = Tr[(1 - E)^T (1 - E)] / d^2
-            where Eij = <xi gj> is the equipartition patrix.
-            Loss is computed with the Hutchinson's trick."""
+    # def equipartition_fullrank(self, x, g, random_key):
+    #     """loss = Tr[(1 - E)^T (1 - E)] / d^2
+    #         where Eij = <xi gj> is the equipartition patrix.
+    #         Loss is computed with the Hutchinson's trick."""
 
-        key, key_z = jax.random.split(random_key)
-        z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
-        X = z - (g @ z.T).T @ x / x.shape[0]
-        return jnp.average(jnp.square(X)) / self.Target.d, key
+    #     key, key_z = jax.random.split(random_key)
+    #     z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
+    #     X = z - (g @ z.T).T @ x / x.shape[0]
+    #     return jnp.average(jnp.square(X)) / self.Target.d, key
     
     
-    def equipartition_fullrank2(self, x, g, random_key):
+    def equipartition_fullrank(self, x, g, random_key):
         """loss = Tr[(1 - E)^T (1 - E)] / d^2
             where Eij = <xi gj> is the equipartition patrix.
             Loss is computed with the Hutchinson's trick."""
@@ -434,7 +440,7 @@ class Sampler:
         
         def step1(state):
             steps, history, decreassing, dyn, hyp = state
-            dyn, nonans = self.paired_dynamics(dyn, hyp)
+            dyn, nonans = self.twogroup_dynamics(dyn, hyp)
             
             ### hyperparameters for the next step ###
             equi, dyn['key'] = self.equipartition(dyn['x'], dyn['g'], dyn['key']) #estimate the bias from the equipartition loss
@@ -474,34 +480,33 @@ class Sampler:
         steps_left = num_steps - steps_used
         loss0 = self.discretization_bias(dyn['x'], dyn['x2'])[1]
         
-        utility = lambda loss_new, loss: jnp.exp(- self.n * (loss_new - loss) / loss)
+        ### history: ###
+        # dg = jnp.array(diagnostics1)
+        # loss, eps = dg[:, 5], dg[1:, 0]
         
-        
+                
         def step2(state, useless):
-            adap, dyn, hyp = state
-            dyn, nonans = self.paired_dynamics(dyn, hyp)
             
-            ### hyperparameters for the next step ###
+            loss, dyn, hyp = state
+        
+            # do a grid search over the stepsize
+            eps = jnp.logspace(jnp.log10(0.5), jnp.log10(2), 10) * hyp['eps']
+            hyps = [{'L': hyp['L'], 'eps': e, 'sigma': hyp['sigma']} for e in eps]
+            dyns, nonans = self.vmap_twogroup_dynamics(dyn, hyps)
             
-            loss_new = self.discretization_bias(dyn['x'], dyn['x2'])[1]
+            loss_arr = jax.vmap(lambda _dyn: self.discretization_bias(_dyn['x'], _dyn['x2'])[1])(dyns)
             
-            util = utility(loss_new, adap[0])
-            
-            adap_new = (loss_new, util * hyp['eps'] + self.gamma * adap[1], util + self.gamma * adap[2])
-            hyp['eps'] = adap_new[1] / adap_new[2]
+            ibest = jnp.argmin(loss_arr)
+            loss, hyp['eps'], dyn = loss_arr[ibest], eps[ibest], dyns[ibest]
             
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
 
-            return (adap_new, dyn, hyp), _diagnostics
-    
+            return (loss, dyn, hyp), _diagnostics
+        
         
         if self.debug:
-            loss, eps = diagnostics[:, 5], diagnostics[1:, 0]
-            w = jnp.power(self.gamma, jnp.arange(len(eps))[::-1]) * utility(loss[1:], loss[:-1])
-            adap1 = jnp.sum(eps * w)
-            adap2 = jnp.sum(w)
-            adap = (loss0, adap1, adap2)
-            state, diagnostics2 = jax.lax.scan(step2, init = (adap, dyn, hyp), length = steps_left // 2, xs = None)
+            
+            state, diagnostics2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = steps_left // 2, xs = None)
             diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
             self.debug_plots(diagnostics, steps_used)
             

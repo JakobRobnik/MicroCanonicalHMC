@@ -4,9 +4,7 @@ import jax
 import jax.numpy as jnp
 import os
 
-from numpyro.examples.datasets import SP500, load_dataset
-from numpyro.distributions import StudentT
-from numpyro.distributions import Exponential
+# from numpyro.examples.datasets import SP500, load_dataset
 
 dirr = os.path.dirname(os.path.realpath(__file__))
 
@@ -488,8 +486,7 @@ class StochasticVolatility():
     """Example from https://num.pyro.ai/en/latest/examples/stochastic_volatility.html"""
 
     def __init__(self):
-        _, fetch = load_dataset(SP500, shuffle=False)
-        SP500_dates, self.SP500_returns = fetch()
+        self.SP500_returns = np.load(dirr + '/SP500.npy')
 
         self.name = 'SV'
         self.d = 2429
@@ -511,7 +508,7 @@ class StochasticVolatility():
 
         l1= (jnp.exp(x[-2]) - x[-2]) + (jnp.exp(x[-1]) - x[-1])
         l2 = (self.d - 2) * jnp.log(sigma) + 0.5 * (jnp.square(x[0]) + jnp.sum(jnp.square(x[1:-2] - x[:-3]))) / jnp.square(sigma)
-        l3 = -jnp.sum(StudentT(df=nu, scale= jnp.exp(x[:-2])).log_prob(self.SP500_returns))
+        l3 = jnp.sum(nlogp_StudentT(self.SP500_returns, nu, jnp.exp(x[:-2])))
 
         return l1 + l2 + l3
 
@@ -538,6 +535,18 @@ class StochasticVolatility():
         walk = random_walk(key_walk, self.d - 2) * params[0]
         return jnp.concatenate((walk, jnp.log(params/scales)))
     
+    
+def nlogp_StudentT(x, df, scale):
+    y = x / scale
+    z = (
+        jnp.log(scale)
+        + 0.5 * jnp.log(df)
+        + 0.5 * jnp.log(jnp.pi)
+        + jax.scipy.special.gammaln(0.5 * df)
+        - jax.scipy.special.gammaln(0.5 * (df + 1.0))
+    )
+    return 0.5 * (df + 1.0) * jnp.log1p(y**2.0 / df) + z
+
 
 def random_walk(key, num):
     """ Genereting process for the standard normal walk:

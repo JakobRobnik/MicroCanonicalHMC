@@ -7,11 +7,5 @@ from scipy.special import lambertw
 
 from scipy.integrate import odeint
 
-
-a = 0.05
-field = lambda t, u: 2 * np.sqrt(u * np.exp(u) - a * np.exp(2*u))
-
-urange = np.linspace(-lambertw(-a, 0), -lambertw(-a, -1), 500)
-
-plt.plot(urange, field(None, urange))
-plt.show()
+num_cores = jax.local_device_count()
+print(num_cores, jax.lib.xla_bridge.get_backend().platform)
