@@ -83,13 +83,15 @@ class pmap_target:
             self.name = target.name
 
 
-
+        self.map_to_worst = target.map_to_worst
+        self.maxmin = target.maxmin
+        
+        
 class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, chains, 
                  alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
-                 delay_frac = 0.05, neff = 20, n = 100, 
                  debug= True, plotdir = None):
         """Args:
                 Target: The target distribution class.
@@ -142,8 +144,8 @@ class Sampler:
         self.delay_frac = 0.05
         
         #second stage
-        self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
-        self.n = n
+        self.n = 5 # n eps-steps with the precise chain and n-1 eps'-steps with the sloopy chains (eps' = eps n/(n-1) )
+        
         
         self.vmap_twogroup_dynamics = jax.vmap(self.twogroup_dynamics, (None, 0))
         
@@ -270,20 +272,26 @@ class Sampler:
         x, u, l, g, x2, u2, l2, g2, vare, key = dyn['x'], dyn['u'], dyn['l'], dyn['g'], dyn['x2'], dyn['u2'], dyn['l2'], dyn['g2'], dyn['vare'], dyn['key']
         L, eps, sigma = hyp['L'], hyp['eps'], hyp['sigma']
         
-        ### two steps of the precise dynamics ###
+        ### one extra step of the precise dynamics ###
         xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
         de = jnp.square(dK + ll - l) / self.Target.d
         varee = jnp.average(de)
-        xx, uu, ll, gg, _, key = self.dynamics(xx, uu, gg, key, L, eps, sigma)
-    
-        ### one step of the sloppy dynamics ###
-        xx2, uu2, ll2, gg2, _, key = self.dynamics(x2, u2, g2, key, L, 2 * eps, sigma)
+        
+        ### n-1 steps for both groups
+        def step(state, useless):
+            x, u, l, g, _, key = self.dynamics(state['x'], state['u'], state['g'], state['key'], L, eps, sigma)
+            x2, u2, l2, g2, _, key = self.dynamics(state['x2'], state['u2'], state['g2'], key, L, eps * self.n / (self.n - 1), sigma)
+            
+            return {'x': x, 'u': u, 'l': l, 'g': g, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'key': key}
+
+        s = jax.lax.scan(step, init= {'x': xx, 'u': uu, 'l': ll, 'g': gg, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'key': key}, length = self.n - 1, xs = None)[0]
+                
                     
         ### if there were nans we don't do the step ###
-        nonans = jnp.all(jnp.isfinite(xx)) & jnp.all(jnp.isfinite(xx2))
+        nonans = jnp.all(jnp.isfinite(s['x'])) & jnp.all(jnp.isfinite(s['x2']))
 
         x, u, l, g, x2, u2, l2, g2, vare = jax.tree_map(lambda new, old: jax.lax.select(nonans, jnp.nan_to_num(new), old), 
-                                                        (xx, uu, ll, gg, xx2, uu2, ll2, gg2, varee), #if no nans
+                                                        (s['x'], s['u'], s['l'], s['g'], s['x2'], s['u2'], s['l2'], s['g2'], varee), #if no nans
                                                         (x, u, l, g, x2, u2, l2, g2, vare)) #if nans
         
         return {'x': x, 'u': u, 'l': l, 'g': g, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'vare': vare, 'key': key}, nonans
@@ -395,7 +403,8 @@ class Sampler:
         bias_d = jnp.square(moments_sloppy - moments) / var
         bias, bias_max = jnp.average(bias_d), jnp.max(bias_d)
         
-        return bias/16., bias_max/16.
+        adjust = ((self.n-1.)/self.n) ** 4
+        return bias * adjust, bias_max * adjust
 
 
     def ground_truth_bias(self, x):
@@ -455,12 +464,14 @@ class Sampler:
             
             hyp['L'] = self.computeL(dyn['x'])
             
-            return (steps + 2, history, decreassing, dyn, hyp)
+            return (steps + self.n, history, decreassing, dyn, hyp)
 
         def step1_debug(state):
             state = step1(state)
             steps, history, decreassing, dyn, hyp = state
-            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp) 
+            if steps % 100 == 0:
+                plott(self.Target, steps, dyn)
+            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
             diagnostics1.append(np.array(_diagnostics))
             return (steps, history, decreassing, dyn, hyp)
             
@@ -484,31 +495,49 @@ class Sampler:
         # dg = jnp.array(diagnostics1)
         # loss, eps = dg[:, 5], dg[1:, 0]
         
-                
+            
+        
+        
         def step2(state, useless):
             
             loss, dyn, hyp = state
-        
             # do a grid search over the stepsize
-            eps = jnp.logspace(jnp.log10(0.5), jnp.log10(2), 10) * hyp['eps']
-            hyps = [{'L': hyp['L'], 'eps': e, 'sigma': hyp['sigma']} for e in eps]
+            delt = jnp.log10(1.04)
+            eps = jnp.logspace(-delt, delt, 100) * hyp['eps']
+            
+            hyps = {'L': hyp['L'] * jnp.ones(len(eps)), 'eps': eps, 'sigma': jnp.tile(hyp['sigma'], len(eps)).reshape(len(eps), self.Target.d)}
             dyns, nonans = self.vmap_twogroup_dynamics(dyn, hyps)
             
             loss_arr = jax.vmap(lambda _dyn: self.discretization_bias(_dyn['x'], _dyn['x2'])[1])(dyns)
             
-            ibest = jnp.argmin(loss_arr)
-            loss, hyp['eps'], dyn = loss_arr[ibest], eps[ibest], dyns[ibest]
+            # plt.plot(eps, loss/loss_arr, '.')
+            # plt.tight_layout()
+            # plt.savefig('img/grid' +str(counter)+ '.png')
+            # plt.close()
+            decreassing = jnp.sum(loss_arr < loss) > 0
             
+            ibest = jnp.argmin(loss_arr)
+            isame = jnp.argmin(jnp.abs(eps - hyp['eps']))
+            ibest =  isame * (1-decreassing) + ibest * decreassing
+
+            loss = loss_arr[ibest]
+            hyp['eps'] = eps[ibest]
+            dyn = {'x': dyns['x'][ibest], 'u': dyns['u'][ibest], 'l': dyns['l'][ibest], 'g': dyns['g'][ibest], 'x2': dyns['x2'][ibest], 'u2': dyns['u2'][ibest], 'l2': dyns['l2'][ibest], 'g2': dyns['g2'][ibest], 'vare': dyns['vare'][ibest], 'key': dyns['key'][ibest]}
+            #print(hyp['eps'], decreassing)
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
 
             return (loss, dyn, hyp), _diagnostics
         
         
         if self.debug:
-            
-            state, diagnostics2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = steps_left // 2, xs = None)
+            # for i in range(100):
+            #     loss0, dyn, hyp = step2(((loss0, i), dyn, hyp), None)[0]
+                
+            state, diagnostics2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = steps_left // self.n, xs = None)
             diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
             self.debug_plots(diagnostics, steps_used)
+            
+            plott(self.Target, 800, state[1])
             
             return state[-2]['x']
 
@@ -522,14 +551,14 @@ class Sampler:
     
         eps, L, vare, varew, bpair_avg, bpair_max, btrue_avg, btrue_max, equi_diag, equi_full = diagnostics.T
         
-        print(find_crossing(btrue_max, 0.01) * 2)
+        print(find_crossing(btrue_max, 0.01) * self.n)
         
         end_stage1 = lambda: plt.plot(steps1 * np.ones(2), plt.gca().get_ylim(), color = 'grey', alpha = 0.2)
         
         num = 4
         plt.figure(figsize= (6, 3 * num))
 
-        steps = jnp.arange(0, 2*len(eps), 2)
+        steps = jnp.arange(0, self.n*len(eps), self.n)
         
         ### bias ###
         plt.subplot(num, 1, 1)
@@ -593,3 +622,31 @@ def mywhile(cond_fun, body_fun, init_val):
     while cond_fun(val):
         val = body_fun(val)
     return val
+
+
+def plott(target, steps, dyn):
+    
+    plt.title('steps = ' + str(steps))
+    
+    for i in range(2):
+        w = ['', '2'][i]
+        y = dyn['x' + w] @ target.map_to_worst.T
+        plt.plot(y[:, 0], y[:, 1], '.', color= ['teal', 'tab:red'][i], label = 'eps'+w)
+    
+    
+    # ground truth
+    from matplotlib.patches import Ellipse
+    a, b = target.maxmin
+    print(a, b)
+    ax = plt.gca()
+    for i in range(2):
+        factor, alpha, word = [(1.52, 1., '68'), (2.48, 0.5, '95')][i]
+        ax.add_patch(Ellipse(xy=np.zeros(2), width=a*factor*2, height=b*factor*2, facecolor = "None",  edgecolor = 'grey', alpha = alpha, label = 'exact posterior\n('+word+'% confidence)'))
+        
+    plt.legend()
+    plt.xlabel('widest dimension')
+    plt.ylabel('narrowest dimension')
+    
+    plt.tight_layout()
+    plt.savefig('img/different_stepsizes_'+str(steps) + '.png')
+    plt.close()

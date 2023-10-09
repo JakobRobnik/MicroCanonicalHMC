@@ -3,13 +3,9 @@ from scipy.stats import norm
 import jax
 import jax.numpy as jnp
 import os
-
-# from numpyro.examples.datasets import SP500, load_dataset
-
 dirr = os.path.dirname(os.path.realpath(__file__))
 
 
-### Benchmark targets ###
 
 
 class StandardNormal():
@@ -124,7 +120,9 @@ class IllConditionedGaussianGamma():
         eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.d)) #eigenvalues of the Hessian
         eigs *= jnp.average(1.0/eigs)
         self.entropy = 0.5 * self.d
+        self.maxmin = (1./jnp.sqrt(eigs[0]), 1./jnp.sqrt(eigs[-1])) 
         R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
+        self.map_to_worst = (R.T)[[0, -1], :]
         self.Hessian = R @ np.diag(eigs) @ R.T
 
         # analytic ground truth moments
@@ -147,7 +145,7 @@ class IllConditionedGaussianGamma():
 
         else: # N(0, sigma_true_max)
             self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,)) * jnp.max(1.0/jnp.sqrt(eigs))
-
+            
     def nlogp(self, x):
         """- log p of the target distribution"""
         return 0.5 * x.T @ self.Hessian @ x
