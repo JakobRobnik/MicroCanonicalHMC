@@ -95,7 +95,7 @@ class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, chains, 
-                 alpha = 1., integrator = 'MN', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
+                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
                  debug= True, plotdir = None):
         """Args:
                 Target: The target distribution class.
@@ -128,10 +128,10 @@ class Sampler:
         ### integrator ###
         self.hamiltonian_dynamics = self.leapfrog
         self.grads_per_step = 1.0 #per chain
-
+        self.integrator = integrator
         if (integrator != 'MN') and (integrator != 'LF'):
             raise ValueError('integrator = ' + integrator + 'is not a valid option.')
-
+        
 
         # initialization
         self.isotropic_u0 = isotropic_u0 # isotropic direction of the initial velocity (if false, aligned with the gradient)
@@ -145,7 +145,7 @@ class Sampler:
         self.delay_frac = 0.05
         
         #second stage
-        self.n = 5 # n eps-steps with the precise chain and n-1 eps'-steps with the sloopy chains (eps' = eps n/(n-1) )
+        self.n = 1 # n eps-steps with the precise chain and n-1 eps'-steps with the sloopy chains (eps' = eps n/(n-1) )
         
         
         self.vmap_twogroup_dynamics = jax.vmap(self.twogroup_dynamics, (None, 0))
@@ -296,8 +296,6 @@ class Sampler:
                                                         (x, u, l, g, x2, u2, l2, g2, vare)) #if nans
         
         return {'x': x, 'u': u, 'l': l, 'g': g, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'vare': vare, 'key': key}, nonans
-        
-        
         
 
     def initialize(self, random_key, x_initial):
@@ -459,6 +457,8 @@ class Sampler:
             decreassing *= (history[-1] > history[0])
 
             varew = self.C * jnp.power(equi, 3./8.)
+            stage1 = steps < 500
+            varew = varew * stage1 + (1-stage1) * 1e-4
             eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             hyp['eps'] = eps_factor * hyp['eps']
@@ -466,12 +466,14 @@ class Sampler:
             hyp['L'] = self.computeL(dyn['x'])
             
             return (steps + self.n, history, decreassing, dyn, hyp)
-
+        
+        
+        
         def step1_debug(state):
             state = step1(state)
             steps, history, decreassing, dyn, hyp = state
-            if steps % 100 == 0:
-                plott(self.Target, steps, dyn)
+            # if steps % 100 == 0:
+            #     plott(self.Target, steps, dyn)
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
             diagnostics1.append(np.array(_diagnostics))
             return (steps, history, decreassing, dyn, hyp)
@@ -479,7 +481,8 @@ class Sampler:
 
         def cond(state):
             steps, history, decreassing, dyn, hyp = state
-            return decreassing & (steps < num_steps * 0.8)
+            return steps < 1000
+            #return decreassing & (steps < num_steps * 0.8)
         
         
         if self.debug:
@@ -497,52 +500,70 @@ class Sampler:
         # loss, eps = dg[:, 5], dg[1:, 0]
         
         
-        def step2(state, useless):
+        # def step2(state, useless):
             
-            loss, dyn, hyp = state
-            # do a grid search over the stepsize
-            delt = jnp.log10(1.04)
-            eps = jnp.logspace(-delt, delt, 100) * hyp['eps']
+        #     loss, dyn, hyp = state
+        #     # do a grid search over the stepsize
+        #     delt = jnp.log10(1.04)
+        #     eps = jnp.logspace(-delt, delt, 100) * hyp['eps']
             
-            hyps = {'L': hyp['L'] * jnp.ones(len(eps)), 'eps': eps, 'sigma': jnp.tile(hyp['sigma'], len(eps)).reshape(len(eps), self.Target.d)}
-            dyns, nonans = self.vmap_twogroup_dynamics(dyn, hyps)
+        #     hyps = {'L': hyp['L'] * jnp.ones(len(eps)), 'eps': eps, 'sigma': jnp.tile(hyp['sigma'], len(eps)).reshape(len(eps), self.Target.d)}
+        #     dyns, nonans = self.vmap_twogroup_dynamics(dyn, hyps)
             
-            loss_arr = jax.vmap(lambda _dyn: self.discretization_bias(_dyn['x'], _dyn['x2'])[1])(dyns)
+        #     loss_arr = jax.vmap(lambda _dyn: self.discretization_bias(_dyn['x'], _dyn['x2'])[1])(dyns)
             
-            # plt.plot(eps, loss/loss_arr, '.')
-            # plt.tight_layout()
-            # plt.savefig('img/grid' +str(counter)+ '.png')
-            # plt.close()
-            decreassing = jnp.sum(loss_arr < loss) > 0
+        #     # plt.plot(eps, loss/loss_arr, '.')
+        #     # plt.tight_layout()
+        #     # plt.savefig('img/grid' +str(counter)+ '.png')
+        #     # plt.close()
+        #     decreassing = jnp.sum(loss_arr < loss) > 0
             
-            ibest = jnp.argmin(loss_arr)
-            isame = jnp.argmin(jnp.abs(eps - hyp['eps']))
-            ibest =  isame * (1-decreassing) + ibest * decreassing
+        #     ibest = jnp.argmin(loss_arr)
+        #     isame = jnp.argmin(jnp.abs(eps - hyp['eps']))
+        #     ibest =  isame * (1-decreassing) + ibest * decreassing
 
-            loss = loss_arr[ibest]
-            hyp['eps'] = eps[ibest]
-            dyn = {'x': dyns['x'][ibest], 'u': dyns['u'][ibest], 'l': dyns['l'][ibest], 'g': dyns['g'][ibest], 'x2': dyns['x2'][ibest], 'u2': dyns['u2'][ibest], 'l2': dyns['l2'][ibest], 'g2': dyns['g2'][ibest], 'vare': dyns['vare'][ibest], 'key': dyns['key'][ibest]}
-            #print(hyp['eps'], decreassing)
-            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
+        #     loss = loss_arr[ibest]
+        #     hyp['eps'] = eps[ibest]
+        #     dyn = {'x': dyns['x'][ibest], 'u': dyns['u'][ibest], 'l': dyns['l'][ibest], 'g': dyns['g'][ibest], 'x2': dyns['x2'][ibest], 'u2': dyns['u2'][ibest], 'l2': dyns['l2'][ibest], 'g2': dyns['g2'][ibest], 'vare': dyns['vare'][ibest], 'key': dyns['key'][ibest]}
+        #     #print(hyp['eps'], decreassing)
+        #     _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
 
-            return (loss, dyn, hyp), _diagnostics
+        #     return (loss, dyn, hyp), _diagnostics
         
+        
+        
+        def step2(state, useless):
+            dyn, hyp = state
+            dyn, nonans = self.twogroup_dynamics(dyn, hyp)
+            
+
+            varew = 1e-4
+            
+            eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
+            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
+            hyp['eps'] = eps_factor * hyp['eps']
+            hyp['L'] = self.computeL(dyn['x'])
+            
+            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
+            
+            return (dyn, hyp), _diagnostics
+        
+        
+    
         
         if self.integrator == 'MN':            
             self.hamiltonian_dynamics = self.minimal_norm
             self.grads_per_step = 2.0
-            hyp['eps'] *= jnp.sqrt(10.)
+            #hyp['eps'] *= jnp.sqrt(10.)
         
         
         if self.debug:
-            # for i in range(100):
-            #     loss0, dyn, hyp = step2(((loss0, i), dyn, hyp), None)[0]
                 
-            state, diagnostics2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = steps_left // (self.n * self.grads_per_step), xs = None)
+            state, diagnostics2 = jax.lax.scan(step2, init = (dyn, hyp), length = steps_left // (self.n * self.grads_per_step), xs = None)
             diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
             self.debug_plots(diagnostics, steps_used)
             
-            plott(self.Target, 800, state[1])
+            #plott(self.Target, 800, state[1])
             
             return state[-2]['x']
 
