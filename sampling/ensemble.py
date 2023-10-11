@@ -39,6 +39,10 @@ class vmap_target:
 
         if hasattr(target, 'name'):
             self.name = target.name
+            
+        
+        self.map_to_worst = target.map_to_worst
+        self.maxmin = target.maxmin
 
 
 class pmap_target:
@@ -91,7 +95,7 @@ class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, chains, 
-                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
+                 alpha = 1., integrator = 'MN', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
                  debug= True, plotdir = None):
         """Args:
                 Target: The target distribution class.
@@ -101,7 +105,8 @@ class Sampler:
                         
                 alpha: The momentum decoherence scale L = alpha sqrt(d). 
                        Optimal alpha is typically around 1, but can also be 10 or so.
-                integrator: 'LF' (leapfrog) or 'MN' (minimal norm). LF is expected to perform better.
+                integrator: in the first stage the leapfrog integrator is used, because it is cheaper to evaluate and high accuracy is not required.
+                            In the second stage we use either 'LF' (leapfrog) or 'MN' (minimal norm). MN is expected to perform better, because of the higher required accuracy.
                 isotropic_u0: If True, initial velocity will be randomly oriented for each particle. If False, it will be aligned or anti-aligned with the gradient, depending on the initial equipartition.
                 C: Proportionality constant for the stepsize.
                 equipartition_definition: 'full' or 'diagonal'. See the paper.
@@ -121,14 +126,10 @@ class Sampler:
         
         
         ### integrator ###
-        if integrator == "LF": #leapfrog (first updates the velocity)
-            self.hamiltonian_dynamics = self.leapfrog
-            self.grads_per_step = 1.0 #per chain
+        self.hamiltonian_dynamics = self.leapfrog
+        self.grads_per_step = 1.0 #per chain
 
-        elif integrator== 'MN': #minimal norm integrator (velocity)
-            self.hamiltonian_dynamics = self.minimal_norm
-            self.grads_per_step = 2.0
-        else:
+        if (integrator != 'MN') and (integrator != 'LF'):
             raise ValueError('integrator = ' + integrator + 'is not a valid option.')
 
 
@@ -282,7 +283,7 @@ class Sampler:
             x, u, l, g, _, key = self.dynamics(state['x'], state['u'], state['g'], state['key'], L, eps, sigma)
             x2, u2, l2, g2, _, key = self.dynamics(state['x2'], state['u2'], state['g2'], key, L, eps * self.n / (self.n - 1), sigma)
             
-            return {'x': x, 'u': u, 'l': l, 'g': g, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'key': key}
+            return {'x': x, 'u': u, 'l': l, 'g': g, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'key': key}, None
 
         s = jax.lax.scan(step, init= {'x': xx, 'u': uu, 'l': ll, 'g': gg, 'x2': x2, 'u2': u2, 'l2': l2, 'g2': g2, 'key': key}, length = self.n - 1, xs = None)[0]
                 
@@ -403,7 +404,7 @@ class Sampler:
         bias_d = jnp.square(moments_sloppy - moments) / var
         bias, bias_max = jnp.average(bias_d), jnp.max(bias_d)
         
-        adjust = ((self.n-1.)/self.n) ** 4
+        adjust = ((self.n - 1.)/self.n) ** 4
         return bias * adjust, bias_max * adjust
 
 
@@ -495,8 +496,6 @@ class Sampler:
         # dg = jnp.array(diagnostics1)
         # loss, eps = dg[:, 5], dg[1:, 0]
         
-            
-        
         
         def step2(state, useless):
             
@@ -529,11 +528,17 @@ class Sampler:
             return (loss, dyn, hyp), _diagnostics
         
         
+        if self.integrator == 'MN':            
+            self.hamiltonian_dynamics = self.minimal_norm
+            self.grads_per_step = 2.0
+            hyp['eps'] *= jnp.sqrt(10.)
+        
+        
         if self.debug:
             # for i in range(100):
             #     loss0, dyn, hyp = step2(((loss0, i), dyn, hyp), None)[0]
                 
-            state, diagnostics2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = steps_left // self.n, xs = None)
+            state, diagnostics2 = jax.lax.scan(step2, init = (loss0, dyn, hyp), length = steps_left // (self.n * self.grads_per_step), xs = None)
             diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
             self.debug_plots(diagnostics, steps_used)
             
@@ -637,7 +642,6 @@ def plott(target, steps, dyn):
     # ground truth
     from matplotlib.patches import Ellipse
     a, b = target.maxmin
-    print(a, b)
     ax = plt.gca()
     for i in range(2):
         factor, alpha, word = [(1.52, 1., '68'), (2.48, 0.5, '95')][i]
