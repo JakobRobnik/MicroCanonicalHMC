@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import math
 
-from .dynamics import update_momentum, hamiltonian_dynamics, grad_evals, update_position, random_unit_vector, minimal_norm, leapfrog, partially_refresh_momentum
+from sampler import dynamics
 from .correlation_length import ess_corr
 
 
@@ -48,9 +48,12 @@ class Sampler:
 
         ### integrator ###
         ## NOTE: sigma does not arise from any tuning here: it is a fixed parameter
-        self.hamiltonian_dynamics = hamiltonian_dynamics(integrator=self.integrator, sigma=self.sigma, grad_nlogp=self.Target.grad_nlogp, d=self.Target.d)
-
-        self.grad_evals_per_step = grad_evals[self.integrator]
+        self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator=self.integrator, sigma=self.sigma, grad_nlogp=self.Target.grad_nlogp, d=self.Target.d),
+                                       dynamics.partially_refresh_momentum(self.Target.d, True))
+        self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, True)
+        
+        
+        self.grad_evals_per_step = dynamics.grad_evals[self.integrator]
 
         ### option of stochastic gradient ###
         self.sg= False
@@ -85,57 +88,6 @@ class Sampler:
 
 
 
-    # eventually, this should also be moved to dynamics
-    def leapfrog_sg(self, x, u, g, random_key, eps, sigma, data):
-        """leapfrog"""
-
-        z = x / sigma # go to the latent space
-
-        # half step in momentum
-        uu, delta_r1 = update_momentum(self.target.d, eps * 0.5, g * sigma, u)
-
-        # full step in x
-        zz = z + eps * uu
-        xx = sigma * zz # go back to the configuration space
-        l, gg = self.Target.grad_nlogp(xx, data)
-
-        # half step in momentum
-        uu, delta_r2 = update_momentum(self.target.d, eps * 0.5, gg * sigma, uu)
-        kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
-
-        return xx, uu, l, gg, kinetic_change, random_key
-
-   
-    
-    def dynamics_bounces(self, x, u, g, random_key, time, L, eps, sigma):
-        """One step of the dynamics (with bounces)"""
-
-        # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps)
-
-        # bounce
-        u_bounce, key = random_unit_vector(self.Target.d)(random_key)
-        time += eps
-        do_bounce = time > L
-        time = time * (1 - do_bounce)  # reset time if the bounce is done
-        u_return = uu * (1 - do_bounce) + u_bounce * do_bounce  # randomly reorient the momentum if the bounce is done
-
-        return xx, u_return, ll, gg, kinetic_change, key, time
-
-
-
-    def dynamics_generalized(self, x, u, g, random_key, time, L, eps, sigma):
-        """One step of the generalized dynamics."""
-       
-        # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x=x,u=u,g=g, eps=eps)  # self.hamiltonian_dynamics(x, u, g, eps, sigma)
-
-        # Langevin-like noise
-        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
-        uu, key = partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=random_key)
-
-        return xx, uu, ll, gg, kinetic_change, key, time + eps
-
 
     def dynamics_generalized_gna(self, x, u, g, random_key, time, L, eps_factor, sigma):
         """One step of the generalized dynamics."""
@@ -148,7 +100,7 @@ class Sampler:
 
         # Langevin-like noise
         nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
-        uu, key = partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=random_key)
+        uu, key = self.partially_refresh_momentum(nu=nu, u=uu, random_key=random_key)
 
         return xx, uu, ll, gg, kinetic_change, key, time + eps
 
@@ -170,7 +122,7 @@ class Sampler:
 
             # Langevin-like noise
             nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.0) / self.Target.d)
-            uu, key =  partially_refresh_momentum(d=self.Target.d, nu=nu)(u=uu, random_key=key)
+            uu, key = self.partially_refresh_momentum(nu=nu, u=uu, random_key=key)
             
 
             return (xx, uu, ll, gg, key, K + dK, t + eps), None
@@ -249,7 +201,7 @@ class Sampler:
         else:
             l, g = self.Target.grad_nlogp(x)
 
-        u, key = random_unit_vector(self.Target.d)(key)
+        u, key = self.random_unit_vector(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
 
         return x, u, l, g, key

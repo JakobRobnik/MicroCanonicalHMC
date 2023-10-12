@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from sampling.sampler import find_crossing
+from sampling import dynamics
 
 
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
@@ -126,12 +127,14 @@ class Sampler:
         
         
         ### integrator ###
-        self.hamiltonian_dynamics = self.leapfrog
-        self.grads_per_step = 1.0 #per chain
-        self.integrator = integrator
-        if (integrator != 'MN') and (integrator != 'LF'):
-            raise ValueError('integrator = ' + integrator + 'is not a valid option.')
+        self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, False)
+        self.partially_refresh_momentum = dynamics.partially_refresh_momentum(self.Target.d, False)
+
+        self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'LF', sigma= self.sigma, grad_nlogp= self.Target.grad_nlogp, d= self.Target.d),
+                                       self.partially_refresh_momentum)
+        self.grad_evals_per_step = 1
         
+        self.integrator = integrator
 
         # initialization
         self.isotropic_u0 = isotropic_u0 # isotropic direction of the initial velocity (if false, aligned with the gradient)
@@ -145,8 +148,7 @@ class Sampler:
         self.delay_frac = 0.05
         
         #second stage
-        self.n = 1 # n eps-steps with the precise chain and n-1 eps'-steps with the sloopy chains (eps' = eps n/(n-1) )
-        
+        self.n = 2 # n eps-steps with the precise chain and n-1 eps'-steps with the sloopy chains (eps' = eps n/(n-1) )
         
         self.vmap_twogroup_dynamics = jax.vmap(self.twogroup_dynamics, (None, 0))
         
@@ -155,7 +157,7 @@ class Sampler:
         if debug:
             if plotdir == None:
                 raise ValueError('if debug == True, plotdir must be given.')
-            self.plot_dir = plotdir + self.Target.name
+            self.plot_dir = plotdir + self.Target.name + '_debug'
 
         if equipartition_definition == 'full':
             self.equipartition = self.equipartition_fullrank
@@ -164,107 +166,6 @@ class Sampler:
         else:
             raise ValueError('equipartition_definition = ' + equipartition_definition + "is not a valid option, should be either 'full' or 'diagonal'.")
 
-
-        
-        
-    def random_unit_vector(self, random_key, num_chains):
-        """Generates a random (isotropic) unit vector."""
-        key, subkey = jax.random.split(random_key)
-        u = jax.random.normal(subkey, shape = (num_chains, self.Target.d))
-        normed_u = u / jnp.sqrt(jnp.sum(jnp.square(u), axis = 1))[:, None]
-        return normed_u, key
-
-
-    def partially_refresh_momentum(self, u, random_key, nu):
-        """Adds a small noise to u and normalizes."""
-        key, subkey = jax.random.split(random_key)
-        noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
-
-        return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
-
-
-
-    def update_momentum(self, eps, g, u):
-        """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
-        similar to the implementation: https://github.com/gregversteeg/esh_dynamics
-        There are no exponentials e^delta, which prevents overflows when the gradient norm is large."""
-        g_norm = jnp.sqrt(jnp.sum(jnp.square(g), axis=1)).T
-        nonzero = g_norm > 1e-13  # if g_norm is zero (we are at the MAP solution) we also want to set e to zero and the function will return u
-        inv_g_norm = jnp.nan_to_num(1. / g_norm) * nonzero
-        e = - g * inv_g_norm[:, None]
-        ue = jnp.sum(u * e, axis=1)
-        delta = eps * g_norm / (self.Target.d - 1)
-        zeta = jnp.exp(-delta)
-        uu = e * ((1 - zeta) * (1 + zeta + ue * (1 - zeta)))[:, None] + 2 * zeta[:, None] * u
-        delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1 - ue) * zeta ** 2)
-        return uu / (jnp.sqrt(jnp.sum(jnp.square(uu), axis=1)).T)[:, None], delta_r
-
-
-    def leapfrog(self, x, u, g, eps, sigma):
-        """leapfrog"""
-
-        z = x / sigma # go to the latent space
-
-        # half step in momentum
-        uu, delta_r1 = self.update_momentum(eps * 0.5, g * sigma, u)
-
-
-        # full step in x
-        zz = z + eps * uu
-        xx = sigma * zz # go back to the configuration space
-        l, gg = self.Target.grad_nlogp(xx)
-
-        # half step in momentum
-        uu, delta_r2 = self.update_momentum(eps * 0.5, gg * sigma, uu)
-        kinetic_change = (delta_r1 + delta_r2) * (self.Target.d-1)
-
-        return xx, uu, l, gg, kinetic_change
-
-
-
-    def minimal_norm(self, x, u, g, eps, sigma):
-        """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
-
-        # V T V T V
-        z = x / sigma # go to the latent space
-
-        #V (momentum update)
-        uu, r1 = self.update_momentum(eps * lambda_c, g * sigma, u)
-
-        #T (postion update)
-        zz = z + 0.5 * eps * uu
-        xx = sigma * zz # go back to the configuration space
-        ll, gg = self.Target.grad_nlogp(xx)
-
-        #V (momentum update)
-        uu, r2 = self.update_momentum(eps * (1 - 2 * lambda_c), gg * sigma, uu)
-
-        #T (postion update)
-        zz = zz + 0.5 * eps * uu
-        xx = sigma * zz  # go back to the configuration space
-        ll, gg = self.Target.grad_nlogp(xx)
-
-        #V (momentum update)
-        uu, r3 = self.update_momentum(eps * lambda_c, gg, uu)
-
-        #kinetic energy change
-        kinetic_change = (r1 + r2 + r3) * (self.Target.d-1)
-
-        return xx, uu, ll, gg, kinetic_change
-
-
-
-    def dynamics(self, x, u, g, random_key, L, eps, sigma):
-        """One step of the generalized dynamics."""
-
-        # Hamiltonian step
-        xx, uu, ll, gg, kinetic_change = self.hamiltonian_dynamics(x, u, g, eps, sigma)
-
-        # bounce
-        nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.) / self.Target.d)
-        uu, key = self.partially_refresh_momentum(uu, random_key, nu)
-
-        return xx, uu, ll, gg, kinetic_change, key
 
 
     def twogroup_dynamics(self, dyn, hyp):
@@ -419,10 +320,10 @@ class Sampler:
         x, g, x2, key = dyn['x'], dyn['g'], dyn['x2'], dyn['key']
         
         ### diagnostics ###
-        equi_diag, key = self.equipartition_diagonal(x, g, key) #estimate the bias from the equipartition loss
-        equi_full, key = self.equipartition_fullrank(x, g, key) #estimate the bias from the equipartition loss
+        equi_diag, key = self.equipartition_diagonal(x, g, key) # estimate the bias from the equipartition loss
+        equi_full, key = self.equipartition_fullrank(x, g, key)
         
-        bpair = self.discretization_bias(x, x2) #estimate the bias from the chains with larger stepsize
+        bpair = self.discretization_bias(x, x2) # estimate the bias from the chains with larger stepsize
         btrue = self.ground_truth_bias(x) #actual bias
         
         varew = self.C * jnp.power(equi_full, 3./8.)
@@ -431,6 +332,7 @@ class Sampler:
         
         return jnp.array([hyp['eps'], hyp['L'], dyn['vare'], varew, bpair[0], bpair[1], btrue[0], btrue[1], equi_diag, equi_full]), dyn
     
+
 
     def sample(self, num_steps, x_initial='prior', random_key= None):
         """Args:
@@ -457,8 +359,8 @@ class Sampler:
             decreassing *= (history[-1] > history[0])
 
             varew = self.C * jnp.power(equi, 3./8.)
-            stage1 = steps < 500
-            varew = varew * stage1 + (1-stage1) * 1e-4
+            #stage1 = steps < 500
+            #varew = varew * stage1 + (1-stage1) * 1e-4
             eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
             eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
             hyp['eps'] = eps_factor * hyp['eps']
@@ -467,6 +369,20 @@ class Sampler:
             
             return (steps + self.n, history, decreassing, dyn, hyp)
         
+        
+        def step2(state):
+            dyn, hyp = state
+            dyn, nonans = self.twogroup_dynamics(dyn, hyp)
+            
+            ### hyperparameters for the next step ###
+            varew = 1e-4
+            eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
+            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
+            hyp['eps'] = eps_factor * hyp['eps']
+            
+            hyp['L'] = self.computeL(dyn['x'])
+            
+            return (dyn, hyp)
         
         
         def step1_debug(state):
@@ -478,10 +394,16 @@ class Sampler:
             diagnostics1.append(np.array(_diagnostics))
             return (steps, history, decreassing, dyn, hyp)
             
+        
+        def step2_debug(state, useless):
+            dyn, hyp = step2(state)
+            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
+            return (dyn, hyp), _diagnostics
+            
 
         def cond(state):
             steps, history, decreassing, dyn, hyp = state
-            return steps < 1000
+            return steps < 500
             #return decreassing & (steps < num_steps * 0.8)
         
         
@@ -493,73 +415,37 @@ class Sampler:
         
         steps_used, history, decreassing, dyn, hyp = state
         steps_left = num_steps - steps_used
-        loss0 = self.discretization_bias(dyn['x'], dyn['x2'])[1]
-        
-        ### history: ###
-        # dg = jnp.array(diagnostics1)
-        # loss, eps = dg[:, 5], dg[1:, 0]
+        #loss0 = self.discretization_bias(dyn['x'], dyn['x2'])[1]
         
         
-        # def step2(state, useless):
+        # def step2(state):
+        #     dyn, hyp = state
+        #     dyn, nonans = self.twogroup_dynamics(dyn, hyp)
             
-        #     loss, dyn, hyp = state
-        #     # do a grid search over the stepsize
-        #     delt = jnp.log10(1.04)
-        #     eps = jnp.logspace(-delt, delt, 100) * hyp['eps']
+        #     varew = 1e-4
             
-        #     hyps = {'L': hyp['L'] * jnp.ones(len(eps)), 'eps': eps, 'sigma': jnp.tile(hyp['sigma'], len(eps)).reshape(len(eps), self.Target.d)}
-        #     dyns, nonans = self.vmap_twogroup_dynamics(dyn, hyps)
+        #     eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
+        #     eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
+        #     hyp['eps'] = eps_factor * hyp['eps']
+        #     hyp['L'] = self.computeL(dyn['x'])
             
-        #     loss_arr = jax.vmap(lambda _dyn: self.discretization_bias(_dyn['x'], _dyn['x2'])[1])(dyns)
-            
-        #     # plt.plot(eps, loss/loss_arr, '.')
-        #     # plt.tight_layout()
-        #     # plt.savefig('img/grid' +str(counter)+ '.png')
-        #     # plt.close()
-        #     decreassing = jnp.sum(loss_arr < loss) > 0
-            
-        #     ibest = jnp.argmin(loss_arr)
-        #     isame = jnp.argmin(jnp.abs(eps - hyp['eps']))
-        #     ibest =  isame * (1-decreassing) + ibest * decreassing
-
-        #     loss = loss_arr[ibest]
-        #     hyp['eps'] = eps[ibest]
-        #     dyn = {'x': dyns['x'][ibest], 'u': dyns['u'][ibest], 'l': dyns['l'][ibest], 'g': dyns['g'][ibest], 'x2': dyns['x2'][ibest], 'u2': dyns['u2'][ibest], 'l2': dyns['l2'][ibest], 'g2': dyns['g2'][ibest], 'vare': dyns['vare'][ibest], 'key': dyns['key'][ibest]}
-        #     #print(hyp['eps'], decreassing)
         #     _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
-
-        #     return (loss, dyn, hyp), _diagnostics
-        
-        
-        
-        def step2(state, useless):
-            dyn, hyp = state
-            dyn, nonans = self.twogroup_dynamics(dyn, hyp)
             
-
-            varew = 1e-4
-            
-            eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
-            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
-            hyp['eps'] = eps_factor * hyp['eps']
-            hyp['L'] = self.computeL(dyn['x'])
-            
-            _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
-            
-            return (dyn, hyp), _diagnostics
+        #     return (dyn, hyp), _diagnostics
         
         
-    
-        
-        if self.integrator == 'MN':            
-            self.hamiltonian_dynamics = self.minimal_norm
-            self.grads_per_step = 2.0
-            #hyp['eps'] *= jnp.sqrt(10.)
+        # if self.integrator == 'MN':            
+        #     self.hamiltonian_dynamics = hamiltonian_dynamics(integrator= 'MN', sigma= self.sigma, grad_nlogp= self.Target.grad_nlogp, d= self.Target.d)
+        #     self.grads_per_step = 2
+        #     #hyp['eps'] *= jnp.sqrt(10.)
         
         
         if self.debug:
-                
-            state, diagnostics2 = jax.lax.scan(step2, init = (dyn, hyp), length = steps_left // (self.n * self.grads_per_step), xs = None)
+            
+            state, diagnostics2 = jax.lax.scan(step2_debug, init = (dyn, hyp), length = steps_left // (self.n * self.grads_per_step), xs = None)
+        
+        
+            # state, diagnostics2 = jax.lax.scan(step2, init = (dyn, hyp), length = steps_left // (self.n * self.grads_per_step), xs = None)
             diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
             self.debug_plots(diagnostics, steps_used)
             
