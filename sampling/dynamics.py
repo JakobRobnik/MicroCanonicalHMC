@@ -54,9 +54,9 @@ def update_position(grad_nlogp):
 
 
 
-def minimal_norm(d, T, V, sigma):
+def minimal_norm(d, T, V):
 
-  def step(x, u, g, eps):
+  def step(x, u, g, eps, sigma):
       """Integrator from https://arxiv.org/pdf/hep-lat/0505020.pdf, see Equation 20."""
 
       # V T V T V
@@ -75,9 +75,9 @@ def minimal_norm(d, T, V, sigma):
 
 
 
-def leapfrog(d, T, V, sigma):
+def leapfrog(d, T, V):
 
-  def step(x, u, g, eps):
+  def step(x, u, g, eps, sigma):
 
     # V T V
     uu, r1 = V(eps * 0.5, u, g * sigma)
@@ -93,31 +93,32 @@ def leapfrog(d, T, V, sigma):
 
 
 
-def hamiltonian(integrator, sigma, grad_nlogp, d, sequential = True):
+def hamiltonian(integrator, grad_nlogp, d, sequential = True):
     
     T = update_position(grad_nlogp)
     V = update_momentum(d, sequential)
     
     if integrator == "LF": #leapfrog (first updates the velocity)
-        return leapfrog(d, T, V, sigma)
+        return leapfrog(d, T, V)
 
     elif integrator== 'MN': #minimal norm integrator (first updates the velocity)
-        return minimal_norm(d, T, V, sigma)
+        return minimal_norm(d, T, V)
       
     else:
         raise Exception("Integrator must be either MN (minimal_norm) or LF (leapfrog)")
 
 
-def mclmc(hamiltonian_dynamics, partially_refresh_momentum):
+
+def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
     
-  def step(self, x, u, g, random_key, L, eps):
+  def step(x, u, g, random_key, L, eps, sigma):
       """One step of the generalized dynamics."""
 
       # Hamiltonian step
-      xx, uu, ll, gg, kinetic_change = hamiltonian_dynamics(x=x, u=u, g=g, eps=eps)
+      xx, uu, ll, gg, kinetic_change = hamiltonian_dynamics(x=x, u=u, g=g, eps=eps, sigma = sigma)
 
       # Langevin-like noise
-      nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.) / self.Target.d)
+      nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.) / d)
       uu, key = partially_refresh_momentum(u= uu, random_key= random_key, nu= nu)
 
       return xx, uu, ll, gg, kinetic_change, key
@@ -129,11 +130,13 @@ def mclmc(hamiltonian_dynamics, partially_refresh_momentum):
 def random_unit_vector(d, sequential= True):
   """Generates a random (isotropic) unit vector."""
   
+  
   def rng_sequential(random_key):
       key, subkey = jax.random.split(random_key)
       u = jax.random.normal(subkey, shape = (d, ))
       u /= jnp.sqrt(jnp.sum(jnp.square(u)))
       return u, key
+    
       
   def rng_parallel(random_key, num_chains):
       key, subkey = jax.random.split(random_key)
@@ -141,23 +144,28 @@ def random_unit_vector(d, sequential= True):
       normed_u = u / jnp.sqrt(jnp.sum(jnp.square(u), axis = 1))[:, None]
       return normed_u, key
     
+    
   return rng_sequential if sequential else rng_parallel
+
 
 
 
 def partially_refresh_momentum(d, sequential= True):
   """Adds a small noise to u and normalizes."""
     
+    
   def rng_sequential(u, random_key, nu):
     key, subkey = jax.random.split(random_key)
     z = nu * jax.random.normal(subkey, shape = (d, ))
 
     return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
+  
 
   def rng_parallel(u, random_key, nu):
       key, subkey = jax.random.split(random_key)
       noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
 
       return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
+
 
   return rng_sequential if sequential else rng_parallel
