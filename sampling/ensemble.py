@@ -88,8 +88,8 @@ class pmap_target:
             self.name = target.name
 
 
-        self.map_to_worst = target.map_to_worst
-        self.maxmin = target.maxmin
+        # self.map_to_worst = target.map_to_worst
+        # self.maxmin = target.maxmin
         
         
 class Sampler:
@@ -173,7 +173,7 @@ class Sampler:
         
         x, u, l, g, x2, u2, l2, g2, vare, key = dyn['x'], dyn['u'], dyn['l'], dyn['g'], dyn['x2'], dyn['u2'], dyn['l2'], dyn['g2'], dyn['vare'], dyn['key']
         L, eps, sigma = hyp['L'], hyp['eps'], hyp['sigma']
-        
+   
         ### one extra step of the precise dynamics ###
         xx, uu, ll, gg, dK, key = self.dynamics(x, u, g, key, L, eps, sigma)
         de = jnp.square(dK + ll - l) / self.Target.d
@@ -435,7 +435,10 @@ class Sampler:
         
         
         # if self.integrator == 'MN':            
-        #     self.hamiltonian_dynamics = hamiltonian_dynamics(integrator= 'MN', sigma= self.sigma, grad_nlogp= self.Target.grad_nlogp, d= self.Target.d)
+        
+        # self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'MN', grad_nlogp= self.Target.grad_nlogp, d= self.Target.d),
+        #                                self.partially_refresh_momentum)
+        #     self.grads_per_step = 2
         #     self.grads_per_step = 2
         #     #hyp['eps'] *= jnp.sqrt(10.)
         
