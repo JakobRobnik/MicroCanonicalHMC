@@ -89,7 +89,7 @@ class Sampler:
         
         nonans = jnp.all(jnp.isfinite(xx))
 
-        return nonans, *jax.tree_map(lambda new, old: jax.lax.select(nonans, jnp.nan_to_num(new), old), (xx, uu, ll, gg, eps_max, dK), (x, u, l, g, eps * 0.8, 0.))
+        return nonans, *jax.tree_util.tree_map(lambda new, old: jax.lax.select(nonans, jnp.nan_to_num(new), old), (xx, uu, ll, gg, eps_max, dK), (x, u, l, g, eps * 0.8, 0.))
         
         
         
@@ -238,7 +238,7 @@ class Sampler:
 
     def single_chain_sample(self, num_steps, x_initial, random_key, output, thinning):
         """sampling routine. It is called by self.sample"""
-
+        
         ### initial conditions ###
         x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
         L, eps = self.L, self.eps #the initial values, given at the class initialization (or set to the default values)
@@ -386,10 +386,8 @@ class Sampler:
 
         #initial state
         state = ((x, u, l, g, 0., jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key), (0., jnp.zeros(len(x)), jnp.zeros(len(x))))
-
         # run the steps
         state, eps = jax.lax.scan(step, init=state, xs= outer_weights, length= num_steps1 + num_steps2)
-
         # determine L
         if num_steps2 != 0.:
             F1, F2 = state[1][1], state[1][2]
@@ -406,19 +404,16 @@ class Sampler:
                 #readjust the stepsize
                 steps = num_steps2 // 3 #we do some small number of steps
                 state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
-
             else:
                 L = jnp.sqrt(sigma2 * self.Target.d)
 
-        xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-2] # the final state
-
+        xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-1] # the final state
         return L, eps[-1], sigma, xx, uu, ll, gg, key #return the tuned hyperparameters and the final state
 
 
 
     def tune3(self, x, u, l, g, random_key, L, eps, sigma, num_steps):
         """determine L by the autocorrelations (around 10 effective samples are needed for this to be accurate)"""
-
         X, xx, uu, ll, gg, key = self.sample_full(num_steps, x, u, l, g, random_key, L, eps, sigma)
         ESS = ess_corr(X)
         Lnew = self.Lfactor * eps / ESS # = 0.4 * correlation length

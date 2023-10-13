@@ -262,25 +262,40 @@ class HardConvex():
 
 
 class BiModal():
-    """A Gaussian mixture p(x) = f N(x | mu1, sigma1) + (1-f) N(x | mu2, sigma2)."""
+    """A Gaussian mixture p(x) = (1-f) N(x | 0, sigma1) + f N(x | mu, sigma2)."""
 
-    def __init__(self, d = 50, mu1 = 0.0, mu2 = 8.0, sigma1 = 1.0, sigma2 = 1.0, f = 0.2):
+    def __init__(self, d = 50, mu = 8.0, sigma1 = 1.0, sigma2 = 1.0, f = 0.2):
 
         self.d = d
 
-        self.mu1 = jnp.insert(jnp.zeros(d-1), 0, mu1)
-        self.mu2 = jnp.insert(jnp.zeros(d - 1), 0, mu2)
+        self.mu = jnp.insert(jnp.zeros(d - 1), 0, mu)
         self.sigma1, self.sigma2 = sigma1, sigma2
         self.f = f
-        self.variance = jnp.insert(jnp.ones(d-1) * ((1 - f) * sigma1**2 + f * sigma2**2), 0, (1-f)*(sigma1**2 + mu1**2) + f*(sigma2**2 + mu2**2))
+        
+        # ground truth moments
+        vx1, vx2 = sigma1**2, sigma2**2 + mu**2 # E[x^2] of the modes
+        vy1, vy2 = sigma1**2, sigma2**2 # E[y^2] of the modes
+        vx = (1-f)* vx1 + f * vx2 # E[x^2]
+        vy = (1 - f) * vy1 + f * vy2 # E[y^2]
+        
+        Vx1, Vx2 = 2 * sigma1**4, 2 * sigma2**4 + 4 * mu**2 * sigma2**2 # Var[x^2] of the modes
+        Vy1, Vy2 = 2 * sigma1**4, 2 * sigma2**4 # Var[y^2] of the modes
+        Vx = (1-f)* Vx1 + f * Vx2 # Var[x^2]
+        Vy = (1 - f) * Vy1 + f * Vy2 # Var[y^2]
+        
+        self.second_moments = jnp.insert(jnp.ones(d-1) * vy, 0, vx)
+
+        self.variance_second_moments = jnp.insert(jnp.ones(d-1) * Vy, 0, Vx)
+        
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
 
 
     def nlogp(self, x):
         """- log p of the target distribution"""
 
-        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu1), axis= -1) / self.sigma1 ** 2) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
-        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu2), axis= -1) / self.sigma2 ** 2) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
+        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x), axis= -1) / self.sigma1 ** 2) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
+        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu), axis= -1) / self.sigma2 ** 2) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
 
         return -jnp.log(N1 + N2)
 
@@ -289,8 +304,8 @@ class BiModal():
         """direct sampler from a target"""
         X = np.random.normal(size = (num_samples, self.d))
         mask = np.random.uniform(0, 1, num_samples) < self.f
-        X[mask, :] = (X[mask, :] * self.sigma2) + self.mu2
-        X[~mask] = (X[~mask] * self.sigma1) + self.mu1
+        X[mask, :] = (X[mask, :] * self.sigma2) + self.mu
+        X[~mask] = (X[~mask] * self.sigma1)
 
         return X
 
