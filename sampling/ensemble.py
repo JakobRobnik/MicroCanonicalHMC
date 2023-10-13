@@ -130,7 +130,7 @@ class Sampler:
         self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, False)
         self.partially_refresh_momentum = dynamics.partially_refresh_momentum(self.Target.d, False)
 
-        self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'LF', sigma= self.sigma, grad_nlogp= self.Target.grad_nlogp, d= self.Target.d),
+        self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'LF', grad_nlogp= self.Target.grad_nlogp, d= self.Target.d),
                                        self.partially_refresh_momentum)
         self.grad_evals_per_step = 1
         

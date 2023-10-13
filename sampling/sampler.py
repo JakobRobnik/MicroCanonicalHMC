@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import math
 
-from sampler import dynamics
+from . import dynamics
 from .correlation_length import ess_corr
 
 
