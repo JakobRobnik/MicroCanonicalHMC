@@ -3,15 +3,8 @@ from scipy.stats import norm
 import jax
 import jax.numpy as jnp
 import os
-
-from numpyro.examples.datasets import SP500, load_dataset
-from numpyro.distributions import StudentT
-from numpyro.distributions import Exponential
-
 dirr = os.path.dirname(os.path.realpath(__file__))
 
-
-### Benchmark targets ###
 
 
 class StandardNormal():
@@ -22,6 +15,9 @@ class StandardNormal():
         self.variance = jnp.ones(d)
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
+        self.second_moments = jnp.ones(d)
+        self.variance_second_moments = 2 * self.second_moments
+        
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -33,6 +29,7 @@ class StandardNormal():
 
     def prior_draw(self, key):
         return jax.random.normal(key, shape = (self.d, ))
+
 
 
 
@@ -126,7 +123,9 @@ class IllConditionedGaussianGamma():
         eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.d)) #eigenvalues of the Hessian
         eigs *= jnp.average(1.0/eigs)
         self.entropy = 0.5 * self.d
+        self.maxmin = (1./jnp.sqrt(eigs[0]), 1./jnp.sqrt(eigs[-1])) 
         R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
+        self.map_to_worst = (R.T)[[0, -1], :]
         self.Hessian = R @ np.diag(eigs) @ R.T
 
         # analytic ground truth moments
@@ -149,7 +148,7 @@ class IllConditionedGaussianGamma():
 
         else: # N(0, sigma_true_max)
             self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,)) * jnp.max(1.0/jnp.sqrt(eigs))
-
+            
     def nlogp(self, x):
         """- log p of the target distribution"""
         return 0.5 * x.T @ self.Hessian @ x
@@ -263,25 +262,40 @@ class HardConvex():
 
 
 class BiModal():
-    """A Gaussian mixture p(x) = f N(x | mu1, sigma1) + (1-f) N(x | mu2, sigma2)."""
+    """A Gaussian mixture p(x) = (1-f) N(x | 0, sigma1) + f N(x | mu, sigma2)."""
 
-    def __init__(self, d = 50, mu1 = 0.0, mu2 = 8.0, sigma1 = 1.0, sigma2 = 1.0, f = 0.2):
+    def __init__(self, d = 50, mu = 8.0, sigma1 = 1.0, sigma2 = 1.0, f = 0.2):
 
         self.d = d
 
-        self.mu1 = jnp.insert(jnp.zeros(d-1), 0, mu1)
-        self.mu2 = jnp.insert(jnp.zeros(d - 1), 0, mu2)
+        self.mu = jnp.insert(jnp.zeros(d - 1), 0, mu)
         self.sigma1, self.sigma2 = sigma1, sigma2
         self.f = f
-        self.variance = jnp.insert(jnp.ones(d-1) * ((1 - f) * sigma1**2 + f * sigma2**2), 0, (1-f)*(sigma1**2 + mu1**2) + f*(sigma2**2 + mu2**2))
+        
+        # ground truth moments
+        vx1, vx2 = sigma1**2, sigma2**2 + mu**2 # E[x^2] of the modes
+        vy1, vy2 = sigma1**2, sigma2**2 # E[y^2] of the modes
+        vx = (1-f)* vx1 + f * vx2 # E[x^2]
+        vy = (1 - f) * vy1 + f * vy2 # E[y^2]
+        
+        Vx1, Vx2 = 2 * sigma1**4, 2 * sigma2**4 + 4 * mu**2 * sigma2**2 # Var[x^2] of the modes
+        Vy1, Vy2 = 2 * sigma1**4, 2 * sigma2**4 # Var[y^2] of the modes
+        Vx = (1-f)* Vx1 + f * Vx2 # Var[x^2]
+        Vy = (1 - f) * Vy1 + f * Vy2 # Var[y^2]
+        
+        self.second_moments = jnp.insert(jnp.ones(d-1) * vy, 0, vx)
+
+        self.variance_second_moments = jnp.insert(jnp.ones(d-1) * Vy, 0, Vx)
+        
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
 
 
     def nlogp(self, x):
         """- log p of the target distribution"""
 
-        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu1), axis= -1) / self.sigma1 ** 2) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
-        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu2), axis= -1) / self.sigma2 ** 2) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
+        N1 = (1.0 - self.f) * jnp.exp(-0.5 * jnp.sum(jnp.square(x), axis= -1) / self.sigma1 ** 2) / jnp.power(2 * jnp.pi * self.sigma1 ** 2, self.d * 0.5)
+        N2 = self.f * jnp.exp(-0.5 * jnp.sum(jnp.square(x - self.mu), axis= -1) / self.sigma2 ** 2) / jnp.power(2 * jnp.pi * self.sigma2 ** 2, self.d * 0.5)
 
         return -jnp.log(N1 + N2)
 
@@ -290,8 +304,8 @@ class BiModal():
         """direct sampler from a target"""
         X = np.random.normal(size = (num_samples, self.d))
         mask = np.random.uniform(0, 1, num_samples) < self.f
-        X[mask, :] = (X[mask, :] * self.sigma2) + self.mu2
-        X[~mask] = (X[~mask] * self.sigma1) + self.mu1
+        X[mask, :] = (X[mask, :] * self.sigma2) + self.mu
+        X[~mask] = (X[~mask] * self.sigma1)
 
         return X
 
@@ -488,8 +502,7 @@ class StochasticVolatility():
     """Example from https://num.pyro.ai/en/latest/examples/stochastic_volatility.html"""
 
     def __init__(self):
-        _, fetch = load_dataset(SP500, shuffle=False)
-        SP500_dates, self.SP500_returns = fetch()
+        self.SP500_returns = np.load(dirr + '/SP500.npy')
 
         self.name = 'SV'
         self.d = 2429
@@ -511,7 +524,7 @@ class StochasticVolatility():
 
         l1= (jnp.exp(x[-2]) - x[-2]) + (jnp.exp(x[-1]) - x[-1])
         l2 = (self.d - 2) * jnp.log(sigma) + 0.5 * (jnp.square(x[0]) + jnp.sum(jnp.square(x[1:-2] - x[:-3]))) / jnp.square(sigma)
-        l3 = -jnp.sum(StudentT(df=nu, scale= jnp.exp(x[:-2])).log_prob(self.SP500_returns))
+        l3 = jnp.sum(nlogp_StudentT(self.SP500_returns, nu, jnp.exp(x[:-2])))
 
         return l1 + l2 + l3
 
@@ -538,6 +551,18 @@ class StochasticVolatility():
         walk = random_walk(key_walk, self.d - 2) * params[0]
         return jnp.concatenate((walk, jnp.log(params/scales)))
     
+    
+def nlogp_StudentT(x, df, scale):
+    y = x / scale
+    z = (
+        jnp.log(scale)
+        + 0.5 * jnp.log(df)
+        + 0.5 * jnp.log(jnp.pi)
+        + jax.scipy.special.gammaln(0.5 * df)
+        - jax.scipy.special.gammaln(0.5 * (df + 1.0))
+    )
+    return 0.5 * (df + 1.0) * jnp.log1p(y**2.0 / df) + z
+
 
 def random_walk(key, num):
     """ Genereting process for the standard normal walk:
