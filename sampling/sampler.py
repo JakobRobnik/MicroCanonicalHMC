@@ -1,5 +1,6 @@
 ## style note: general preference here for functional style (e.g. global function definitions, purity, code sharing)
 
+from enum import Enum
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -7,7 +8,7 @@ import numpy as np
 from . import dynamics
 from .correlation_length import ess_corr
 
-
+OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
 
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
@@ -124,10 +125,8 @@ class Sampler:
     def get_initial_conditions(self, x_initial, random_key):
 
         ### random key ###
-        if random_key is None:
-            key = jax.random.PRNGKey(0)
-        else:
-            key = random_key
+        
+        key = jax.random.PRNGKey(0) if random_key is None else random_key
 
         ### initial conditions ###
         if isinstance(x_initial, str):
@@ -148,7 +147,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = OutputType.normal, thinning= 1):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -256,20 +255,18 @@ class Sampler:
 
         ### sampling ###
 
-        if output == 'normal' or output == 'detailed':
-            X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
-            if output == 'detailed':
-                return X, E, L, eps
-            else:
+        match output:
+            case OutputType.normal:
+                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
                 return X
-        elif output == 'expectation':
-            return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
+            case OutputType.detailed:
+                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
+                return X, E, L, eps
+            case OutputType.expectation:
+                return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
+            case OutputType.ess:
+                return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
 
-        elif output == 'ess':
-            return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
-
-        else:
-            raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
 
 
     ### for loops which do the sampling steps: ###

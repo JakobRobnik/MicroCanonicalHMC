@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sampling.sampler import Sampler
+from sampling.sampler import OutputType, Sampler
 
 nlogp = lambda x: 0.5*jnp.sum(jnp.square(x))
 value_grad = jax.value_and_grad(nlogp)
@@ -42,4 +42,4 @@ def test_mclmc():
     assert jnp.array_equal(samples1,samples2), "sampler should be pure"
     assert not jnp.array_equal(samples1,samples3), "this suggests that seed is not being used"
     # run with multiple chains
-    sampler.sample(100, 3)
+    sampler.sample(100, 3, output=OutputType.detailed)
