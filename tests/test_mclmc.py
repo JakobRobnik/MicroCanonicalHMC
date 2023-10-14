@@ -7,31 +7,25 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sampling.sampler import Sampler
+from sampling.sampler import Sampler, Target
 
 nlogp = lambda x: 0.5*jnp.sum(jnp.square(x))
-value_grad = jax.value_and_grad(nlogp)
 
-class StandardGaussian():
+class StandardGaussian(Target):
 
-  def __init__(self, d):
-    self.d = d
-
-  def grad_nlogp(self, x):
-    """should return nlogp and gradient of nlogp"""
-    return value_grad(x)
+  def __init__(self, d, nlogp):
+    Target.__init__(self,d,nlogp)
 
   def transform(self, x):
     return x[:2]
-    #return x
-
+  
   def prior_draw(self, key):
     """Args: jax random key
        Returns: one random sample from the prior"""
 
     return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 4
 
-target = StandardGaussian(d = 10)
+target = StandardGaussian(d = 10, nlogp=nlogp)
 sampler = Sampler(target, varEwanted = 5e-4)
 
 
