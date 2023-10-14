@@ -35,11 +35,11 @@ target = StandardGaussian(d = 10)
 sampler = Sampler(target, varEwanted = 5e-4)
 
 
-# def test_mclmc():
-#     samples1 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))
-#     samples2 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))
-#     samples3 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(1))
-#     assert jnp.array_equal(samples1,samples2), "sampler should be pure"
-#     assert not jnp.array_equal(samples1,samples3), "this suggests that seed is not being used"
-#     # run with multiple chains
-#     sampler.sample(100, 3)
+def test_mclmc():
+    samples1 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))
+    samples2 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))
+    samples3 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(1))
+    assert jnp.array_equal(samples1,samples2), "sampler should be pure"
+    assert not jnp.array_equal(samples1,samples3), "this suggests that seed is not being used"
+    # run with multiple chains
+    sampler.sample(100, 3)
