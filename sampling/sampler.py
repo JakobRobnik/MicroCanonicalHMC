@@ -178,7 +178,7 @@ class Sampler:
         """
 
         if num_chains == 1:
-            results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
+            results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning, adaptive=True) #the function which actually does the sampling
             if output == 'ess':
                 return self.bias_plot(results)
 
@@ -204,14 +204,13 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning, adaptive=False)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
                 if output == 'ess':
                     return self.bias_plot(results.reshape(num_chains, num_steps))
-
                 ### reshape results ###
                 if type(results) is tuple: #each chain returned a tuple
                     results_reshaped =[]
