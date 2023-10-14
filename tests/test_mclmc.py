@@ -51,8 +51,8 @@ def test_mclmc():
     # run with multiple chains
     sampler.sample(20, 3)
     # run with different output types
-    # sampler.sample(20, 3, output='ess')
-    # sampler.sample(20, 3, output='expectation')
+    sampler.sample(20, 3, output='ess')
+    sampler.sample(20, 3, output='expectation')
     sampler.sample(20, 3, output='detailed')
     sampler.sample(20, 3, output='normal')
 
