@@ -39,4 +39,4 @@ def test_mclmc():
     # run with multiple chains
     sampler.sample(100, 3)
 
-    Sampler(target).sample(100, x_initial = jax.random.normal(shape=(10,), key=jax.random.PRNGKey(0)))
+    Sampler(target_simple).sample(100, x_initial = jax.random.normal(shape=(10,), key=jax.random.PRNGKey(0)))
