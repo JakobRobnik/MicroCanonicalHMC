@@ -28,6 +28,7 @@ class StandardGaussian(Target):
 target = StandardGaussian(d = 10, nlogp=nlogp)
 sampler = Sampler(target, varEwanted = 5e-4)
 
+target_simple = Target(d = 10, nlogp=nlogp)
 
 def test_mclmc():
     samples1 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))
@@ -37,3 +38,5 @@ def test_mclmc():
     assert not jnp.array_equal(samples1,samples3), "this suggests that seed is not being used"
     # run with multiple chains
     sampler.sample(100, 3)
+
+    Sampler(target).sample(100, x_initial = jax.random.normal(shape=(10,), key=jax.random.PRNGKey(0)))
