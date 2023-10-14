@@ -4,14 +4,17 @@ import numpy as np
 from scipy.fftpack import next_fast_len
 
 
-
 def ess_corr(x):
     """Taken from: https://blackjax-devs.github.io/blackjax/diagnostics.html
-        shape(x) = (num_samples, d)"""
+    shape(x) = (num_samples, d)"""
 
-    input_array = jnp.array([x, ])
+    input_array = jnp.array(
+        [
+            x,
+        ]
+    )
 
-    num_chains = 1#input_array.shape[0]
+    num_chains = 1  # input_array.shape[0]
     num_samples = input_array.shape[1]
 
     mean_across_chain = input_array.mean(axis=1, keepdims=True)
@@ -25,19 +28,31 @@ def ess_corr(x):
         jnp.take(autocov_value, jnp.arange(num_samples), axis=1) / num_samples
     )
     mean_autocov_var = autocov_value.mean(0, keepdims=True)
-    mean_var0 = (jnp.take(mean_autocov_var, jnp.array([0]), axis=1) * num_samples / (num_samples - 1.0))
+    mean_var0 = (
+        jnp.take(mean_autocov_var, jnp.array([0]), axis=1)
+        * num_samples
+        / (num_samples - 1.0)
+    )
     weighted_var = mean_var0 * (num_samples - 1.0) / num_samples
     weighted_var = jax.lax.cond(
         num_chains > 1,
-        lambda _: weighted_var+ mean_across_chain.var(axis=0, ddof=1, keepdims=True),
+        lambda _: weighted_var + mean_across_chain.var(axis=0, ddof=1, keepdims=True),
         lambda _: weighted_var,
         operand=None,
     )
 
     # Geyer's initial positive sequence
     num_samples_even = num_samples - num_samples % 2
-    mean_autocov_var_tp1 = jnp.take(mean_autocov_var, jnp.arange(1, num_samples_even), axis=1)
-    rho_hat = jnp.concatenate([jnp.ones_like(mean_var0), 1.0 - (mean_var0 - mean_autocov_var_tp1) / weighted_var,], axis=1,)
+    mean_autocov_var_tp1 = jnp.take(
+        mean_autocov_var, jnp.arange(1, num_samples_even), axis=1
+    )
+    rho_hat = jnp.concatenate(
+        [
+            jnp.ones_like(mean_var0),
+            1.0 - (mean_var0 - mean_autocov_var_tp1) / weighted_var,
+        ],
+        axis=1,
+    )
 
     rho_hat = jnp.moveaxis(rho_hat, 1, 0)
     rho_hat_even = rho_hat[0::2]
@@ -79,7 +94,8 @@ def ess_corr(x):
 
     # compute effective sample size
     ess_raw = num_chains * num_samples
-    tau_hat = (-1.0
+    tau_hat = (
+        -1.0
         + 2.0 * jnp.sum(rho_hat_even_final + rho_hat_odd_final, axis=0)
         - rho_hat_even_final[indices]
     )
