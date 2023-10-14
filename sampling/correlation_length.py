@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-from scipy.fftpack import next_fast_len
+from scipy.fftpack import next_fast_len #type: ignore
 
 
 
