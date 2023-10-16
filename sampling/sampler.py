@@ -31,7 +31,7 @@ class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target : Target, L = None, eps = None,
-                 integrator = 'MN', varEwanted = 5e-4,
+                 integrator = dynamics.minimal_norm, varEwanted = 5e-4,
                  diagonal_preconditioning= False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
                  ):
@@ -42,7 +42,7 @@ class Sampler:
 
                 eps: initial integration step-size (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting all frac_tune1 and 2 to zero (see below))
 
-                integrator: 'LF' (leapfrog) or 'MN' (minimal norm). Typically MN performs better.
+                integrator: leapfrog or minimal_norm. Typically minimal_norm performs better.
 
                 varEwanted: if your posteriors are biased try smaller values (or larger values: perhaps the convergence is too slow). This is perhaps the parameter whose default value is the least well determined.
 
@@ -61,10 +61,12 @@ class Sampler:
         self.sigma = jnp.ones(Target.d)
 
         self.integrator = integrator
+        self.T = dynamics.update_position(self.Target.grad_nlogp)
+        self.V = dynamics.update_momentum(self.Target.d, sequential=True)
 
         ### integrator ###
         ## NOTE: sigma does not arise from any tuning here: it is a fixed parameter
-        self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator=self.integrator, grad_nlogp=self.Target.grad_nlogp, d=self.Target.d),
+        self.dynamics = dynamics.mclmc(self.integrator(T=self.T, V=self.V,d=self.Target.d),
                                        dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
         self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, True)
         
@@ -148,32 +150,27 @@ class Sampler:
             key = random_key
 
         ### initial conditions ###
-        if isinstance(x_initial, str):
-            if x_initial == 'prior':  # draw the initial x from the prior
-                key, prior_key = jax.random.split(key)
-                x = self.Target.prior_draw(prior_key)
-            else:  # if not 'prior' the x_initial should specify the initial condition
-                raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
-        else: #initial x is given
-            x = x_initial
-
-        l, g = self.Target.grad_nlogp(x)
+        if x_initial is None:  # draw the initial x from the prior
+            key, prior_key = jax.random.split(key)
+            x_initial = self.Target.prior_draw(prior_key)
+        
+        l, g = self.Target.grad_nlogp(x_initial)
 
         u, key = self.random_unit_vector(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
 
-        return x, u, l, g, key
+        return x_initial, u, l, g, key
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = OutputType.normal, thinning= 1):
+    def sample(self, num_steps, num_chains = 1, x_initial = None, random_key= None, output = OutputType.normal, thinning= 1):
         """Args:
                num_steps: number of integration steps to take.
 
                num_chains: number of independent chains, defaults to 1. If different than 1, jax will parallelize the computation with the number of available devices (CPU, GPU, TPU),
                as returned by jax.local_device_count().
 
-               x_initial: initial condition for x, shape: (d, ). Defaults to 'prior' in which case the initial condition is drawn from the prior distribution (self.Target.prior_draw).
+               x_initial: initial condition for x, shape: (d, ). Defaults to None in which case the initial condition is drawn from the prior distribution (self.Target.prior_draw).
 
                random_key: jax random seed, defaults to jax.random.PRNGKey(0)
 
@@ -209,14 +206,11 @@ class Sampler:
             else:
                 key = random_key
 
-            if isinstance(x_initial, str):
-                if x_initial == 'prior':  # draw the initial x from the prior
-                    keys_all = jax.random.split(key, num_chains * 2)
-                    x0 = jnp.array([self.Target.prior_draw(keys_all[num_chains+i]) for i in range(num_chains)])
-                    keys = keys_all[:num_chains]
+            if x_initial is None:  # draw the initial x from the prior
+                keys_all = jax.random.split(key, num_chains * 2)
+                x0 = jnp.array([self.Target.prior_draw(keys_all[num_chains+i]) for i in range(num_chains)])
+                keys = keys_all[:num_chains]
 
-                else:  # if not 'prior' the x_initial should specify the initial condition
-                    raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
             else: #initial x is given
                 x0 = jnp.copy(x_initial)
                 keys = jax.random.split(key, num_chains)

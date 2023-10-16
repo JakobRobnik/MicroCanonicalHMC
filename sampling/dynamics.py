@@ -5,7 +5,6 @@ import math
 
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
 
-grad_evals = {'MN' : 2, 'LF' : 1}
 
 
 
@@ -169,3 +168,6 @@ def partially_refresh_momentum(d, sequential= True):
 
 
   return rng_sequential if sequential else rng_parallel
+
+
+grad_evals = {minimal_norm : 2, leapfrog : 1}
