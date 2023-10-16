@@ -7,12 +7,26 @@ import numpy as np
 from . import dynamics
 from .correlation_length import ess_corr
 
+class Target():
 
+  def __init__(self, d, nlogp):
+    self.d = d
+    self.nlogp = nlogp
+    self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
+  def transform(self, x):
+    return x
+
+  def prior_draw(self, key):
+    """Args: jax random key
+       Returns: one random sample from the prior"""
+
+    raise Exception("Not implemented")
 
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, L = None, eps = None,
+    def __init__(self, Target : Target, L = None, eps = None,
                  integrator = 'MN', varEwanted = 5e-4,
                  diagonal_preconditioning= False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
