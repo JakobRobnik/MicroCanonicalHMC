@@ -280,6 +280,10 @@ class Sampler:
             return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
 
         elif output == 'ess':
+            try:
+                self.Target.variance
+            except:
+                raise AttributeError("Target.variance should be defined")
             return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
 
         else:
