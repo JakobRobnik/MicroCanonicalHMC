@@ -1,5 +1,6 @@
 ## style note: general preference here for functional style (e.g. global function definitions, purity, code sharing)
 
+from enum import Enum
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -22,6 +23,9 @@ class Target():
        Returns: one random sample from the prior"""
 
     raise Exception("Not implemented")
+
+OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
+
 
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
@@ -162,7 +166,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
+    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = OutputType.normal, thinning= 1):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -193,7 +197,7 @@ class Sampler:
 
         if num_chains == 1:
             results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
-            if output == 'ess':
+            if output == OutputType.ess:
                 return self.bias_plot(results)
 
             else:
@@ -223,7 +227,7 @@ class Sampler:
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
-                if output == 'ess':
+                if output == OutputType.ess:
                     return self.bias_plot(results.reshape(num_chains, num_steps))
 
                 ### reshape results ###
@@ -242,7 +246,7 @@ class Sampler:
 
                 results = jax.vmap(f)(jnp.arange(num_chains))
 
-                if output == 'ess':
+                if output == OutputType.ess:
                     return self.bias_plot(results)
 
                 else: 
@@ -270,16 +274,16 @@ class Sampler:
 
         ### sampling ###
 
-        if output == 'normal' or output == 'detailed':
+        if output == OutputType.normal or output == OutputType.detailed:
             X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
             if output == 'detailed':
                 return X, E, L, eps
             else:
                 return X
-        elif output == 'expectation':
+        elif output == OutputType.expectation:
             return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
 
-        elif output == 'ess':
+        elif output == OutputType.ess:
             try:
                 self.Target.variance
             except:

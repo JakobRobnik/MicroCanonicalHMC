@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sampling.sampler import Sampler, Target
+from sampling.sampler import OutputType, Sampler, Target
 
 nlogp = lambda x: 0.5*jnp.sum(jnp.square(x))
 
@@ -45,12 +45,12 @@ def test_mclmc():
     # run with multiple chains
     sampler.sample(20, 3)
     # run with different output types
-    sampler.sample(20, 3, output='expectation')
-    sampler.sample(20, 3, output='detailed')
-    sampler.sample(20, 3, output='normal')
+    sampler.sample(20, 3, output=OutputType.expectation)
+    sampler.sample(20, 3, output=OutputType.detailed)
+    sampler.sample(20, 3, output=OutputType.normal)
 
     with raises(AttributeError) as excinfo:
-        sampler.sample(20, 3, output='ess')
+        sampler.sample(20, 3, output=OutputType.ess)
 
     # run with leapfrog
     sampler = Sampler(target, varEwanted = 5e-4, integrator='LF')
