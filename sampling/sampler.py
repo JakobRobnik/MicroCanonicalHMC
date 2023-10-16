@@ -273,38 +273,24 @@ class Sampler:
 
         ### sampling ###
 
-        match output:
-            case OutputType.normal:
-                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
-                return X
-            case OutputType.detailed:
-                X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
+        
+        if output == OutputType.normal or output == OutputType.detailed:
+            X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
+            if output == 'detailed':
                 return X, E, L, eps
-            case OutputType.expectation:
-                return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
-            case OutputType.ess:
-                return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
+            else:
+                return X
+        elif output == OutputType.expectation:
+            return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
 
-        # if output == OutputType.normal or output == OutputType.detailed:
-        #     X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
-        #     if output == 'detailed':
-        #         return X, E, L, eps
-        #     else:
-        #         return X
-        # elif output == OutputType.expectation:
-        #     return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
+        elif output == OutputType.ess:
+            try:
+                self.Target.variance
+            except:
+                raise AttributeError("Target.variance should be defined")
+            return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
 
-        # elif output == OutputType.ess:
-        #     try:
-        #         self.Target.variance
-        #     except:
-        #         raise AttributeError("Target.variance should be defined")
-        #     return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
-
-        # else:
-        #     raise ValueError('output = ' + output + ' is not a valid argument for the Sampler.sample')
-
-
+       
     ### for loops which do the sampling steps: ###
 
     def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma, thinning):
