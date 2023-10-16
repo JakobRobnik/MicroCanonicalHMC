@@ -191,7 +191,12 @@ class Sampler:
                         This is not the recommended solution to save memory. It is better to use the transform functionality.
                         If this is not sufficient consider saving only the expected values, by setting output= 'expectation'.
         """
-
+        
+        if output == 'ess':
+            for ground_truth in ['second_moments', 'variance_second_moments']:
+                if not hasattr(self.Target, ground_truth):
+                    raise AttributeError("Target." + ground_truth + " should be defined if you want to use output = ess.")
+        
         if num_chains == 1:
             results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
             if output == OutputType.ess:
@@ -278,10 +283,6 @@ class Sampler:
             case OutputType.expectation:
                 return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
             case OutputType.ess:
-                try:
-                    self.Target.variance
-                except:
-                    raise AttributeError("Target.variance should be defined")
                 return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
 
         # if output == OutputType.normal or output == OutputType.detailed:
