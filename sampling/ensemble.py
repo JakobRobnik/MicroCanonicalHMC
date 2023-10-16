@@ -96,7 +96,7 @@ class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, Target, chains, 
-                 alpha = 1., integrator = 'LF', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
+                 alpha = 1., integrator = 'MN', isotropic_u0 = False, C= 0.1, equipartition_definition = 'full',
                  debug= True, plotdir = None):
         """Args:
                 Target: The target distribution class.
@@ -130,8 +130,8 @@ class Sampler:
         self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, False)
         self.partially_refresh_momentum = dynamics.partially_refresh_momentum(self.Target.d, False)
 
-        self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'LF', grad_nlogp= self.Target.grad_nlogp, d= self.Target.d),
-                                       self.partially_refresh_momentum)
+        self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'LF', grad_nlogp= self.Target.grad_nlogp, d= self.Target.d, sequential= False),
+                                       self.partially_refresh_momentum, self.Target.d)
         self.grad_evals_per_step = 1
         
         self.integrator = integrator
@@ -238,7 +238,7 @@ class Sampler:
 
     def initialize_paired(self, num_steps, random_key, x_initial):
             
-        delay_num = jnp.rint(self.delay_frac * num_steps / self.grads_per_step).astype(int)
+        delay_num = jnp.rint(self.delay_frac * num_steps / self.grad_evals_per_step).astype(int)
         
         x0, u0, l0, g0, key = self.initialize(random_key, x_initial)
 
@@ -434,21 +434,18 @@ class Sampler:
         #     return (dyn, hyp), _diagnostics
         
         
-        # if self.integrator == 'MN':            
-        
-        # self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'MN', grad_nlogp= self.Target.grad_nlogp, d= self.Target.d),
-        #                                self.partially_refresh_momentum)
-        #     self.grads_per_step = 2
-        #     self.grads_per_step = 2
-        #     #hyp['eps'] *= jnp.sqrt(10.)
+        if self.integrator == 'MN':            
+            
+            self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'MN', grad_nlogp= self.Target.grad_nlogp, d= self.Target.d, sequential = False),
+                                        self.partially_refresh_momentum, self.Target.d)
+            self.grad_evals_per_step = 2
+            #hyp['eps'] *= jnp.sqrt(10.)
         
         
         if self.debug:
             
-            state, diagnostics2 = jax.lax.scan(step2_debug, init = (dyn, hyp), length = steps_left // (self.n * self.grads_per_step), xs = None)
+            state, diagnostics2 = jax.lax.scan(step2_debug, init = (dyn, hyp), length = steps_left // (self.n * self.grad_evals_per_step), xs = None)
         
-        
-            # state, diagnostics2 = jax.lax.scan(step2, init = (dyn, hyp), length = steps_left // (self.n * self.grads_per_step), xs = None)
             diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
             self.debug_plots(diagnostics, steps_used)
             
