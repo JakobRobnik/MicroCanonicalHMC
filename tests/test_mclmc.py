@@ -10,24 +10,18 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sampling.sampler import Sampler
+from sampling.sampler import Sampler, Target
 
 nlogp = lambda x: 0.5*jnp.sum(jnp.square(x))
-value_grad = jax.value_and_grad(nlogp)
 
-class StandardGaussian():
+class StandardGaussian(Target):
 
-  def __init__(self, d):
-    self.d = d
-
-  def grad_nlogp(self, x):
-    """should return nlogp and gradient of nlogp"""
-    return value_grad(x)
+  def __init__(self, d, nlogp):
+    Target.__init__(self,d,nlogp)
 
   def transform(self, x):
     return x[:2]
-    #return x
-
+  
   def prior_draw(self, key):
     """Args: jax random key
        Returns: one random sample from the prior"""
@@ -37,7 +31,7 @@ class StandardGaussian():
 
 
 def test_mclmc():
-    target = StandardGaussian(d = 10)
+    target = StandardGaussian(d = 10, nlogp=nlogp)
     sampler = Sampler(target, varEwanted = 5e-4)
 
 
@@ -51,10 +45,12 @@ def test_mclmc():
     # run with multiple chains
     sampler.sample(20, 3)
     # run with different output types
-    sampler.sample(20, 3, output='ess')
     sampler.sample(20, 3, output='expectation')
     sampler.sample(20, 3, output='detailed')
     sampler.sample(20, 3, output='normal')
+
+    with raises(AttributeError) as foo:
+        sampler.sample(20, 3, output='ess')
 
     # run with leapfrog
     sampler = Sampler(target, varEwanted = 5e-4, integrator='LF')
@@ -69,3 +65,10 @@ def test_mclmc():
     # running with wrong dimensions causes TypeError
     with raises(TypeError) as excinfo:  
         sampler.sample(20, x_initial=jax.random.normal(shape=(11,), key=jax.random.PRNGKey(0)))
+    
+    # multiple chains
+    sampler.sample(20, 3)
+    
+    # simple target
+    target_simple = Target(d = 10, nlogp=nlogp)
+    Sampler(target_simple).sample(100, x_initial = jax.random.normal(shape=(10,), key=jax.random.PRNGKey(0)))
