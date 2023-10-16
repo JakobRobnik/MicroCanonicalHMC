@@ -269,7 +269,7 @@ class Sampler:
             return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
 
         else:
-            raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
+            raise ValueError('output = ' + output + ' is not a valid argument for the Sampler.sample')
 
 
     ### for loops which do the sampling steps: ###
@@ -322,16 +322,14 @@ class Sampler:
         
         def step(state, useless):
             
-            x, u, g, key = state[0]
-            x, u, _, g, _, key = self.dynamics(x, u, g, key, L, eps, sigma)
-            W, F = state[1]
+            x, u, _, g, _, key = self.dynamics(*(state[0]), L, eps, sigma)
+            
+            return (state[0], state[1] + self.Target.transform(x)), None
+
+        state1 = (x, u, g, random_key)
+        state2= jnp.zeros(self.Target.transform(x).shape)
+        return  jax.lax.scan(step, init= (state1, state2), xs=None, length=num_steps)[0][1] / num_steps
         
-            F = (W * F + self.Target.transform(x)) / (W + 1)  # Update <f(x)> with a Kalman filter
-            W += 1
-            return ((x, u, g, key), (W, F)), None
-
-
-        return jax.lax.scan(step, init=(x, u, g, random_key), xs=None, length=num_steps)[0][1][1]
 
 
 
