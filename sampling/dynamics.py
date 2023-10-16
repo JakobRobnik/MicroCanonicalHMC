@@ -92,22 +92,6 @@ def leapfrog(d, T, V):
 
 
 
-def hamiltonian(integrator, grad_nlogp, d, sequential = True):
-    
-    T = update_position(grad_nlogp)
-    V = update_momentum(d, sequential)
-    
-    if integrator == "LF": #leapfrog (first updates the velocity)
-        return leapfrog(d, T, V)
-
-    elif integrator== 'MN': #minimal norm integrator (first updates the velocity)
-        return minimal_norm(d, T, V)
-      
-    else:
-        raise Exception("Integrator must be either MN (minimal_norm) or LF (leapfrog)")
-
-
-
 def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
     
   def step(x, u, g, random_key, L, eps, sigma):
