@@ -49,7 +49,7 @@ def test_mclmc():
     sampler.sample(20, 3, output='detailed')
     sampler.sample(20, 3, output='normal')
 
-    with raises(AttributeError) as foo:
+    with raises(AttributeError) as excinfo:
         sampler.sample(20, 3, output='ess')
 
     # run with leapfrog
