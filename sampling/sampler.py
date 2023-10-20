@@ -192,7 +192,7 @@ class Sampler:
                         If this is not sufficient consider saving only the expected values, by setting output= 'expectation'.
         """
         
-        if output == 'ess':
+        if output == OutputType.ess:
             for ground_truth in ['second_moments', 'variance_second_moments']:
                 if not hasattr(self.Target, ground_truth):
                     raise AttributeError("Target." + ground_truth + " should be defined if you want to use output = ess.")
@@ -276,7 +276,7 @@ class Sampler:
         
         if output == OutputType.normal or output == OutputType.detailed:
             X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
-            if output == 'detailed':
+            if output == OutputType.detailed:
                 return X, E, L, eps
             else:
                 return X
