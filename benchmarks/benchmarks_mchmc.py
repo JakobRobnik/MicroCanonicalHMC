@@ -13,7 +13,8 @@ class StandardNormal():
 
     def __init__(self, d):
         self.d = d
-        self.variance = jnp.ones(d)
+        self.second_moments = jnp.ones(d)
+        self.variance_second_moments = 2 * self.second_moments
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
 
