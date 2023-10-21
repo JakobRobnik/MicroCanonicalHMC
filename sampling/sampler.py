@@ -1,5 +1,6 @@
 ## style note: general preference here for functional style (e.g. global function definitions, purity, code sharing)
 
+from enum import Enum
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -7,13 +8,30 @@ import numpy as np
 from . import dynamics
 from .correlation_length import ess_corr
 
+class Target():
+
+  def __init__(self, d, nlogp):
+    self.d = d
+    self.nlogp = nlogp
+    self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
+  def transform(self, x):
+    return x
+
+  def prior_draw(self, key):
+    """Args: jax random key
+       Returns: one random sample from the prior"""
+
+    raise Exception("Not implemented")
+
+OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
 
 
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target, L = None, eps = None,
-                 integrator = 'MN', varEwanted = 5e-4,
+    def __init__(self, Target : Target, L = None, eps = None,
+                 integrator = dynamics.minimal_norm, varEwanted = 5e-4,
                  diagonal_preconditioning= False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
                  ):
@@ -24,7 +42,7 @@ class Sampler:
 
                 eps: initial integration step-size (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting all frac_tune1 and 2 to zero (see below))
 
-                integrator: 'LF' (leapfrog) or 'MN' (minimal norm). Typically MN performs better.
+                integrator: dynamics.leapfrog or dynamics.minimal_norm. Typically minimal_norm performs better.
 
                 varEwanted: if your posteriors are biased try smaller values (or larger values: perhaps the convergence is too slow). This is perhaps the parameter whose default value is the least well determined.
 
@@ -42,16 +60,12 @@ class Sampler:
         self.Target = Target
         self.sigma = jnp.ones(Target.d)
 
-        self.integrator = integrator
-
         ### integrator ###
-        ## NOTE: sigma does not arise from any tuning here: it is a fixed parameter
-        self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator=self.integrator, grad_nlogp=self.Target.grad_nlogp, d=self.Target.d),
-                                       dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
+        hamiltonian_step, self.grad_evals_per_step = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
+                                                                V= dynamics.update_momentum(self.Target.d, sequential=True),
+                                                                d= self.Target.d)
+        self.dynamics = dynamics.mclmc(hamiltonian_step, dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
         self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, True)
-        
-        
-        self.grad_evals_per_step = dynamics.grad_evals[self.integrator]
 
         ### preconditioning ###
         self.diagonal_preconditioning = diagonal_preconditioning
@@ -130,32 +144,27 @@ class Sampler:
             key = random_key
 
         ### initial conditions ###
-        if isinstance(x_initial, str):
-            if x_initial == 'prior':  # draw the initial x from the prior
-                key, prior_key = jax.random.split(key)
-                x = self.Target.prior_draw(prior_key)
-            else:  # if not 'prior' the x_initial should specify the initial condition
-                raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
-        else: #initial x is given
-            x = x_initial
-
-        l, g = self.Target.grad_nlogp(x)
+        if x_initial is None:  # draw the initial x from the prior
+            key, prior_key = jax.random.split(key)
+            x_initial = self.Target.prior_draw(prior_key)
+        
+        l, g = self.Target.grad_nlogp(x_initial)
 
         u, key = self.random_unit_vector(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
 
-        return x, u, l, g, key
+        return x_initial, u, l, g, key
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = 'prior', random_key= None, output = 'normal', thinning= 1):
+    def sample(self, num_steps, num_chains = 1, x_initial = None, random_key= None, output = OutputType.normal, thinning= 1):
         """Args:
                num_steps: number of integration steps to take.
 
                num_chains: number of independent chains, defaults to 1. If different than 1, jax will parallelize the computation with the number of available devices (CPU, GPU, TPU),
                as returned by jax.local_device_count().
 
-               x_initial: initial condition for x, shape: (d, ). Defaults to 'prior' in which case the initial condition is drawn from the prior distribution (self.Target.prior_draw).
+               x_initial: initial condition for x, shape: (d, ). Defaults to None in which case the initial condition is drawn from the prior distribution (self.Target.prior_draw).
 
                random_key: jax random seed, defaults to jax.random.PRNGKey(0)
 
@@ -176,10 +185,15 @@ class Sampler:
                         This is not the recommended solution to save memory. It is better to use the transform functionality.
                         If this is not sufficient consider saving only the expected values, by setting output= 'expectation'.
         """
-
+        
+        if output == OutputType.ess:
+            for ground_truth in ['second_moments', 'variance_second_moments']:
+                if not hasattr(self.Target, ground_truth):
+                    raise AttributeError("Target." + ground_truth + " should be defined if you want to use output = ess.")
+        
         if num_chains == 1:
             results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
-            if output == 'ess':
+            if output == OutputType.ess:
                 return self.bias_plot(results)
 
             else:
@@ -191,14 +205,11 @@ class Sampler:
             else:
                 key = random_key
 
-            if isinstance(x_initial, str):
-                if x_initial == 'prior':  # draw the initial x from the prior
-                    keys_all = jax.random.split(key, num_chains * 2)
-                    x0 = jnp.array([self.Target.prior_draw(keys_all[num_chains+i]) for i in range(num_chains)])
-                    keys = keys_all[:num_chains]
+            if x_initial is None:  # draw the initial x from the prior
+                keys_all = jax.random.split(key, num_chains * 2)
+                x0 = jnp.array([self.Target.prior_draw(keys_all[num_chains+i]) for i in range(num_chains)])
+                keys = keys_all[:num_chains]
 
-                else:  # if not 'prior' the x_initial should specify the initial condition
-                    raise KeyError('x_initial = "' + x_initial + '" is not a valid argument. \nIf you want to draw initial condition from a prior use x_initial = "prior", otherwise specify the initial condition with an array')
             else: #initial x is given
                 x0 = jnp.copy(x_initial)
                 keys = jax.random.split(key, num_chains)
@@ -209,7 +220,7 @@ class Sampler:
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
                 results = parallel_function(jnp.arange(num_chains).reshape(num_cores, num_chains // num_cores))
-                if output == 'ess':
+                if output == OutputType.ess:
                     return self.bias_plot(results.reshape(num_chains, num_steps))
 
                 ### reshape results ###
@@ -228,7 +239,7 @@ class Sampler:
 
                 results = jax.vmap(f)(jnp.arange(num_chains))
 
-                if output == 'ess':
+                if output == OutputType.ess:
                     return self.bias_plot(results)
 
                 else: 
@@ -256,22 +267,20 @@ class Sampler:
 
         ### sampling ###
 
-        if output == 'normal' or output == 'detailed':
+        
+        if output == OutputType.normal or output == OutputType.detailed:
             X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
-            if output == 'detailed':
+            if OutputType.detailed:
                 return X, E, L, eps
             else:
                 return X
-        elif output == 'expectation':
+        elif output == OutputType.expectation:
             return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
 
-        elif output == 'ess':
+        elif output == OutputType.ess:
             return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
 
-        else:
-            raise ValueError('output = ' + output + 'is not a valid argument for the Sampler.sample')
-
-
+       
     ### for loops which do the sampling steps: ###
 
     def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma, thinning):
@@ -322,16 +331,14 @@ class Sampler:
         
         def step(state, useless):
             
-            x, u, g, key = state[0]
-            x, u, _, g, _, key = self.dynamics(x, u, g, key, L, eps, sigma)
-            W, F = state[1]
+            x, u, _, g, _, key = self.dynamics(*(state[0]), L, eps, sigma)
+            
+            return (state[0], state[1] + self.Target.transform(x)), None
+
+        state1 = (x, u, g, random_key)
+        state2= jnp.zeros(self.Target.transform(x).shape)
+        return  jax.lax.scan(step, init= (state1, state2), xs=None, length=num_steps)[0][1] / num_steps
         
-            F = (W * F + self.Target.transform(x)) / (W + 1)  # Update <f(x)> with a Kalman filter
-            W += 1
-            return ((x, u, g, key), (W, F)), None
-
-
-        return jax.lax.scan(step, init=(x, u, g, random_key), xs=None, length=num_steps)[0][1][1]
 
 
 

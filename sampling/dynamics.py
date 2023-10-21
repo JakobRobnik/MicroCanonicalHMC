@@ -1,15 +1,11 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
-import math
+
 
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
 
-grad_evals = {'MN' : 2, 'LF' : 1}
 
-
-
-def update_momentum(d, sequential):
+def update_momentum(d, sequential, hmc = False):
   """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
   similar to the implementation: https://github.com/gregversteeg/esh_dynamics
   There are no exponentials e^delta, which prevents overflows when the gradient norm is large."""
@@ -23,8 +19,13 @@ def update_momentum(d, sequential):
       zeta = jnp.exp(-delta)
       uu = e *(1-zeta)*(1+zeta + ue * (1-zeta)) + 2*zeta* u
       delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1-ue)*zeta**2)
-      return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r
+      return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r * (d-1)
 
+
+  def update_hmc(eps, u, g):
+      uu = u - eps * g
+      return uu, 0.5 * (jnp.dot(uu, uu) - jnp.dot(u, u))
+  
   
   def update_parallel(eps, u, g):
       g_norm = jnp.sqrt(jnp.sum(jnp.square(g), axis=1)).T
@@ -36,10 +37,17 @@ def update_momentum(d, sequential):
       zeta = jnp.exp(-delta)
       uu = e * ((1 - zeta) * (1 + zeta + ue * (1 - zeta)))[:, None] + 2 * zeta[:, None] * u
       delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1 - ue) * zeta ** 2)
-      return uu / (jnp.sqrt(jnp.sum(jnp.square(uu), axis=1)).T)[:, None], delta_r
+      return uu / (jnp.sqrt(jnp.sum(jnp.square(uu), axis=1)).T)[:, None], delta_r * (d-1)
 
-  
-  return update_sequential if sequential else update_parallel
+
+  if sequential:  
+    return update_sequential if not hmc else update_hmc
+
+  else:
+    if not hmc: 
+      return update_parallel
+    else:
+      raise ValueError('parallel hmc not implemented')
 
 
 
@@ -67,11 +75,11 @@ def minimal_norm(d, T, V):
       uu, r3 = V(eps * lambda_c, uu, gg * sigma)
 
       #kinetic energy change
-      kinetic_change = (r1 + r2 + r3) * (d-1)
+      kinetic_change = (r1 + r2 + r3)
 
       return xx, uu, ll, gg, kinetic_change
     
-  return step
+  return step, 2
 
 
 
@@ -85,27 +93,11 @@ def leapfrog(d, T, V):
     uu, r2 = V(eps * 0.5, uu, gg * sigma)
     
     # kinetic energy change
-    kinetic_change = (r1 + r2) * (d-1)
+    kinetic_change = (r1 + r2)
 
     return xx, uu, l, gg, kinetic_change
   
-  return step
-
-
-
-def hamiltonian(integrator, grad_nlogp, d, sequential = True):
-    
-    T = update_position(grad_nlogp)
-    V = update_momentum(d, sequential)
-    
-    if integrator == "LF": #leapfrog (first updates the velocity)
-        return leapfrog(d, T, V)
-
-    elif integrator== 'MN': #minimal norm integrator (first updates the velocity)
-        return minimal_norm(d, T, V)
-      
-    else:
-        raise Exception("Integrator must be either MN (minimal_norm) or LF (leapfrog)")
+  return step, 1
 
 
 
@@ -127,8 +119,39 @@ def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
 
 
 
-def random_unit_vector(d, sequential= True):
-  """Generates a random (isotropic) unit vector."""
+def ma_step(hamiltonian_dynamics, rng_momentum_marginal):
+
+  def step(x, l, g, random_key, n, eps, sigma):
+      """One step of the generalized dynamics."""
+
+      # bounce
+      u, key = rng_momentum_marginal(random_key)
+      
+      def hamiltonian_steps(state, useless):
+        _x, _u, _l, _g, _kinetic = state
+        _x, _u, _l, _g, kinetic_change = hamiltonian_dynamics(x= _x, u= _u, g= _g, eps= eps, sigma= sigma)
+        
+        return (_x, _u, _l, _g, _kinetic + kinetic_change), None
+
+      xx, u, ll, gg, kinetic_change = jax.lax.scan(hamiltonian_steps, init = (x, u, l, g, 0.), xs = None, length = n)[0]
+
+      energy_change = kinetic_change + ll - l
+
+      # accept/reject
+      key, key1 = jax.random.split(key)
+      accept = jax.random.uniform(key1) < jnp.exp(-energy_change)
+          
+      return (xx * accept + x *(1-accept), ll * accept + l *(1-accept), gg * accept + g *(1-accept), key), accept
+
+      
+  return step
+
+
+def rng_momentum_marginal(d, sequential= True, hmc = False):
+  """Generates a random sample from the marginal momentum distribution:
+      if hmc: N(0, I)
+      if not hmc: isotropic with unit norm
+    """
   
   
   def rng_sequential(random_key):
@@ -136,7 +159,12 @@ def random_unit_vector(d, sequential= True):
       u = jax.random.normal(subkey, shape = (d, ))
       u /= jnp.sqrt(jnp.sum(jnp.square(u)))
       return u, key
-    
+  
+  
+  def rng_hmc(random_key):
+      key, subkey = jax.random.split(random_key)
+      u = jax.random.normal(subkey, shape = (d, ))
+      return u, key
       
   def rng_parallel(random_key, num_chains):
       key, subkey = jax.random.split(random_key)
@@ -145,7 +173,14 @@ def random_unit_vector(d, sequential= True):
       return normed_u, key
     
     
-  return rng_sequential if sequential else rng_parallel
+  if sequential:  
+    return rng_sequential if not hmc else rng_hmc
+
+  else:
+    if not hmc: 
+      return rng_parallel
+    else:
+      raise ValueError('parallel hmc not implemented')
 
 
 
