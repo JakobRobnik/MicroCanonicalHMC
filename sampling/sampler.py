@@ -30,6 +30,10 @@ OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
+
+class Sampler:
+    """the MCHMC (q = 0 Hamiltonian) sampler"""
+
     def __init__(self, Target : Target, L = None, eps = None,
                  integrator = dynamics.minimal_norm, varEwanted = 5e-4,
                  diagonal_preconditioning= False,
@@ -42,7 +46,7 @@ class Sampler:
 
                 eps: initial integration step-size (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting all frac_tune1 and 2 to zero (see below))
 
-                integrator: leapfrog or minimal_norm. Typically minimal_norm performs better.
+                integrator: dynamics.leapfrog or dynamics.minimal_norm. Typically minimal_norm performs better.
 
                 varEwanted: if your posteriors are biased try smaller values (or larger values: perhaps the convergence is too slow). This is perhaps the parameter whose default value is the least well determined.
 
@@ -60,18 +64,12 @@ class Sampler:
         self.Target = Target
         self.sigma = jnp.ones(Target.d)
 
-        self.integrator = integrator
-        self.T = dynamics.update_position(self.Target.grad_nlogp)
-        self.V = dynamics.update_momentum(self.Target.d, sequential=True)
-
         ### integrator ###
-        ## NOTE: sigma does not arise from any tuning here: it is a fixed parameter
-        self.dynamics = dynamics.mclmc(self.integrator(T=self.T, V=self.V,d=self.Target.d),
-                                       dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
+        hamiltonian_step, self.grad_evals_per_step = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
+                                                                V= dynamics.update_momentum(self.Target.d, sequential=True),
+                                                                d= self.Target.d)
+        self.dynamics = dynamics.mclmc(hamiltonian_step, dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
         self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, True)
-        
-        
-        self.grad_evals_per_step = dynamics.grad_evals[self.integrator]
 
         ### preconditioning ###
         self.diagonal_preconditioning = diagonal_preconditioning
@@ -100,7 +98,6 @@ class Sampler:
             self.eps = eps
         else: #defualt value (assumes preconditioned target and even then it might not work). Unless you have done a grid search to determine this value we suggest using the autotuning
             self.eps = jnp.sqrt(Target.d) * 0.4
-
 
 
 
