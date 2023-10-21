@@ -5,7 +5,6 @@ import math
 
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
 
-grad_evals = {'MN' : 2, 'LF' : 1}
 
 
 
@@ -71,7 +70,7 @@ def minimal_norm(d, T, V):
 
       return xx, uu, ll, gg, kinetic_change
     
-  return step
+  return step, 2
 
 
 
@@ -89,23 +88,7 @@ def leapfrog(d, T, V):
 
     return xx, uu, l, gg, kinetic_change
   
-  return step
-
-
-
-def hamiltonian(integrator, grad_nlogp, d, sequential = True):
-    
-    T = update_position(grad_nlogp)
-    V = update_momentum(d, sequential)
-    
-    if integrator == "LF": #leapfrog (first updates the velocity)
-        return leapfrog(d, T, V)
-
-    elif integrator== 'MN': #minimal norm integrator (first updates the velocity)
-        return minimal_norm(d, T, V)
-      
-    else:
-        raise Exception("Integrator must be either MN (minimal_norm) or LF (leapfrog)")
+  return step, 1
 
 
 
@@ -125,6 +108,34 @@ def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
 
   return step
 
+
+
+def ma_step(hamiltonian_dynamics, random_unit_vector):
+
+  def step(x, l, g, random_key, n, eps, sigma):
+      """One step of the generalized dynamics."""
+
+      # bounce
+      u, key = random_unit_vector(random_key)
+      
+      def hamiltonian_steps(state, useless):
+        _x, _u, _l, _g, _kinetic = state
+        _x, _u, _l, _g, kinetic_change = hamiltonian_dynamics(x= _x, u= _u, g= _g, eps= eps, sigma= sigma)
+        
+        return (_x, _u, _l, _g, _kinetic + kinetic_change), None
+
+      xx, u, ll, gg, kinetic_change = jax.lax.scan(hamiltonian_steps, xinit = (x, u, l, g, 0.), xs = None, length = n)[0]
+
+      energy_change = kinetic_change + ll - l
+
+      # accept/reject
+      key, key1 = jax.random.split(key)
+      accept = jax.random.uniform(key1) < jnp.exp(-energy_change)
+          
+      return (xx * accept + x *(1-accept), ll * accept + l *(1-accept), gg * accept + g *(1-accept), key), accept
+
+      
+  return step
 
 
 def random_unit_vector(d, sequential= True):
@@ -169,3 +180,6 @@ def partially_refresh_momentum(d, sequential= True):
 
 
   return rng_sequential if sequential else rng_parallel
+
+
+grad_evals = {minimal_norm : 2, leapfrog : 1}
