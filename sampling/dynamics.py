@@ -1,11 +1,8 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
-import math
+
 
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
-
-
 
 
 def update_momentum(d, sequential, hmc = False):
