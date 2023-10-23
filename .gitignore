@@ -1,7 +1,6 @@
 .pytest*
 */__pycache__/*
 *__pycache__*
-*.png
 mclmc.egg*
 *.jpg
 *.mp4
