@@ -41,10 +41,7 @@ class vmap_target:
         if hasattr(target, 'name'):
             self.name = target.name
             
-        
-        self.map_to_worst = target.map_to_worst
-        self.maxmin = target.maxmin
-
+            
 
 class pmap_target:
     """A wrapper target class, where jax.pmap(jax.vmap()) has been applied to the functions of a given target."""
@@ -88,9 +85,6 @@ class pmap_target:
             self.name = target.name
 
 
-        # self.map_to_worst = target.map_to_worst
-        # self.maxmin = target.maxmin
-        
         
 class Sampler:
     """Ensemble MCHMC (q = 0 Hamiltonian) sampler"""
@@ -148,9 +142,9 @@ class Sampler:
         self.delay_frac = 0.05
         
         #second stage
-        self.n = 2 # n eps-steps with the precise chain and n-1 eps'-steps with the sloopy chains (eps' = eps n/(n-1) )
-        
-        self.vmap_twogroup_dynamics = jax.vmap(self.twogroup_dynamics, (None, 0))
+        self.n = 5 # n eps-steps with the precise chain and n-1 eps'-steps with the sloopy chains (eps' = eps n/(n-1) )
+        neff = 10.
+        self.gamma = (neff-1.)/(neff+1.)
         
         
         self.debug = debug 
@@ -257,17 +251,6 @@ class Sampler:
         return self.alpha * jnp.sqrt(jnp.sum(jnp.square(x))/x.shape[0]) #average over the ensemble, sum over th
 
 
-    # def equipartition_fullrank(self, x, g, random_key):
-    #     """loss = Tr[(1 - E)^T (1 - E)] / d^2
-    #         where Eij = <xi gj> is the equipartition patrix.
-    #         Loss is computed with the Hutchinson's trick."""
-
-    #     key, key_z = jax.random.split(random_key)
-    #     z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
-    #     X = z - (g @ z.T).T @ x / x.shape[0]
-    #     return jnp.average(jnp.square(X)) / self.Target.d, key
-    
-    
     def equipartition_fullrank(self, x, g, random_key):
         """loss = Tr[(1 - E)^T (1 - E)] / d^2
             where Eij = <xi gj> is the equipartition patrix.
@@ -276,9 +259,9 @@ class Sampler:
         key, key_z = jax.random.split(random_key)
         z = jax.random.rademacher(key_z, (100, self.Target.d)) # <z_i z_j> = delta_ij
         X = z - (g @ z.T).T @ x / x.shape[0]
-        Y = z - (x @ z.T).T @ g / x.shape[0]
-        return jnp.average(X*Y), key
+        return jnp.average(jnp.square(X)) / self.Target.d, key
     
+
     
     def equipartition_diagonal(self, x, g, random_key):
         return jnp.average(jnp.square(1. - jnp.average(x*g, axis = 0))), random_key
@@ -347,6 +330,11 @@ class Sampler:
 
         state = self.initialize_paired(num_steps, random_key, x_initial)
         
+        def update_eps(_eps_factor, nonans):
+            """eps_factor = eps_new / eps_old"""
+            eps_factor = _eps_factor * nonans + (1-nonans) * 0.5
+            return jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
+            
         
         def step1(state):
             steps, history, decreassing, dyn, hyp = state
@@ -359,11 +347,8 @@ class Sampler:
             decreassing *= (history[-1] > history[0])
 
             varew = self.C * jnp.power(equi, 3./8.)
-            #stage1 = steps < 500
-            #varew = varew * stage1 + (1-stage1) * 1e-4
-            eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
-            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
-            hyp['eps'] = eps_factor * hyp['eps']
+            
+            hyp['eps'] *= update_eps(jnp.power(varew / dyn['vare'], 1./6.), nonans)
             
             hyp['L'] = self.computeL(dyn['x'])
             
@@ -371,40 +356,43 @@ class Sampler:
         
         
         def step2(state):
-            dyn, hyp = state
+            control, dyn, hyp = state
             dyn, nonans = self.twogroup_dynamics(dyn, hyp)
             
             ### hyperparameters for the next step ###
-            varew = 1e-4
-            eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
-            eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
-            hyp['eps'] = eps_factor * hyp['eps']
+            b_avg, b_max = self.discretization_bias(dyn['x'], dyn['x2'])
+            _varew = jnp.power(b_avg / b_max, 3./4.) * 1e-3
+            A, B = control
+            A = A * self.gamma + _varew
+            B = B * self.gamma + 1.
+            varew = A / B
+            
+
+            hyp['eps'] *= update_eps(jnp.power(varew / dyn['vare'], 1./6.), nonans)
             
             hyp['L'] = self.computeL(dyn['x'])
             
-            return (dyn, hyp)
+            return ((A, B), dyn, hyp)
         
         
         def step1_debug(state):
             state = step1(state)
             steps, history, decreassing, dyn, hyp = state
-            # if steps % 100 == 0:
-            #     plott(self.Target, steps, dyn)
+            
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
             diagnostics1.append(np.array(_diagnostics))
             return (steps, history, decreassing, dyn, hyp)
             
         
         def step2_debug(state, useless):
-            dyn, hyp = step2(state)
+            control, dyn, hyp = step2(state)
             _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
-            return (dyn, hyp), _diagnostics
+            return (control, dyn, hyp), _diagnostics
             
 
         def cond(state):
             steps, history, decreassing, dyn, hyp = state
-            return steps < 500
-            #return decreassing & (steps < num_steps * 0.8)
+            return decreassing & (steps < num_steps * 0.8)
         
         
         if self.debug:
@@ -418,38 +406,25 @@ class Sampler:
         #loss0 = self.discretization_bias(dyn['x'], dyn['x2'])[1]
         
         
-        # def step2(state):
-        #     dyn, hyp = state
-        #     dyn, nonans = self.twogroup_dynamics(dyn, hyp)
+        # if self.integrator == 'MN':
             
-        #     varew = 1e-4
-            
-        #     eps_factor = jnp.power(varew / dyn['vare'], 1./6.) * nonans + (1-nonans) * 0.5
-        #     eps_factor = jnp.min(jnp.array([jnp.max(jnp.array([eps_factor, 0.3])), 3.])) # eps cannot change by too much
-        #     hyp['eps'] = eps_factor * hyp['eps']
-        #     hyp['L'] = self.computeL(dyn['x'])
-            
-        #     _diagnostics, dyn = self.compute_diagnostics(dyn, hyp)
-            
-        #     return (dyn, hyp), _diagnostics
-        
-        
-        if self.integrator == 'MN':            
-            
-            self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'MN', grad_nlogp= self.Target.grad_nlogp, d= self.Target.d, sequential = False),
-                                        self.partially_refresh_momentum, self.Target.d)
-            self.grad_evals_per_step = 2
+        #     self.dynamics = dynamics.mclmc(dynamics.hamiltonian(integrator= 'MN', grad_nlogp= self.Target.grad_nlogp, d= self.Target.d, sequential = False),
+        #                                 self.partially_refresh_momentum, self.Target.d)
+        #     self.grad_evals_per_step = 2
             #hyp['eps'] *= jnp.sqrt(10.)
+        
+        
+        # b_avg, b_max = self.discretization_bias(dyn['x'], dyn['x2'])
+        # varew = jnp.power(b_avg / b_max, 3./4.) * 1e-3
+        control = (0., 0.)
         
         
         if self.debug:
             
-            state, diagnostics2 = jax.lax.scan(step2_debug, init = (dyn, hyp), length = steps_left // (self.n * self.grad_evals_per_step), xs = None)
+            state, diagnostics2 = jax.lax.scan(step2_debug, init = (control, dyn, hyp), length = steps_left // (self.n * self.grad_evals_per_step), xs = None)
         
             diagnostics = np.concatenate((np.array(diagnostics1), np.array(diagnostics2)))
             self.debug_plots(diagnostics, steps_used)
-            
-            #plott(self.Target, 800, state[1])
             
             return state[-2]['x']
 
@@ -470,7 +445,8 @@ class Sampler:
         num = 4
         plt.figure(figsize= (6, 3 * num))
 
-        steps = jnp.arange(0, self.n*len(eps), self.n)
+        n1 = steps1//self.n
+        steps = jnp.concatenate((jnp.arange(n1) * self.n, n1 * self.n + jnp.arange(len(eps)-n1) * self.n * self.grad_evals_per_step))
         
         ### bias ###
         plt.subplot(num, 1, 1)
@@ -535,29 +511,3 @@ def mywhile(cond_fun, body_fun, init_val):
         val = body_fun(val)
     return val
 
-
-def plott(target, steps, dyn):
-    
-    plt.title('steps = ' + str(steps))
-    
-    for i in range(2):
-        w = ['', '2'][i]
-        y = dyn['x' + w] @ target.map_to_worst.T
-        plt.plot(y[:, 0], y[:, 1], '.', color= ['teal', 'tab:red'][i], label = 'eps'+w)
-    
-    
-    # ground truth
-    from matplotlib.patches import Ellipse
-    a, b = target.maxmin
-    ax = plt.gca()
-    for i in range(2):
-        factor, alpha, word = [(1.52, 1., '68'), (2.48, 0.5, '95')][i]
-        ax.add_patch(Ellipse(xy=np.zeros(2), width=a*factor*2, height=b*factor*2, facecolor = "None",  edgecolor = 'grey', alpha = alpha, label = 'exact posterior\n('+word+'% confidence)'))
-        
-    plt.legend()
-    plt.xlabel('widest dimension')
-    plt.ylabel('narrowest dimension')
-    
-    plt.tight_layout()
-    plt.savefig('img/different_stepsizes_'+str(steps) + '.png')
-    plt.close()

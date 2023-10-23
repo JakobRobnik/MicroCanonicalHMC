@@ -6,8 +6,8 @@ import jax
 import jax.numpy as jnp
 plt.style.use(['seaborn-v0_8-talk', 'img/style.mplstyle'])
 
-# num_cores = 6 #specific to my PC
-# os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
+num_cores = 128 #specific to my PC
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
@@ -46,15 +46,19 @@ def stn(d, hmc):
     
     def ess(N, eps):
         sampler = Sampler(target, N, eps, integrator= leapfrog, hmc= hmc)
-        e, a = sampler.sample(samples, 36, output = OutputType.ess)
+        e, a = sampler.sample(samples, 128, output = OutputType.ess)
         return e, jnp.average(a)
 
     if hmc:
         x = jnp.arange(1, 7)
+        if d >= 3000:
+            x = jnp.arange(5, 10)
         y = jnp.logspace(jnp.log10(0.2), jnp.log10(0.32), 15) * jnp.power(d/1000., -0.25)
     else:
         x = jnp.arange(1, 6)
-        y = jnp.logspace(jnp.log10(7.), jnp.log10(23.), 15) * jnp.power(d/1000., -0.25)
+        if d > 3000:
+            x = jnp.arange(3, 8)
+        y = jnp.logspace(jnp.log10(7.), jnp.log10(23.), 15) * jnp.power(d/1000., 0.25)
     
     z, a, best = grid(ess, x, y)
     
@@ -90,5 +94,14 @@ def img(x, y, z, a, best, name):
     plt.show()
     
     
+    
+from time import time
 
-stn(1000, False)
+
+stn(10000, True)
+print('done 3')
+
+# for d in [100, 300, 1000, 3000]:
+#     t0 = time()
+#     stn(d, True)
+#     print((time() - t0)/60.)
