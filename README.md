@@ -1,11 +1,11 @@
 # MicroCanoncial Hamiltonian Monte Carlo (MCHMC)
 
-![poster](github_poster.png)
+![poster](img/github_poster.png)
+
 
 You can check out the tutorials:
-- [getting started](tutorials/intro_tutorial.ipynb): sampling from a standard Gaussian (sequential sampling)
-- [advance tutorial](tutorials/advanced_tutorial.ipynb): sampling the hierarchical Stochastic Volatility model for the S&P500 returns data (sequential sampling)
-- [ensamble](tutorials/Ensamble_tutorial.ipynb): sampling from the Rosenbrock function (ensamble sampling, in progress)
+- [getting started](notebooks/tutorials/intro_tutorial.ipynb): sampling from a standard Gaussian (sequential sampling)
+- [advance tutorial](notebooks/tutorials/advanced_tutorial.ipynb): sampling the hierarchical Stochastic Volatility model for the S&P500 returns data (sequential sampling)
 
 Julia implementation is available [here](https://github.com/JaimeRZP/MicroCanonicalHMC.jl).
 
@@ -15,4 +15,4 @@ The associated papers are:
 
 If you have any questions do not hesitate to contact me at jakob_robnik@berkeley.edu
 
-![ensamble](plots/movies/rosenbrock.gif)
+![ensamble](img/rosenbrock.gif)

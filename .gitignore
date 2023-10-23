@@ -1,3 +1,5 @@
+.pytest*
+*/__pycache__/*
 *__pycache__*
 *.png
 mclmc.egg*
@@ -5,3 +7,6 @@ mclmc.egg*
 *.mp4
 *.npy
 *.pdf
+*.csv
+.ipynb_checkpoints
+
