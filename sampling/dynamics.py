@@ -70,7 +70,7 @@ def minimal_norm(d, T, V):
 
       return xx, uu, ll, gg, kinetic_change
     
-  return step
+  return step, 2
 
 
 
@@ -88,7 +88,7 @@ def leapfrog(d, T, V):
 
     return xx, uu, l, gg, kinetic_change
   
-  return step
+  return step, 1
 
 
 
@@ -154,4 +154,3 @@ def partially_refresh_momentum(d, sequential= True):
   return rng_sequential if sequential else rng_parallel
 
 
-grad_evals = {minimal_norm : 2, leapfrog : 1}
