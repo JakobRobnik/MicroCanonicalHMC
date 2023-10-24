@@ -7,9 +7,9 @@ import jax
 
 import jax.numpy as jnp
 
-def update_momentum_unstable(d, eps):
+def update_momentum_unstable(d):
 
-    def update(u, g):
+    def update(eps, u, g):
         g_norm = jnp.linalg.norm(g)
         e = - g / g_norm
         delta = eps * g_norm / (d-1)
@@ -26,11 +26,10 @@ def test_momentum_update():
     u = jax.random.uniform(key=jax.random.PRNGKey(0),shape=(d,))
     u = u / jnp.linalg.norm(u)
     g = jax.random.uniform(key=jax.random.PRNGKey(1),shape=(d,))
-    update_stable = update_momentum(d, eps)
-    update_unstable = update_momentum_unstable(d, eps)
-    update1 = update_stable(u, g)[0]
-    update2 = update_unstable(u, g)
+    update_stable = update_momentum(d, sequential=True)
+    update_unstable = update_momentum_unstable(d)
+    update1 = update_stable(eps, u, g)[0]
+    update2 = update_unstable(eps, u, g)
     print(update1, update2)
     assert jnp.allclose(update1,update2)
     
-
