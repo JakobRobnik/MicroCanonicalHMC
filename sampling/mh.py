@@ -13,21 +13,22 @@ OutputType = Enum('Output', ['normal', 'ess'])
 class Sampler:
     """Metropolis-Hastings algorithm with HMC or MCHMC for generating the proposal."""
 
-    def __init__(self, Target, L, eps, integrator = dynamics.minimal_norm, hmc = False):
+    def __init__(self, Target, N, eps, N2 = jnp.inf, integrator = dynamics.minimal_norm, hmc = False):
         
         self.Target = Target
-        self.sigma = jnp.ones(Target.d)
-        self.L = L
-        self.eps = eps
+        self.hyp = (N, N2, eps, jnp.ones(Target.d))
         
         ### integrator ###
         hamiltonian_step, num_grads = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
                                                  V= dynamics.update_momentum(self.Target.d, sequential=True, hmc= hmc),
                                                  d= self.Target.d)
         
-        self.grad_evals_per_step = num_grads * L
+        self.grad_evals_per_step = num_grads * N
         
-        self.ma_step = dynamics.ma_step(hamiltonian_step, dynamics.rng_momentum_marginal(self.Target.d, True, hmc))
+        self.ma_step = dynamics.ma_step(hamiltonian_step, 
+                                        dynamics.rng_momentum_marginal(self.Target.d, True, hmc),
+                                        dynamics.partially_refresh_momentum(self.Target.d, True), 
+                                        self.Target.d)
         
         
         
@@ -142,23 +143,21 @@ class Sampler:
         
         ### initial conditions ###
         x, l, g, key = self.get_initial_conditions(x_initial, random_key)
-        L, eps = self.L, self.eps #the initial values, given at the class initialization
-
-        sigma = jnp.ones(self.Target.d) # jnp.ones(self.Target.d)  # no diagonal preconditioning
 
         
         if output == OutputType.normal:
-            return self.sample_normal(num_steps, x, l, g, key, L, eps, sigma, thinning)
+            return self.sample_normal(num_steps, x, l, g, key, self.hyp, thinning)
             
         elif output == OutputType.ess:
-            return self.sample_ess(num_steps, x, l, g, key, L, eps, sigma)
+            return self.sample_ess(num_steps, x, l, g, key, self.hyp)
+        
         
 
-    def sample_normal(self, num_steps, x, l, g, random_key, L, eps, sigma, thinning):
+    def sample_normal(self, num_steps, x, l, g, random_key, hyp, thinning):
         """Stores transform(x) for each step."""
         
         def step(_state, useless):
-            state, acc = self.ma_step(*_state, L, eps, sigma)
+            state, acc = self.ma_step(*_state, *hyp)
             return state, (self.Target.transform(state[0]), acc)
 
 
@@ -166,16 +165,16 @@ class Sampler:
             return jax.lax.scan(step, init=(x, l, g, random_key), xs=None, length=num_steps)[1]
 
         else:
-            return self.sample_thinning(num_steps, x, l, g, random_key, L, eps, sigma, thinning)
+            return self.sample_thinning(num_steps, x, l, g, random_key, hyp, thinning)
 
 
-    def sample_thinning(self, num_steps, x, l, g, random_key, L, eps, sigma, thinning):
+    def sample_thinning(self, num_steps, x, l, g, random_key, hyp, thinning):
         """Stores transform(x) for each step."""
 
         def step(state, useless):
 
             def substep(state, useless):    
-                return self.ma_step(*state, L, eps, sigma)
+                return self.ma_step(*state, *hyp)
                 
             state, acc = jax.lax.scan(substep, init=state, xs=None, length= thinning)[0] #do 'thinning' steps without saving
 
@@ -185,13 +184,13 @@ class Sampler:
 
 
 
-    def sample_ess(self, num_steps, x, l, g, random_key, L, eps, sigma):
+    def sample_ess(self, num_steps, x, l, g, random_key, hyp):
         """Stores the bias of the second moments for each step."""
      
         
         def step(state_track, useless):
             
-            state, acc = self.ma_step(*state_track[0], L, eps, sigma)
+            state, acc = self.ma_step(*state_track[0], *hyp)
             
             W, F2 = state_track[1]
             F2 = (W * F2 + jnp.square(self.Target.transform(state[0]))) / (W + 1)  # Update <f(x)> with a Kalman filter

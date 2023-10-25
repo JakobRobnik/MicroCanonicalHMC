@@ -119,21 +119,25 @@ def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
 
 
 
-def ma_step(hamiltonian_dynamics, rng_momentum_marginal):
+def ma_step(hamiltonian_dynamics, rng_momentum_marginal, partially_refresh_momentum, d):
 
-  def step(x, l, g, random_key, n, eps, sigma):
-      """One step of the generalized dynamics."""
+  def step(x, l, g, random_key, N, N2, eps, sigma):
 
       # bounce
       u, key = rng_momentum_marginal(random_key)
       
       def hamiltonian_steps(state, useless):
-        _x, _u, _l, _g, _kinetic = state
+        _x, _u, _l, _g, _kinetic, key = state
         _x, _u, _l, _g, kinetic_change = hamiltonian_dynamics(x= _x, u= _u, g= _g, eps= eps, sigma= sigma)
         
-        return (_x, _u, _l, _g, _kinetic + kinetic_change), None
+        
+        # Langevin-like noise
+        nu = jnp.sqrt((jnp.exp(2./N2) - 1.) / d)
+        uu, key = partially_refresh_momentum(u= uu, random_key= key, nu= nu)
 
-      xx, u, ll, gg, kinetic_change = jax.lax.scan(hamiltonian_steps, init = (x, u, l, g, 0.), xs = None, length = n)[0]
+        return (_x, _u, _l, _g, _kinetic + kinetic_change, key), None
+
+      xx, u, ll, gg, kinetic_change, key = jax.lax.scan(hamiltonian_steps, init = (x, u, l, g, 0., key), xs = None, length = N)[0]
 
       energy_change = kinetic_change + ll - l
 
