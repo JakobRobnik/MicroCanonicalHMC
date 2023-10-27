@@ -1,4 +1,5 @@
 import sys
+import time
 
 from pytest import raises
 import pytest
@@ -29,6 +30,8 @@ class StandardGaussian(Target):
        Returns: one random sample from the prior"""
 
     return jax.random.normal(key, shape = (self.d, ), dtype = 'float64') * 4
+
+
 
 
 
@@ -74,3 +77,14 @@ def test_mclmc():
     # simple target
     target_simple = Target(d = 10, nlogp=nlogp)
     Sampler(target_simple).sample(100, x_initial = jax.random.normal(shape=(10,), key=jax.random.PRNGKey(0)))
+
+# speed
+def gaussian():
+    d = 1000
+    target_simple = Target(d = d, nlogp=nlogp)
+    samples = Sampler(target_simple).sample(100000, x_initial = jax.random.normal(shape=(d,), key=jax.random.PRNGKey(0)))
+    return samples
+
+def test_speed(benchmark):
+    result = benchmark(gaussian)
+    assert jnp.abs(jnp.mean(result))<1e-3
