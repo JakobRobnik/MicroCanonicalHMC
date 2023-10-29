@@ -1,5 +1,11 @@
 # MicroCanoncial Hamiltonian Monte Carlo (MCHMC)
 
+## Installation 
+
+`pip install mclmc`
+
+## Overview
+
 ![poster](img/github_poster.png)
 
 
