@@ -1,4 +1,4 @@
-# MicroCanoncial Hamiltonian Monte Carlo (MCHMC)
+# MicroCanonical Hamiltonian Monte Carlo (MCHMC)
 
 ## Installation 
 
