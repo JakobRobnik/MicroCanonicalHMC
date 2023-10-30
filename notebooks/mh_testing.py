@@ -34,37 +34,52 @@ def grid(f, x, y, vmapable = False):
     ### optimal parameters ###
     I = np.argmax(z)
     i, j = I // len(y), I % (len(y))
+    if i == 0 or i == len(x)-1 or j == 0 or j == len(y)-1:
+        print("Warning: optimum achieved at the grid border")
     best = (x[i], y[j], np.max(z), a[i, j])
     
     return z, a, best
 
 
-def stn(d, hmc):
+def predict_optimal(d, hmc, adjust):
+    """predict optimal N and eps"""
+       
+    if hmc:
+        params = (0.25, -0.25, 5, 0.253) if adjust else (0., 0., 3, 0.45)
+    else:
+        params = (0.25, 0.25, 3, 12.69) if adjust else (0., 0.5, 2, 21.5)
+    
+    N = jnp.rint(params[2] * np.power(d/1000., params[0])).astype(int)
+    eps = params[3] * jnp.power(d/1000., params[1])
+    
+    return N, eps
+    
+
+
+def stn(d, hmc, adjust):
     target = StandardNormal(d= d)
 
-    samples = (int)(1000 * np.power(d/1000, 0.25))
+    samples = (int)(1000 * (np.power(d/1000, 0.25) if adjust else 1))
     
     def ess(N, eps):
-        sampler = Sampler(target, N, eps, integrator= leapfrog, hmc= hmc)
+        sampler = Sampler(target, N, eps, integrator= leapfrog, hmc= hmc, adjust = adjust)
         e, a = sampler.sample(samples, 128, output = OutputType.ess)
         return e, jnp.average(a)
 
-    if hmc:
-        x = jnp.arange(1, 7)
-        if d >= 3000:
-            x = jnp.arange(5, 10)
-        y = jnp.logspace(jnp.log10(0.2), jnp.log10(0.32), 15) * jnp.power(d/1000., -0.25)
-    else:
-        x = jnp.arange(1, 6)
-        if d > 3000:
-            x = jnp.arange(3, 8)
-        y = jnp.logspace(jnp.log10(7.), jnp.log10(23.), 15) * jnp.power(d/1000., 0.25)
+    # set the grid
+    Nopt, epsopt = predict_optimal(d, hmc, adjust)
+    nmin = max(Nopt-2, 0)
+    x = jnp.arange(nmin, nmin + 5)
+    y = jnp.logspace(-jnp.log10(1.5), jnp.log10(1.5), 10) * epsopt
     
+    # do the computation
     z, a, best = grid(ess, x, y)
     
-    name = ('hmc' if hmc else 'mchmc') + '_stn_'+ str(d) + 'd'
+    # save the results    
+    name = ('' if adjust else 'u') + ('hmc' if hmc else 'mchmc') + '_stn_'+ str(d) + 'd'
     np.savez('data/dimensions/mh/' + name + '.npz', ess = z, acc = a, best = best)
     
+    # plot the grid results
     img(x, y, z, a, best, name)
 
 
@@ -76,7 +91,7 @@ def img(x, y, z, a, best, name):
 
     for i in range(2):
         plt.subplot(1, 2, i+1)
-        plt.title(['ESS', 'acceptance rate'][i], fontsize = 25)    
+        plt.title(['ESS', 'acceptance rate'][i], fontsize = 25)
         ax = plt.gca()
         Z = z if i == 0 else a
         cax = ax.matshow(Z, cmap = [plt.cm.Blues, plt.cm.Greys_r][i])
@@ -93,15 +108,10 @@ def img(x, y, z, a, best, name):
     plt.savefig('img/dimensions/'+name+'.png')
     plt.show()
     
-    
-    
-from time import time
 
 
-stn(10000, True)
-print('done 3')
-
-# for d in [100, 300, 1000, 3000]:
-#     t0 = time()
-#     stn(d, True)
-#     print((time() - t0)/60.)
+for d in [2, 3, 4, 5, 10, 30]:
+    for hmc in [True, False]:
+        for adjust in [True, False]:
+            print(d, hmc, adjust)
+            stn(d, hmc, adjust)

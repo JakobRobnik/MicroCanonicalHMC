@@ -119,7 +119,8 @@ def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
 
 
 
-def ma_step(hamiltonian_dynamics, rng_momentum_marginal):
+def ma_step(hamiltonian_dynamics, rng_momentum_marginal, adjust):
+  """if adjust = False, we always accept the proposal"""
 
   def step(x, l, g, random_key, n, eps, sigma):
       """One step of the generalized dynamics."""
@@ -139,7 +140,7 @@ def ma_step(hamiltonian_dynamics, rng_momentum_marginal):
 
       # accept/reject
       key, key1 = jax.random.split(key)
-      accept = jax.random.uniform(key1) < jnp.exp(-energy_change)
+      accept = (jax.random.uniform(key1) < jnp.exp(-energy_change)) * adjust + (1-adjust)
           
       return (xx * accept + x *(1-accept), ll * accept + l *(1-accept), gg * accept + g *(1-accept), key), accept
 

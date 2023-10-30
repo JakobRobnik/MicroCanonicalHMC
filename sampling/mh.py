@@ -13,7 +13,7 @@ OutputType = Enum('Output', ['normal', 'ess'])
 class Sampler:
     """Metropolis-Hastings algorithm with HMC or MCHMC for generating the proposal."""
 
-    def __init__(self, Target, L, eps, integrator = dynamics.minimal_norm, hmc = False):
+    def __init__(self, Target, L, eps, integrator = dynamics.minimal_norm, hmc = False, adjust = True):
         
         self.Target = Target
         self.sigma = jnp.ones(Target.d)
@@ -27,7 +27,7 @@ class Sampler:
         
         self.grad_evals_per_step = num_grads * L
         
-        self.ma_step = dynamics.ma_step(hamiltonian_step, dynamics.rng_momentum_marginal(self.Target.d, True, hmc))
+        self.ma_step = dynamics.ma_step(hamiltonian_step, dynamics.rng_momentum_marginal(self.Target.d, True, hmc), adjust)
         
         
         
