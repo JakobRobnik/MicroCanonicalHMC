@@ -65,7 +65,7 @@ class Sampler:
                                                                 V= dynamics.update_momentum(self.Target.d, sequential=True),
                                                                 d= self.Target.d)
         self.dynamics = dynamics.mclmc(hamiltonian_step, dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
-        self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, True)
+        self.random_unit_vector = dynamics.rng_momentum_marginal(self.Target.d, True, False)
 
         ### preconditioning ###
         self.diagonal_preconditioning = diagonal_preconditioning
@@ -270,7 +270,7 @@ class Sampler:
         
         if output == OutputType.normal or output == OutputType.detailed:
             X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
-            if OutputType.detailed:
+            if output == OutputType.detailed:
                 return X, E, L, eps
             else:
                 return X
