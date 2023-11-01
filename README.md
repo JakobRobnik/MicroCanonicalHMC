@@ -11,7 +11,7 @@
 
 You can check out the tutorials:
 - [getting started](notebooks/tutorials/intro_tutorial.ipynb): sampling from a standard Gaussian (sequential sampling)
-- [advance tutorial](notebooks/tutorials/advanced_tutorial.ipynb): sampling the hierarchical Stochastic Volatility model for the S&P500 returns data (sequential sampling)
+- [advanced tutorial](notebooks/tutorials/advanced_tutorial.ipynb): sampling the hierarchical Stochastic Volatility model for the S&P500 returns data (sequential sampling)
 
 Julia implementation is available [here](https://github.com/JaimeRZP/MicroCanonicalHMC.jl).
 
