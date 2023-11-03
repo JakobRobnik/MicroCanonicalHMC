@@ -26,11 +26,6 @@ class Target():
 
 OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
 
-
-class Sampler:
-    """the MCHMC (q = 0 Hamiltonian) sampler"""
-
-
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 

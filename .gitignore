@@ -1,3 +1,4 @@
+dist
 .benchmarks
 .pytest*
 */__pycache__/*
