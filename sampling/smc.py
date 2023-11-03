@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 
-
 def bisection(f, a, b, tol=1e-3, max_iter=100):
 
     def cond_fn(inputs):

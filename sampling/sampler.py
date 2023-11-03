@@ -9,27 +9,47 @@ from . import dynamics
 from .correlation_length import ess_corr
 
 class Target():
+  """#Class for target distribution
+  
+  E.g. 
+  
+  ```python
+  Target(d=2, nlogp = lambda x: 0.5*jnp.sum(jnp.square(x)))
+```
+
+  defines a Gaussian.
+  
+  """
 
   def __init__(self, d, nlogp):
     self.d = d
+    """dimensionality of the target distribution"""
     self.nlogp = nlogp
+    """ negative log probability of target distribution (i.e. energy function)"""
     self.grad_nlogp = jax.value_and_grad(self.nlogp)
+    """ function which computes nlogp and its gradient"""
 
   def transform(self, x):
+    """ a transformation of the samples from the target distribution"""
     return x
 
   def prior_draw(self, key):
-    """Args: jax random key
-       Returns: one random sample from the prior"""
+    """**Args**: jax random key
+       
+       **Returns**: one random sample from the prior
+    """
 
     raise Exception("Not implemented")
 
 OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
+""" @private """
 
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target : Target, L = None, eps = None,
+    def __init__(self, 
+                 Target : Target,
+                 L = None, eps = None,
                  integrator = dynamics.minimal_norm, varEwanted = 5e-4,
                  diagonal_preconditioning= False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
@@ -37,26 +57,27 @@ class Sampler:
         """Args:
                 Target: the target distribution class
 
-                L: momentum decoherence scale (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting frac_tune2 and 3 to zero (see below))
+                **L**: momentum decoherence scale (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting frac_tune2 and 3 to zero (see below))
 
-                eps: initial integration step-size (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting all frac_tune1 and 2 to zero (see below))
+                **eps**: initial integration step-size (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting all frac_tune1 and 2 to zero (see below))
 
-                integrator: dynamics.leapfrog or dynamics.minimal_norm. Typically minimal_norm performs better.
+                **integrator**: dynamics.leapfrog or dynamics.minimal_norm. Typically minimal_norm performs better.
 
-                varEwanted: if your posteriors are biased try smaller values (or larger values: perhaps the convergence is too slow). This is perhaps the parameter whose default value is the least well determined.
+                **varEwanted**: if your posteriors are biased try smaller values (or larger values: perhaps the convergence is too slow). This is perhaps the parameter whose default value is the least well determined.
 
-                diagonal_preconditioning: if you already have your own preconditioning or if you suspect diagonal preconditioning is not useful, turn this off as it can also make matters worse
+                **diagonal_preconditioning**: if you already have your own preconditioning or if you suspect diagonal preconditioning is not useful, turn this off as it can also make matters worse
                                           (but it can also be very useful if you did not precondition the parameters (make their posterior variances close to 1))
 
-                frac_tune1: (num_samples * frac_tune1) steps will be used as a burn-in and to autotune the stepsize
+                **frac_tune1**: (num_samples * frac_tune1) steps will be used as a burn-in and to autotune the stepsize
 
-                frac_tune2: (num_samples * frac_tune2) steps will be used to autotune L (should be around 10 effective samples long for the optimal performance)
+                **frac_tune2**: (num_samples * frac_tune2) steps will be used to autotune L (should be around 10 effective samples long for the optimal performance)
 
-                frac_tune3: (num_samples * frac_tune3) steps will be used to improve the L tuning (should be around 10 effective samples long for the optimal performance). This stage is not neccessary if the posterior is close to a Gaussian and does not change much in general.
+                **frac_tune3**: (num_samples * frac_tune3) steps will be used to improve the L tuning (should be around 10 effective samples long for the optimal performance). This stage is not neccessary if the posterior is close to a Gaussian and does not change much in general.
                             It can be memory intensive in high dimensions so try turning it off if you have problems with the memory.
         """
 
         self.Target = Target
+        """@private"""
         self.sigma = jnp.ones(Target.d)
 
         ### integrator ###
