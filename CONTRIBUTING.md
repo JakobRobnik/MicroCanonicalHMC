@@ -27,9 +27,15 @@ work and might even find some help from other people.
 
 ### Contribution Workflow
 
+**Code**:
+
 1. Checkout a new branch.
 2. Run `make set-bench` to determine the speed of the current version of the code on your computer.
 3. Add your feature on a new branch
 4. Run `make test` to run tests locally.
 5. Run `make compare-bench` to see if your changes slowed the code.
 6. Push the branch and open a pull request. Assign a developer.
+
+**Docs**:
+
+For API docs, we use `pdoc`, which you can install with `pip`. Then do e.g. `pdoc sampling/sampler.py -o ./apidocs`. `pdoc` supports markdown, so markdown styled code comments inside triple quotes will be rendered automatically as documentation.
