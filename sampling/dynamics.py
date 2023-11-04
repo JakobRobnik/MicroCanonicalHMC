@@ -1,3 +1,6 @@
+import time
+from typing import Any, NamedTuple
+from chex import ArrayTree
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -5,8 +8,23 @@ import math
 
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
 
+class MCLMCState(NamedTuple):
+    """State of the MCLMC algorithm.
+
+    """
+
+    x: ArrayTree
+    u: ArrayTree
+    l: float
+    g: ArrayTree
+    key : Any
+
+class MCLMCInfo(NamedTuple):
 
 
+    transformed_x: ArrayTree
+    l: ArrayTree
+    de: float
 
 def update_momentum(d, sequential):
   """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
@@ -109,6 +127,30 @@ def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
   return step
 
 
+def build_kernel(Target, integrator, params, sequential=True):
+
+        L,eps, sigma = params
+
+        hamiltonian_step, _ = integrator(T= update_position(Target.grad_nlogp), 
+                                                                V= update_momentum(Target.d, sequential=sequential),
+                                                                d= Target.d)
+        move = mclmc(hamiltonian_step, partially_refresh_momentum(Target.d, sequential=sequential), Target.d)
+        def kernel(state : MCLMCState, _ : None) -> tuple[MCLMCState, MCLMCInfo]:
+
+            x, u, l, g, key = state
+        
+            xx, uu, ll, gg, kinetic_change, key = move(x, u, g, key, L, eps, sigma)
+            de = kinetic_change + ll - l
+            return MCLMCState(xx, uu, ll, gg, key), MCLMCInfo(Target.transform(xx), ll, de)
+
+        return kernel
+
+
+def run_kernel(kernel, num_steps : int, initial_state : MCLMCState):
+        return jax.lax.scan(
+                f=kernel, 
+                init=initial_state, 
+                xs=None, length=num_steps)[1]
 
 def random_unit_vector(d, sequential= True):
   """Generates a random (isotropic) unit vector."""

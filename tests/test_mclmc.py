@@ -4,9 +4,9 @@ import time
 from pytest import raises
 import pytest
 
-from sampling.dynamics import leapfrog  
 sys.path.insert(0, '../../')
 sys.path.insert(0, './')
+from sampling.dynamics import leapfrog  
 
 import jax
 import jax.numpy as jnp
@@ -39,8 +39,9 @@ def test_mclmc():
     target = StandardGaussian(d = 10, nlogp=nlogp)
     sampler = Sampler(target, varEwanted = 5e-4)
 
-
     samples1 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))
+    print(samples1)
+
     samples2 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))
     samples3 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(1))
     assert jnp.array_equal(samples1,samples2), "sampler should be pure"
@@ -88,3 +89,6 @@ def gaussian():
 def test_speed(benchmark):
     result = benchmark(gaussian)
     assert jnp.abs(jnp.mean(result))<1e-3
+
+
+test_mclmc()
