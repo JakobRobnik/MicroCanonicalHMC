@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import NamedTuple
-from chex import Array
+from jax import Array
 import jax
 import jax.numpy as jnp
 import numpy as np
