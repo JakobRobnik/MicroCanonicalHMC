@@ -77,11 +77,11 @@ class Sampler:
         """
 
         self.Target = Target
-        """@private"""
         self.sigma = jnp.ones(Target.d)
+        self.integrator = integrator
 
         ### integrator ###
-        hamiltonian_step, self.grad_evals_per_step = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
+        hamiltonian_step, self.grad_evals_per_step = self.integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
                                                                 V= dynamics.update_momentum(self.Target.d, sequential=True),
                                                                 d= self.Target.d)
         self.dynamics = dynamics.mclmc(hamiltonian_step, dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
