@@ -1,7 +1,7 @@
 import time
 from typing import Any, NamedTuple
-from chex import ArrayTree
 import jax
+from jax import Array
 import jax.numpy as jnp
 import numpy as np
 import math
@@ -13,17 +13,17 @@ class MCLMCState(NamedTuple):
 
     """
 
-    x: ArrayTree
-    u: ArrayTree
+    x: Array
+    u: Array
     l: float
-    g: ArrayTree
+    g: Array
     key : Any
 
 class MCLMCInfo(NamedTuple):
 
 
-    transformed_x: ArrayTree
-    l: ArrayTree
+    transformed_x: Array
+    l: Array
     de: float
 
 def update_momentum(d, sequential):
