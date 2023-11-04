@@ -1,7 +1,13 @@
-from sampling.annealing import Sampler
+import sys
+
+sys.path.insert(0, '../../')
+sys.path.insert(0, './')
+
+# from sampling.annealing import Sampler
 import jax
 import jax.numpy as jnp
-
+from sampling.annealing import Annealing
+from sampling.sampler import Sampler
 
 
 temp_schedule = jnp.array([3.0, 2.0, 1.0])
@@ -27,11 +33,20 @@ target = StandardNormal(d = 100)
 
 sampler = Sampler(target)
 
-x = sampler.sample(steps_at_each_temp = 1000, tune_steps= 100, num_chains= 100, temp_schedule = temp_schedule)
+
+annealer = Annealing(sampler)
+
+samples = annealer.sample(steps_at_each_temp = 1000, tune_steps= 100, num_chains= 100, temp_schedule = temp_schedule)
+
+print(samples)
+
+# sampler = Sampler(target)
+
+# x = sampler.sample(steps_at_each_temp = 1000, tune_steps= 100, num_chains= 100, temp_schedule = temp_schedule)
 
 
-x1 = jnp.average(x, axis = 0)
-x2 = jnp.average(jnp.square(x), axis = 0)
+# x1 = jnp.average(x, axis = 0)
+# x2 = jnp.average(jnp.square(x), axis = 0)
 
-print(x1)
-print(x2)
+# print(x1)
+# print(x2)
