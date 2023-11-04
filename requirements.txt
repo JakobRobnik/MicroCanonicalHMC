@@ -1,3 +1,4 @@
+mypy
 pre-commit
 numpy
 matplotlib
