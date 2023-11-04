@@ -321,7 +321,7 @@ class Sampler:
 
     
 
-    def sample_normal(self, num_steps : int, state : MCLMCState, params : Parameters, thinning : int) -> MCLMCInfo:
+    def sample_normal(self, num_steps : int, state : MCLMCState, params : Parameters, thinning : int):
         """Stores transform(x) for each step."""
 
         kernel = build_kernel(self.Target, self.integrator, params=params)
