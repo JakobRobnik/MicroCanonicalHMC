@@ -1,11 +1,14 @@
 ## style note: general preference here for functional style (e.g. global function definitions, purity, code sharing)
 
 from enum import Enum
+from typing import NamedTuple
+from jax import Array
 import jax
 import jax.numpy as jnp
 import numpy as np
+from sampling import dynamics
 
-from . import dynamics
+from sampling.dynamics import MCLMCInfo, MCLMCState, build_kernel, run_kernel
 from .correlation_length import ess_corr
 
 class Target():
@@ -44,6 +47,14 @@ class Target():
 OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
 """ @private """
 
+class Parameters(NamedTuple):
+    """Tunable parameters
+    """
+
+    L: float
+    eps: float
+    sigma: Array
+
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
@@ -80,8 +91,10 @@ class Sampler:
         """@private"""
         self.sigma = jnp.ones(Target.d)
 
+        self.integrator = integrator
+
         ### integrator ###
-        hamiltonian_step, self.grad_evals_per_step = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
+        hamiltonian_step, self.grad_evals_per_step = self.integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
                                                                 V= dynamics.update_momentum(self.Target.d, sequential=True),
                                                                 d= self.Target.d)
         self.dynamics = dynamics.mclmc(hamiltonian_step, dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
@@ -288,7 +301,7 @@ class Sampler:
 
         
         if output == OutputType.normal or output == OutputType.detailed:
-            X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
+            X, _, E = self.sample_normal(num_steps, MCLMCState(x, u, l, g, key), Parameters(L, eps, sigma), thinning)
             if output == OutputType.detailed:
                 return X, E, L, eps
             else:
@@ -306,37 +319,28 @@ class Sampler:
        
     ### for loops which do the sampling steps: ###
 
-    def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma, thinning):
+    
+
+    def sample_normal(self, num_steps : int, state : MCLMCState, params : Parameters, thinning : int):
         """Stores transform(x) for each step."""
-        
-        def step(state, useless):
 
-            x, u, l, g, key = state
-            xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)
-
-            # left in as a comment since it may be useful when experimenting with neighbour lists in MD
-            # if self.Target.nbrs:
-            #     self.Target.nbrs = self.Target.nbrs.update(jnp.reshape(xx, (-1,3)), neighbor=self.Target.nbrs)
-            
-            de = kinetic_change + ll - l
-            
-            return (xx, uu, ll, gg, key), (self.Target.transform(xx), ll, de)
-
-
+        kernel = build_kernel(self.Target, self.integrator, params=params)
         if thinning == 1:
-            return jax.lax.scan(step, init=(x, u, l, g, random_key), xs=None, length=num_steps)[1]
+            return run_kernel(kernel=kernel, num_steps=num_steps, initial_state=state)
 
         else:
-            return self.sample_thinning(num_steps, x, u, l, g, random_key, L, eps, sigma, thinning)
+            x,u,l,g,random_key = state
+            return self.sample_thinning(num_steps, x, u, l, g, random_key, params, thinning)
 
 
-    def sample_thinning(self, num_steps, x, u, l, g, random_key, L, eps, sigma, thinning):
+    def sample_thinning(self, num_steps, x, u, l, g, random_key, params, thinning):
         """Stores transform(x) for each step."""
 
-        def step(state, useless):
+        def step(state, _):
 
-            def substep(state, useless):
+            def substep(state, _):
                 x, u, l, g, _, key = state
+                L,eps,sigma = params
                 xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)
                 de = kinetic_change + ll - l
                 return (xx, uu, ll, gg, de, key), None
