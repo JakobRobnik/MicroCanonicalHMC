@@ -88,8 +88,8 @@ class Sampler:
         """
 
         self.Target = Target
-        """@private"""
         self.sigma = jnp.ones(Target.d)
+        self.integrator = integrator
 
         self.integrator = integrator
 

@@ -41,7 +41,8 @@ def update_momentum(d, sequential):
       uu = e *(1-zeta)*(1+zeta + ue * (1-zeta)) + 2*zeta* u
       delta_r = delta - jnp.log(2) + jnp.log(1 + ue + (1-ue)*zeta**2)
       return uu/jnp.sqrt(jnp.sum(jnp.square(uu))), delta_r
-
+  
+ 
   
   def update_parallel(eps, u, g):
       g_norm = jnp.sqrt(jnp.sum(jnp.square(g), axis=1)).T
