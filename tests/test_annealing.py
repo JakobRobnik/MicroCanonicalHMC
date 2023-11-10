@@ -1,14 +1,8 @@
-import sys
-
-sys.path.insert(0, '../../')
-sys.path.insert(0, './')
-
-# from sampling.annealing import Sampler
 import jax
 import jax.numpy as jnp
-from sampling.annealing import Annealing
-from sampling.sampler import Sampler, Target
-import sampling.old_annealing as A
+from mclmc.sampling.annealing import Annealing
+from mclmc.sampling.sampler import Sampler, Target
+import mclmc.sampling.old_annealing as A
 
 temp_schedule = jnp.array([3.0, 2.0, 1.0])
 

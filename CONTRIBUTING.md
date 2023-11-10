@@ -38,4 +38,4 @@ work and might even find some help from other people.
 
 **Docs**:
 
-For API docs, we use `pdoc`, which you can install with `pip`. Then do e.g. `pdoc sampling/sampler.py -o ./apidocs`. `pdoc` supports markdown, so markdown styled code comments inside triple quotes will be rendered automatically as documentation.
+For API docs, we use `pdoc`, which you can install with `pip`. Then do e.g. `pdoc mclmc/sampling/sampler.py -o ./apidocs`. `pdoc` supports markdown, so markdown styled code comments inside triple quotes will be rendered automatically as documentation.
