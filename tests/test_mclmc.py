@@ -1,19 +1,14 @@
-import sys
-import time
 
 from pytest import raises
-import pytest
 
-sys.path.insert(0, '../../')
-sys.path.insert(0, './')
-from sampling.dynamics import leapfrog  
+from mclmc.sampling.dynamics import leapfrog  
+from mclmc.sampling.sampler import OutputType, Sampler, Target
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sampling.sampler import OutputType, Sampler, Target
 
 nlogp = lambda x: 0.5*jnp.sum(jnp.square(x))
 

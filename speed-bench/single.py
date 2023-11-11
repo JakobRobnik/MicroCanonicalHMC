@@ -6,10 +6,10 @@ import numpy as np
 
 sys.path.insert(0, './')
 
-import sampling
+import mclmc.sampling
 
-from sampling.sampler import Sampler, Target  
-from sampling.dynamics import update_momentum
+from mclmc.sampling.sampler import Sampler, Target  
+from mclmc.sampling.dynamics import update_momentum
 import jax 
 
 import jax.numpy as jnp
