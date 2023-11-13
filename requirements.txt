@@ -1,6 +1,9 @@
+mypy
 pre-commit
 numpy
 matplotlib
 pandas
 jaxlib
 jax
+pytest
+pytest-benchmark

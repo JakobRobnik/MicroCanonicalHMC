@@ -1,5 +1,5 @@
 from benchmarks.benchmarks_mchmc import *
-from sampling.sampler import Sampler
+from mclmc.sampling.sampler import Sampler
 #from benchmarks import german_credit
 import os
 import jax

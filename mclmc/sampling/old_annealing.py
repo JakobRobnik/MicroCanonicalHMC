@@ -2,47 +2,6 @@ import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 
-def bisection(f, a, b, tol=1e-3, max_iter=100):
-
-    def cond_fn(inputs):
-        a, b, _, iter_count = inputs
-        return (jnp.abs(a - b) > tol * a) & (iter_count < max_iter)
-
-    def body_fn(inputs):
-        a, b, midpoint, iter_count = inputs
-        midpoint = (a + b) / 2.0
-        a, b = jax.lax.cond(f(midpoint) > 0, lambda _: (a, midpoint), lambda _: (midpoint, b), operand=())
-
-        #jax.debug.print("a: {}, b: {}, midpoint: {}, iter: {}", a, b, midpoint, iter_count)
-        return a, b, midpoint, iter_count + 1
-
-    #a, b, midpoint, iter_count = jax.lax.while_loop(cond_fn, body_fn, (a, b, 0.0, 0))
-    # Use cond to decide which path to follow, note the condition is now f(b) <= 0
-    a, b, midpoint, iter_count = jax.lax.cond(f(b) <= 0, 
-                                              lambda _: (b, b, b, 0), 
-                                              lambda _: jax.lax.while_loop(cond_fn, body_fn, (a, b, 0.0, 0)), 
-                                              operand=())
-
-    return midpoint
-
-def systematic_resampling(logw, random_key):
-    # Normalize weights
-    w = jnp.exp(logw - jax.scipy.special.logsumexp(logw))
-
-    # Compute cumulative sum
-    cumsum_w = jnp.cumsum(w)
-
-    # Number of particles
-    N = len(logw)
-
-    # Generate N uniform random numbers, then transform them appropriately
-    key, subkey = jax.random.split(random_key)
-    u = (jnp.arange(N) + jax.random.uniform(subkey)) / N
-
-    # Compute resampled indices
-    indices = jnp.searchsorted(cumsum_w, u)
-
-    return indices, key
 
 class vmap_target:
     """A wrapper target class, where jax.vmap has been applied to the functions of a given target"""
@@ -183,23 +142,23 @@ class Sampler:
             x, u, ll, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, T)  # update particles by one step
 
 
-            ### eps tuning ###
-            de = jnp.square(kinetic_change + ll - l) / self.Target.d #square energy error per dimension
-            varE = jnp.average(de) #averaged over the ensamble
+            # ### eps tuning ###
+            # de = jnp.square(kinetic_change + (ll - l)/T) / self.Target.d #square energy error per dimension
+            # varE = jnp.average(de) #averaged over the ensamble
 
-                                #if we are in the tuning phase            #else
-            eps *= (tune * jnp.power(varE / self.varEwanted, -1./6.) + (1-tune))
+            #                     #if we are in the tuning phase            #else
+            # eps *= (tune * jnp.power(varE / self.varEwanted, -1./6.) + (1-tune))
 
 
-            ### L tuning ###
-            #typical width of the posterior
-            moment1 = jnp.average(x, axis=0)
-            moment2 = jnp.average(jnp.square(x), axis = 0)
-            var= moment2 - jnp.square(moment1)
-            sig = jnp.sqrt(jnp.average(var)) # average over dimensions (= typical width of the posterior)
+            # ### L tuning ###
+            # #typical width of the posterior
+            # moment1 = jnp.average(x, axis=0)
+            # moment2 = jnp.average(jnp.square(x), axis = 0)
+            # var= moment2 - jnp.square(moment1)
+            # sig = jnp.sqrt(jnp.average(var)) # average over dimensions (= typical width of the posterior)
 
-            Lnew = self.alpha * sig * jnp.sqrt(self.Target.d)
-            L = tune * Lnew + (1-tune) * L #update L if we are in the tuning phase
+            # Lnew = self.alpha * sig * jnp.sqrt(self.Target.d)
+            # L = tune * Lnew + (1-tune) * L #update L if we are in the tuning phase
             
 
             return (x, u, ll, g, key, L, eps), None
@@ -213,67 +172,24 @@ class Sampler:
 
 
 
-    def sample(self, steps_at_each_temp, tune_steps, num_chains, temp_init, temp_final, ess, x_initial= 'prior', random_key= None):
+    def sample(self, steps_at_each_temp, tune_steps, num_chains, temp_schedule, x_initial= 'prior', random_key= None):
 
         x0, u0, l0, g0, key0 = self.initialize(random_key, x_initial, num_chains) #initialize the chains
 
-        T0 = temp_init
-
-        def not_terminate(state):
-            x, u, l, g, key, L, eps, Tprev = state
-            return jnp.abs(Tprev-temp_final) > 1e-2
-        
-        def update_temp_and_compute_logw(state):
-            x, u, l, g, key, L, eps, Tprev = state
-
-            def solve_ess(beta):
-                logw = -(beta - 1.0/Tprev) * l 
-                weights = jnp.exp(logw - jax.scipy.special.logsumexp(logw))
-                #jax.debug.print("estimate: {}, ess: {}", 1.0 / jnp.sum(weights**2) / len(weights), ess)
-                return ess * len(weights) - 1.0 / jnp.sum(weights**2)
-
-            beta = bisection(solve_ess, 1.0/Tprev, 1.0/temp_final)
-            T = 1.0 / beta
-
-            logw = -(beta - 1.0/Tprev) * l
-
-            return T, logw
-        
-        def resample_particles(logw, x, u, l, g, key, L, eps, T):
-
-            indices, key = systematic_resampling(logw, key)
-
-            x_resampled = jnp.take(x, indices, axis=0)
-            u_resampled = jnp.take(u, indices, axis=0)
-            l_resampled = jnp.take(l, indices)
-            g_resampled = jnp.take(g, indices, axis=0)
-
-            return (x_resampled, u_resampled, l_resampled, g_resampled, key, L, eps, T)
+        temp_schedule_ext = jnp.insert(temp_schedule, 0, temp_schedule[0]) # as if the temp level before the first temp level was the same
 
 
-        def temp_level(state):
-            x, u, l, g, key, L, eps, Tprev = state
+        def temp_level(state, iter):
+            x, u, l, g, key, L, eps = state
+            T, Tprev = temp_schedule_ext[iter], temp_schedule_ext[iter-1]
+            # L *= jnp.sqrt(T / Tprev)
+            # eps *= jnp.sqrt(T / Tprev)
 
-            T, logw = update_temp_and_compute_logw(state)
-            jax.debug.print("T: {}", T)
-
-            L *= jnp.sqrt(T / Tprev)
-            eps *= jnp.sqrt(T / Tprev)
-
-            x, u, l, g, key, L, eps, T = resample_particles(logw, x, u, l, g, key, L, eps, T)
-
-            x, u, l, g, key, L, eps = self.sample_temp_level(steps_at_each_temp, tune_steps, x, u, l, g, key, L, eps, T)
-
-            #jax.debug.print("logl_next: {}", l[0])
-
-            return (x, u, l, g, key, L, eps, T)
+            return self.sample_temp_level(steps_at_each_temp, tune_steps, x, u, l, g, key, L, eps, T), None
 
         
         # do the sampling and return the final x of all the chains
-        return jax.lax.while_loop(cond_fun=not_terminate, 
-                                  body_fun=temp_level, 
-                                  init_val=(x0, u0, l0, g0, key0, self.L, self.eps_initial, T0)
-                                 )[0]
+        return jax.lax.scan(temp_level, init= (x0, u0, l0, g0, key0, self.L, self.eps_initial), xs= jnp.arange(1, len(temp_schedule_ext)))[0][0]
         
 
 

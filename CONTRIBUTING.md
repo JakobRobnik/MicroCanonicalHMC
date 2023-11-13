@@ -1,4 +1,6 @@
-## How to contribute to MCHMC
+# How to contribute to MCHMC
+
+## Bugs
 
 ### Did you find a bug?
 
@@ -16,9 +18,24 @@ Open a new GitHub pull request with the patch. Ensure the PR description
 clearly describes the problem and solution. Include the relevant issue number
 if applicable.
 
-### Do you intend to add a new feature or change an existing one?
+## Do you intend to add a new feature or change an existing one?
 
 First, [open a new issue](https://github.com/JakobRobnik/MicroCanonicalHMC/issues/new) and
 clearly describe your idea. We will then let you know if what you suggest 
 aligns with the vision of MCHMC. This way you might avoid doing unnecessary
 work and might even find some help from other people.
+
+### Contribution Workflow
+
+**Code**:
+
+1. Checkout a new branch.
+2. Run `make set-bench` to determine the speed of the current version of the code on your computer.
+3. Add your feature on a new branch
+4. Run `make test` to run tests locally.
+5. Run `make compare-bench` to see if your changes slowed the code.
+6. Push the branch and open a pull request. Assign a developer.
+
+**Docs**:
+
+For API docs, we use `pdoc`, which you can install with `pip`. Then do e.g. `pdoc mclmc/sampling/sampler.py -o ./apidocs`. `pdoc` supports markdown, so markdown styled code comments inside triple quotes will be rendered automatically as documentation.
