@@ -18,18 +18,17 @@ class Sampler:
         self.Target = Target
         self.hyp = (N, N2, eps, jnp.ones(Target.d))
         
+        update_momentum, full_refresh, partial_refresh, N2nu = dynamics.setup(self.Target.d, True, hmc)
+
         ### integrator ###
         hamiltonian_step, num_grads = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
-                                                 V= dynamics.update_momentum(self.Target.d, sequential=True, hmc= hmc),
+                                                 V= update_momentum,
                                                  d= self.Target.d)
         
         self.grad_evals_per_step = num_grads * N
+        self.ma_step = dynamics.ma_step(hamiltonian_step, full_refresh, partial_refresh, N2nu, adjust)
         
-        self.ma_step = dynamics.ma_step(hamiltonian_step, 
-                                        dynamics.rng_momentum_marginal(self.Target.d, True, hmc),
-                                        dynamics.partially_refresh_momentum(self.Target.d, True), 
-                                        self.Target.d, adjust)
-        
+        self.step_ess = self.step_ess_adjusted if adjust else self.step_ess_unadjusted
         
         
 
@@ -52,7 +51,7 @@ class Sampler:
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = None, random_key= None, output = OutputType.normal, thinning= 1):
+    def sample(self, num_steps, num_chains = 1, x_initial = None, random_key= None, output = OutputType.normal):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -83,7 +82,7 @@ class Sampler:
                     raise AttributeError("Target." + ground_truth + " should be defined if you want to use output = ess.")
         
         if num_chains == 1:
-            results, acc = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
+            results, acc = self.single_chain_sample(num_steps, x_initial, random_key, output) #the function which actually does the sampling
             if output == OutputType.ess:
                 return self.ESS(results), acc
 
@@ -106,7 +105,7 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
@@ -138,7 +137,7 @@ class Sampler:
 
 
 
-    def single_chain_sample(self, num_steps, x_initial, random_key, output, thinning):
+    def single_chain_sample(self, num_steps, x_initial, random_key, output):
         """sampling routine. It is called by self.sample"""
         
         ### initial conditions ###
@@ -146,18 +145,18 @@ class Sampler:
 
         
         if output == OutputType.normal:
-            return self.sample_normal(num_steps, x, l, g, key, self.hyp, thinning)
+            return self.sample_normal(num_steps, x, l, g, key)
             
         elif output == OutputType.ess:
-            return self.sample_ess(num_steps, x, l, g, key, self.hyp)
+            return self.sample_ess(num_steps, x, l, g, key)
         
         
 
-    def sample_normal(self, num_steps, x, l, g, random_key, hyp, thinning):
+    def sample_normal(self, num_steps, x, l, g, random_key):
         """Stores transform(x) for each step."""
         
         def step(_state, useless):
-            state, acc = self.ma_step(*_state, *hyp)
+            state, acc = self.ma_step(*_state, *self.hyp)
             return state, (self.Target.transform(state[0]), acc)
 
 
@@ -168,43 +167,42 @@ class Sampler:
             return self.sample_thinning(num_steps, x, l, g, random_key, hyp, thinning)
 
 
-    def sample_thinning(self, num_steps, x, l, g, random_key, hyp, thinning):
-        """Stores transform(x) for each step."""
-
-        def step(state, useless):
-
-            def substep(state, useless):    
-                return self.ma_step(*state, *hyp)
-                
-            state, acc = jax.lax.scan(substep, init=state, xs=None, length= thinning)[0] #do 'thinning' steps without saving
-
-            return state, (self.Target.transform(state[0]), acc) #save one sample
-
-        return jax.lax.scan(step, init=(x, l, g, random_key), xs=None, length= num_steps // thinning)[1]
-
-
-
-    def sample_ess(self, num_steps, x, l, g, random_key, hyp):
+    def sample_ess(self, num_steps, x, l, g, random_key):
         """Stores the bias of the second moments for each step."""
      
-        
-        def step(state_track, useless):
-            
-            state, acc = self.ma_step(*state_track[0], *hyp)
-            
-            W, F2 = state_track[1]
-            F2 = (W * F2 + jnp.square(self.Target.transform(state[0]))) / (W + 1)  # Update <f(x)> with a Kalman filter
-            W += 1
-            
-            bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
-            bias_avg = jnp.average(bias_d)
-            #bias_max = jnp.max(bias_d)
-            return (state, (W, F2)), (bias_avg, acc)
-
-        
-        b, acc = jax.lax.scan(step, init=((x, l, g, random_key), (1, jnp.square(self.Target.transform(x)))), xs=None, length=num_steps)[1]
+        b, acc = jax.lax.scan(self.step_ess, init=((x, l, g, random_key), (0., jnp.zeros(len(self.Target.transform(x))))), xs=None, length=num_steps)[1]
   
         return b, jnp.sum(acc)/(num_steps)
+
+
+
+    def step_ess_adjusted(self, state_track, useless):
+        
+        state, acc = self.ma_step(*state_track[0], *self.hyp)
+        
+        W, F2 = state_track[1]
+        F2 = (W * F2 + jnp.square(self.Target.transform(state[0]))) / (W + 1)  # Update <f(x)> with a Kalman filter
+        W += 1
+        
+        bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
+        bias_avg = jnp.average(bias_d)
+        #bias_max = jnp.max(bias_d)
+        return (state, (W, F2)), (bias_avg, acc)
+
+    
+    def step_ess_unadjusted(self, state_track, useless):
+        
+        state, track = self.ma_step(*state_track[0], *self.hyp)
+        
+        W, F2 = state_track[1]
+        F = jnp.average(jnp.square(jax.vmap(self.Target.transform)(track)), axis = 0)
+        F2 = (W * F2 + F) / (W + 1)  # Update <f(x)> with a Kalman filter
+        W += 1
+        
+        bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
+        bias_avg = jnp.average(bias_d)
+        #bias_max = jnp.max(bias_d)
+        return (state, (W, F2)), (bias_avg, 1.)
 
 
 

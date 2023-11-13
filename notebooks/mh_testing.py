@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 plt.style.use(['seaborn-v0_8-talk', 'img/style.mplstyle'])
 
-num_cores = 128 #specific to my PC
+num_cores = 128
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_cores)
 
 num_cores = jax.local_device_count()
@@ -59,7 +59,7 @@ def predict_optimal(d, hmc, adjust):
 def stn(d, hmc, adjust):
     target = StandardNormal(d= d)
 
-    samples = (int)(1000 * (np.power(d/1000, 0.25) if adjust else 1))
+    samples = (int)(1500 * (np.power(d/1000, 0.25) if adjust else 1))
     
     def ess(N, eps):
         sampler = Sampler(target, N, eps, integrator= leapfrog, hmc= hmc, adjust = adjust)
@@ -71,6 +71,9 @@ def stn(d, hmc, adjust):
     nmin = max(Nopt-2, 0)
     x = jnp.arange(nmin, nmin + 5)
     y = jnp.logspace(-jnp.log10(1.5), jnp.log10(1.5), 10) * epsopt
+    
+    x = jnp.arange(2, 2 + 5)
+    y = jnp.logspace(jnp.log10(0.8), jnp.log10(1.4), 10)
     
     # do the computation
     z, a, best = grid(ess, x, y)
@@ -106,12 +109,16 @@ def img(x, y, z, a, best, name):
     
     plt.tight_layout()
     plt.savefig('img/dimensions/'+name+'.png')
-    plt.show()
+    plt.close()
     
 
+stn(2, False, False)
+print('done')
 
-for d in [2, 3, 4, 5, 10, 30]:
-    for hmc in [True, False]:
-        for adjust in [True, False]:
-            print(d, hmc, adjust)
-            stn(d, hmc, adjust)
+#[2, 3, 4, 5, 10, 30, 100, 300, 1000, 3000, 10000]
+
+# for d in [3000]:
+#     for hmc in [True, False]:
+#         for adjust in [False, ]:
+#             print(d, adjust)
+#             stn(d, hmc, adjust)
