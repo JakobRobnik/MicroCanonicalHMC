@@ -16,9 +16,9 @@ import sys,os
 home = os.getcwd() + '/../'
 sys.path.append(home)
 
-from sampling.mh import Sampler, OutputType
+from mclmc.mh import Sampler, OutputType
 from benchmarks.benchmarks_mchmc import *
-from sampling.dynamics import leapfrog, minimal_norm
+from mclmc.dynamics import leapfrog, minimal_norm
 
 
 
