@@ -60,56 +60,56 @@ def mclmc(hamilton, partial, d):
   return step
 
 
-  
-  
-def ma_step(hamilton, full, partial, N2nu, adjust):
 
-  def step(x, l, g, random_key, N, N2, eps, sigma):
+def ma_step(hamilton, full, partial, get_nu, adjust):
 
-      # bounce
-      u, key = full(random_key)
+  def step(x, u, l, g, random_key, num_steps, num_decoherence, eps, sigma):
+
+      uu, key = full(u, random_key) # do full refreshment (unless full is the identity)
       
-      def hamiltonian_steps(state, useless):
+      def dynamical_steps(state, useless):
         _x, _u, _l, _g, _kinetic, key = state
         _x, _u, _l, _g, kinetic_change = hamilton(x= _x, u= _u, g= _g, eps= eps, sigma= sigma)
         
-        
         # Langevin-like noise
-        nu = N2nu(N2)
+        nu = get_nu(num_decoherence)
         _u, key = partial(u= _u, random_key= key, nu= nu)
 
         return (_x, _u, _l, _g, _kinetic + kinetic_change, key), None
 
-      xx, u, ll, gg, kinetic_change, key = jax.lax.scan(hamiltonian_steps, init = (x, u, l, g, 0., key), xs = None, length = N)[0]
+      # do num_steps of the Hamiltonian (Langevin) dynamics
+      xx, uu, ll, gg, kinetic_change, key = jax.lax.scan(dynamical_steps, init = (x, uu, l, g, 0., key), xs = None, length = num_steps)[0]
 
+      # total energy error
       energy_change = kinetic_change + ll - l
 
       # accept/reject
       key, key1 = jax.random.split(key)
       accept = jax.random.uniform(key1) < jnp.exp(-energy_change)
           
-      return (xx * accept + x *(1-accept), ll * accept + l *(1-accept), gg * accept + g *(1-accept), key), accept
+      return jax.lax.select(accept, (xx, uu, ll, gg, key), (x, u, l, g, key)) , accept
   
   
-  def unadjusted_step(x, l, g, random_key, N, N2, eps, sigma):
+  def unadjusted_step(x, u, l, g, random_key, num_steps, num_decoherence, eps, sigma):
 
-      # bounce
-      u, key = full(random_key)
+      uu, key = full(u, random_key) # do full refreshment (unless full is the identity)
       
-      def hamiltonian_steps(state, useless):
+      def dynamical_steps(state, useless):
         _x, _u, _l, _g, _kinetic, key = state
         _x, _u, _l, _g, kinetic_change = hamilton(x= _x, u= _u, g= _g, eps= eps, sigma= sigma)
         
         # Langevin-like noise
-        nu = N2nu(N2)
+        nu = get_nu(num_decoherence)
         _u, key = partial(u= _u, random_key= key, nu= nu)
 
         return (_x, _u, _l, _g, _kinetic + kinetic_change, key), _x
-
-      state, track = jax.lax.scan(hamiltonian_steps, init = (x, u, l, g, 0., key), xs = None, length = N)
-      xx, u, ll, gg, kinetic_change, key = state
-          
-      return (xx , ll, gg, key), track
+      
+      # do num_steps of the Hamiltonian (Langevin) dynamics
+      state, track = jax.lax.scan(dynamical_steps, init = (x, uu, l, g, 0., key), xs = None, length = num_steps)
+      
+      xx, uu, ll, gg, kinetic_change, key = state
+      
+      return (xx, uu, ll, gg, key), track # we also return the entire trajectory
 
       
   return step if adjust else unadjusted_step

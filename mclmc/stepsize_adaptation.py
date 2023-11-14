@@ -18,27 +18,12 @@ def trust_reparam(x, sig):
 def trust(x, alpha, beta, norm):
     return jnp.power(x, alpha) * jnp.power(1-x, beta) / norm
 
-def visualize_trust():
-
-    t = jnp.linspace(0, 1, 100)
-
-    for sig in [1, 0.7, 0.4, 0.2]:
-        plt.plot(t, trust(t, *beta_params(0.65, sig)), lw = 5, label = r'$\sigma = $' + str(sig), color = plt.cm.cividis_r(sig-0.1))
-    plt.plot([0.65, 0.65], [0, 4.5], color = 'black', alpha = 0.5)
-    plt.xlabel('acceptance rate')
-    plt.ylabel('trust weight')
-    plt.legend()
-    plt.savefig('trust.png')
-    plt.close()
-
-fig = plt.figure(figsize = (15, 10))
-ax = fig.subplots(1, 2)
 
 
 def next_filter(acc_prob, eps, acc_prob_wanted, gamma):
     """given the acceptance probabilities and stepsizes, predict the next best stepsize"""
+    
     N = len(eps)
-    W  = (1 - gamma**N) / (1-gamma)
     forgetting = jnp.power(gamma, jnp.arange(N-1, -1, -1))
     trust_params = trust_reparam(acc_prob_wanted, sig= 0.7)
     c = norm.ppf(0.5 * acc_prob)
@@ -48,43 +33,80 @@ def next_filter(acc_prob, eps, acc_prob_wanted, gamma):
         weights = forgetting * trust(acc, *trust_params)
         return jnp.average(acc, weights= weights) - acc_prob_wanted
     
-    # F is (approximately?) monotonically increasing
+    # F is approximately monotonically decreasing
     lower, upper = 0.1, 3
-    X = jnp.linspace(lower, upper, 1000)
     #print(F(lower), F(upper))
     
-    ax[1].set_title('Root function')
-    ax[1].plot(X, [F(xx) for xx in X], lw = 5, color = 'teal')
-    ax[1].set_xlabel(r"$\epsilon'$")
-    ax[1].set_ylabel(r"$a(\epsilon') - \alpha$")
-    
     x0 = Bisection(F, lower = lower, upper = upper).run().params
-    
-    ax[1].plot([x0, ], [F(x0), ], '*', markersize= 25, color = 'teal')
-    
-    # plt.plot(eps, 2 * norm.cdf(c * jnp.square(x0 /eps)), '.')
-    # plt.savefig('debug.png')
-    # plt.close()
     return x0
+
+
+
+def dual_averaging(acc_prob, state, acc_prob_wanted = 0.7, t0 = 10, gamma= 0.05, kappa= 0.75):
+    """ (copied from numpyro)
+    Dual Averaging is a scheme to solve convex optimization problems. It
+    belongs to a class of subgradient methods which uses subgradients (which
+    lie in a dual space) to update states (in primal space) of a model. Under
+    some conditions, the averages of generated parameters during the scheme are
+    guaranteed to converge to an optimal value. However, a counter-intuitive
+    aspect of traditional subgradient methods is "new subgradients enter the
+    model with decreasing weights" (see reference [1]). Dual Averaging scheme
+    resolves that issue by updating parameters using weights equally for
+    subgradients, hence we have the name "dual averaging".
+
+    This class implements a dual averaging scheme which is adapted for Markov
+    chain Monte Carlo (MCMC) algorithms. To be more precise, we will replace
+    subgradients by some statistics calculated at the end of MCMC trajectories.
+    Following [2], we introduce some free parameters such as ``t0`` and
+    ``kappa``, which is helpful and still guarantees the convergence of the
+    scheme.
+
+    **References:**
+
+    1. *Primal-dual subgradient methods for convex problems*,
+       Yurii Nesterov
+    2. *The No-U-turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo*,
+       Matthew D. Hoffman, Andrew Gelman
+
+    :param int t: The current time step.
+
+    :param float accept_prob: Acceptance probability of the current trajectory.
+
+    :param state: Current state of the adapt scheme.
+
+    :param int t0: A free parameter introduced in reference [2] that stabilizes
+        the initial steps of the scheme. Defaults to 10.
+    :param float kappa: A free parameter introduced in reference [2] that
+        controls the weights of steps of the scheme. For a small ``kappa``, the
+        scheme will quickly forget states from early steps. This should be a
+        number in :math:`(0.5, 1]`. Defaults to 0.75.
+    :param float gamma: A free parameter introduced in reference [1] which
+        controls the speed of the convergence of the scheme. Defaults to 0.05.
+    
+    :return: new state of the adapt scheme.
+
+    """
+
+    
+    g = acc_prob_wanted - acc_prob
+    
+    x_t, x_avg, g_avg, t = state
+    
+    t = t + 1
+    # g_avg = (g_1 + ... + g_t) / t
+    g_avg = (1 - 1 / (t + t0)) * g_avg + g / (t + t0)
+    # According to formula (3.4) of [1], we have
+    #     x_t = argmin{ g_avg . x + loc_t . |x - x0|^2 },
+    # hence x_t = x0 - g_avg / (2 * loc_t),
+    # where loc_t := beta_t / t, beta_t := (gamma/2) * sqrt(t).
+    x_t = - (t**0.5) / gamma * g_avg
+    # weight for the new x_t
+    weight_t = t ** (-kappa)
+    x_avg = (1 - weight_t) * x_avg + weight_t * x_t
+    
+    return (x_t, x_avg, g_avg, t)
     
     
 
-key = jax.random.PRNGKey(42)
-key1, key2 = jax.random.split(key)
-N = 20
-stepsize = jnp.square(jax.random.normal(key1, shape = (N,)))
-C = 0.3
-acc = jnp.min(jnp.array([2 * norm.cdf( - C * jnp.square(stepsize)) * jnp.abs(1 + jax.random.normal(key2, shape = (N, )) * 0.1), jnp.ones(N)]), axis = 0)
-acc0 = 0.65
 
-eps0 = next_filter(acc, stepsize, acc0, 0.9)
-print(2 * norm.cdf( - C * jnp.square(eps0)))
-ax[0].set_title('data')
-ax[0].plot(stepsize, acc, '.', markersize= 15, color = 'tab:blue')
-ax[0].set_xlabel(r"$\epsilon_n$")
-ax[0].set_ylabel(r"$P_n$")
-ax[0].plot(stepsize, acc0 * jnp.ones(N), '-', color = 'black', alpha = 0.5, lw= 2)
-ax[0].plot([eps0, ], [acc0, ], '*', color = 'teal', markersize= 25)
 
-plt.savefig('adaptation.png')
-plt.close()

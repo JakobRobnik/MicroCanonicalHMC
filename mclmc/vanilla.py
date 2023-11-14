@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from . import dynamics
 from .correlation_length import ess_corr
 from .sampler import OutputType, find_crossing
-
+from .stepsize_adaptation import dual_averaging
 
 OutputType = Enum('Output', ['normal', 'ess'])
 
@@ -30,14 +30,12 @@ class Sampler:
         
         self.Target = Target
         
-        if not adjust and not full_refreshment:
-            raise ValueError("We don't do full reversible unadjusted Langevin (it would just obviously be worse).")
         if not full_refreshment and jnp.isinf(num_decoherence):
             raise ValueError("For the Langevin trajectories num_decoherence should be specifed and cannot be infinite.")
         
-        self.hyp = (num_steps, num_decoherence, full_refreshment, eps, jnp.ones(Target.d))
+        self.hyp = (num_steps, num_decoherence, eps, jnp.ones(Target.d))
         
-        update_momentum, full_refresh, partial_refresh, N2nu = dynamics.setup(self.Target.d, True, hmc)
+        update_momentum, full_refresh, partial_refresh, get_nu = dynamics.setup(self.Target.d, True, hmc)
 
         ### integrator ###
         hamiltonian_step, grads_per_step = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
@@ -45,7 +43,11 @@ class Sampler:
                                                  d= self.Target.d)
         
         self.grad_evals_per_step = grads_per_step * num_steps
-        self.ma_step = dynamics.ma_step(hamiltonian_step, full_refresh, partial_refresh, N2nu, adjust)
+        id = lambda u, k: (u, k)
+        full = lambda u, k: full_refresh(k)
+        self.ma_step = dynamics.ma_step(hamiltonian_step, full if full_refreshment else id, partial_refresh, get_nu, adjust)
+
+        self.full_refresh = full_refresh
         
         self.step_ess = self.step_ess_adjusted if adjust else self.step_ess_unadjusted
         
@@ -65,8 +67,8 @@ class Sampler:
             x_initial = self.Target.prior_draw(prior_key)
         
         l, g = self.Target.grad_nlogp(x_initial)
-
-        return x_initial, l, g, key
+        u, key = self.full_refresh(key)
+        return x_initial, u, l, g, key
 
 
 
@@ -168,9 +170,9 @@ class Sampler:
             
         elif output == OutputType.ess:
             return self.sample_ess(num_steps, x, l, g, key)
-        
-        
 
+        
+        
     def sample_normal(self, num_steps, x, l, g, random_key):
         """Stores transform(x) for each step."""
         
@@ -178,12 +180,8 @@ class Sampler:
             state, acc = self.ma_step(*_state, *self.hyp)
             return state, (self.Target.transform(state[0]), acc)
 
+        return jax.lax.scan(step, init=(x, l, g, random_key), xs=None, length=num_steps)[1]
 
-        if thinning == 1:
-            return jax.lax.scan(step, init=(x, l, g, random_key), xs=None, length=num_steps)[1]
-
-        else:
-            return self.sample_thinning(num_steps, x, l, g, random_key, hyp, thinning)
 
 
     def sample_ess(self, num_steps, x, l, g, random_key):
@@ -223,6 +221,36 @@ class Sampler:
         #bias_max = jnp.max(bias_d)
         return (state, (W, F2)), (bias_avg, 1.)
 
+
+
+    def adaptation_dual_averaging(self, num_steps, x_initial, random_key):
+        
+        ### initial conditions ###
+        x, l, g, key = self.get_initial_conditions(x_initial, random_key)
+        
+        dyn = (x, l, g, random_key)
+        hyp = self.hyp
+        adap = (0., 0., 0., 0)
+        
+        def step(_state, useless):
+            state, acc = self.ma_step(*_state, *self.hyp)
+            adap = dual_averaging(acc, adap, self.acc_prob_wanted)
+            hyp[-2] = jnp.exp(adap[0])  # note: at the end of warmup phase, use average of log step_size
+            return (state, hyp, adap), (self.Target.transform(state[0]), acc, jnp.exp(adap[0]))
+        
+        _state, track = jax.lax.scan(step, init= (dyn, hyp, adap), xs=None, length=num_steps)
+        state, hyp, adap = _state
+        
+        import matplotlib.pyplot as plt
+        X, acc, stepsize = track
+        eps = jnp.exp(adap[1])
+        hyp[-2] = eps
+        plt.plot(stepsize, '.', color = 'tab:orange')
+        plt.plot(len(stepsize), 'o', color = 'tab:red')
+        plt.savefig('dual_averaging.png')
+        plt.close()
+        
+        return state, hyp
 
 
     def ESS(self, results):
