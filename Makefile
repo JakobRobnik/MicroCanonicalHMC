@@ -2,6 +2,7 @@ PKG_VERSION = $(shell python setup.py --version)
 
 test:
 	JAX_PLATFORM_NAME=cpu pytest --benchmark-disable
+	mypy mclmc/sampling/sampler.py
 
 set-bench:
 	pytest --benchmark-autosave  

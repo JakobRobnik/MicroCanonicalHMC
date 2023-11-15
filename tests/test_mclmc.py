@@ -1,19 +1,14 @@
-import sys
-import time
 
 from pytest import raises
-import pytest
 
-from sampling.dynamics import leapfrog  
-sys.path.insert(0, '../../')
-sys.path.insert(0, './')
+from mclmc.sampling.dynamics import leapfrog  
+from mclmc.sampling.sampler import OutputType, Sampler, Target
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sampling.sampler import OutputType, Sampler, Target
 
 nlogp = lambda x: 0.5*jnp.sum(jnp.square(x))
 
@@ -38,7 +33,6 @@ class StandardGaussian(Target):
 def test_mclmc():
     target = StandardGaussian(d = 10, nlogp=nlogp)
     sampler = Sampler(target, varEwanted = 5e-4)
-
 
     samples1 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))
     samples2 = sampler.sample(100, 1, random_key=jax.random.PRNGKey(0))

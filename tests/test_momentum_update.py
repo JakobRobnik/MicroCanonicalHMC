@@ -1,10 +1,6 @@
 
-import sys  
-sys.path.insert(0, './')
-
-from sampling.dynamics import update_momentum
+from mclmc.sampling.dynamics import update_momentum
 import jax 
-
 import jax.numpy as jnp
 
 def update_momentum_unstable(d):
