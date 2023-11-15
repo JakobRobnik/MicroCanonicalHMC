@@ -26,7 +26,8 @@ class Sampler:
     """
     def __init__(self, Target, 
                  steps_per_sample, eps, num_decoherence = jnp.inf,
-                 integrator = dynamics.minimal_norm, hmc = False, adjust = True, full_refreshment = True):
+                 integrator = dynamics.minimal_norm, hmc = False, adjust = True, full_refreshment = True,
+                 neff_required= 100):
         
         self.Target = Target
         
@@ -51,7 +52,8 @@ class Sampler:
         
         self.step_ess = self.step_ess_adjusted if adjust else self.step_ess_unadjusted
         
-        
+        self.neff_required = neff_required
+
 
     def get_initial_conditions(self, x_initial, random_key):
 
@@ -311,6 +313,8 @@ class Sampler:
         else:
             bsq = results
             
-        cutoff_reached = bsq[-1] < 0.01
-        return (100. / (find_crossing(bsq, 0.01) * self.grads_per_sample)) * cutoff_reached
+        b2_required = 1 / self.neff_required
+        
+        cutoff_reached = bsq[-1] < b2_required
+        return (self.neff_required / (find_crossing(bsq, b2_required) * self.grads_per_sample)) * cutoff_reached
 

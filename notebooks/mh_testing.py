@@ -56,15 +56,19 @@ def predict_optimal(d, hmc, adjust):
     
 
 
-def stn(d, hmc, adjust):
+def stn(d, hmc, adjust, full_refreshment= True, neff_required = 100.):
     target = StandardNormal(d= d)
 
     samples = (int)(1500 * (np.power(d/1000, 0.25) if adjust else 1))
-    
-    def ess(N, eps):
-        sampler = Sampler(target, N, eps, integrator= leapfrog, hmc= hmc, adjust = adjust)
+
+        
+    def ess(steps_per_sample, eps, steps_decoherence= jnp.inf, integrator = leapfrog, hmc= False, adjust= True, full_refreshment= True, neff_required= 100.):
+        sampler = Sampler(target, steps_per_sample, steps_decoherence, integrator, hmc, adjust, full_refreshment, neff_required)
         e, a = sampler.sample(samples, 128, output = OutputType.ess)
         return e, jnp.average(a)
+
+    ess(5, 10., jnp.inf)
+    
 
     # set the grid
     Nopt, epsopt = predict_optimal(d, hmc, adjust)
