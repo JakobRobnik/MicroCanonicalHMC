@@ -275,18 +275,23 @@ class Sampler:
         
         data = jnp.zeros((2, num_steps))
         
+        
         def step(_state, useless):
             dyn, eps, data, counter = _state
             dyn, acc = self.ma_step(*dyn, self.hyp[0], self.hyp[1], eps, self.hyp[3])
             data = data.at[:, counter].set(jnp.array([eps, acc]))
             counter += 1            
             eps = predictor(data, counter, acc_prob_wanted)
-            return (dyn, eps, data, counter), (self.Target.transform(dyn[0]), acc, eps)
+            return (dyn, eps, data, counter), eps#(self.Target.transform(dyn[0]), acc, eps)
         
         
-        _state, track = jax.lax.scan(step, init= (dyn, eps, data, counter), xs=None, length=num_steps)
-
-        X, acc, eps = track
+        state= (dyn, eps, data, counter)
+        eps = []
+        for i in range(num_steps):
+            state, _eps = step(state, None)
+            eps.append(_eps)
+            
+        #_state, track = jax.lax.scan(step, init= (dyn, eps, data, counter), xs=None, length=num_steps)
 
         import matplotlib.pyplot as plt
         plt.figure(figsize= (10, 4))
