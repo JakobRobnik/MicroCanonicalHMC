@@ -13,7 +13,7 @@ num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
 from lattice.U1.theory import Theory
-from sampling.sampler import Sampler
+from mclmc.sampler import Sampler
 
 dirr = os.path.dirname(os.path.realpath(__file__)) + '/'
 

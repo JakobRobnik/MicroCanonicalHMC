@@ -1,4 +1,4 @@
-from sampling.annealing import Sampler
+from mclmc.annealing import Sampler
 import jax
 import jax.numpy as jnp
 

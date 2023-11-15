@@ -12,7 +12,7 @@ num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
 from lattice.phi4 import theory
-from sampling.sampler import Sampler
+from mclmc.sampler import Sampler
 
 dir = os.path.dirname(os.path.realpath(__file__))
 #params_critical_line = pd.read_csv(dir + '/theories/phi4_parameters.csv')

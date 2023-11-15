@@ -11,10 +11,10 @@ os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(num_co
 import sys,os
 home = os.getcwd() + '/../'
 sys.path.append(home)
-from sampling import sampler as mchmc
-from sampling import standardKinetic
+from mclmc import sampler as mchmc
+from mclmc import standardKinetic
 from benchmarks.benchmarks_mchmc import *
-from sampling import grid_search
+from mclmc import grid_search
 from HMC import myHMC
 from benchmarks import german_credit
 

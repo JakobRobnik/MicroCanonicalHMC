@@ -6,9 +6,9 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 
-from sampling.sampler import Sampler
-from sampling.sampler import find_crossing
-from sampling.benchmark_targets import *
+from mclmc.sampler import Sampler
+from mclmc.sampler import find_crossing
+from mclmc.benchmark_targets import *
 
 
 def definitions():

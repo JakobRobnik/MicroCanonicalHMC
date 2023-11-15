@@ -6,9 +6,9 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 
-from sampling.sampler import Sampler
-from sampling.benchmark_targets import *
-from sampling.grid_search import search_wrapper
+from mclmc.sampler import Sampler
+from mclmc.benchmark_targets import *
+from mclmc.grid_search import search_wrapper
 
 
 

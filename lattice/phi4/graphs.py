@@ -21,7 +21,7 @@ def gerdes_tabel1():
     phi, E = sampler.sample(10000, output = 'full', random_key= jax.random.PRNGKey(0))
 
     L = jax.vmap(target.nlogp)(phi)
-    from sampling.sampler import burn_in_ending
+    from mclmc.sampler import burn_in_ending
     print(burn_in_ending(L))
     plt.plot(L)
     plt.show()

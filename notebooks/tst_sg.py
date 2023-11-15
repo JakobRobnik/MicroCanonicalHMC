@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from benchmarks.benchmarks_sg import *
-from sampling.sampler import Sampler
+from mclmc.sampler import Sampler
 
 key = jax.random.PRNGKey(0)
 key, key_data = jax.random.split(key)

@@ -4,7 +4,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from optimization.adam import optimize_adam
-from sampling.sampler import Sampler
+from mclmc.sampler import Sampler
 from benchmarks.brownian import Target
 
 plt.rcParams.update({'font.size': 25})
