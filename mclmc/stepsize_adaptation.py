@@ -20,11 +20,14 @@ def trust(x, alpha, beta, norm):
 
 
 
-def next_filter(acc_prob, eps, acc_prob_wanted, gamma):
+def predictor(data, counter, acc_prob_wanted, gamma = 0.9):
     """given the acceptance probabilities and stepsizes, predict the next best stepsize"""
     
+    
+    eps, acc_prob = data
     N = len(eps)
-    forgetting = jnp.power(gamma, jnp.arange(N-1, -1, -1))
+    n = jnp.arange(N)
+    forgetting = jnp.power(gamma, counter - n[::-1]) * (n < counter)
     trust_params = trust_reparam(acc_prob_wanted, sig= 0.7)
     c = norm.ppf(0.5 * acc_prob)
     
@@ -34,7 +37,7 @@ def next_filter(acc_prob, eps, acc_prob_wanted, gamma):
         return jnp.average(acc, weights= weights) - acc_prob_wanted
     
     # F is approximately monotonically decreasing
-    lower, upper = 0.1, 3
+    lower, upper = 1, 20
     #print(F(lower), F(upper))
     
     x0 = Bisection(F, lower = lower, upper = upper).run().params
@@ -92,7 +95,7 @@ def dual_averaging(acc_prob, state, acc_prob_wanted = 0.7, t0 = 10, gamma= 0.05,
     
     x_t, x_avg, g_avg, t = state
     
-    t = t + 1
+    t += 1
     # g_avg = (g_1 + ... + g_t) / t
     g_avg = (1 - 1 / (t + t0)) * g_avg + g / (t + t0)
     # According to formula (3.4) of [1], we have
@@ -104,7 +107,7 @@ def dual_averaging(acc_prob, state, acc_prob_wanted = 0.7, t0 = 10, gamma= 0.05,
     weight_t = t ** (-kappa)
     x_avg = (1 - weight_t) * x_avg + weight_t * x_t
     
-    return (x_t, x_avg, g_avg, t)
+    return jnp.array([x_t, x_avg, g_avg, t])
     
     
 

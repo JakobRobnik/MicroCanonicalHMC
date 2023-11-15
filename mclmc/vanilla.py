@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from . import dynamics
 from .correlation_length import ess_corr
 from .sampler import OutputType, find_crossing
-from .stepsize_adaptation import dual_averaging
+from .stepsize_adaptation import dual_averaging, predictor
 
 OutputType = Enum('Output', ['normal', 'ess'])
 
@@ -25,7 +25,7 @@ class Sampler:
         
     """
     def __init__(self, Target, 
-                 num_steps, eps, num_decoherence = jnp.inf,
+                 steps_per_sample, eps, num_decoherence = jnp.inf,
                  integrator = dynamics.minimal_norm, hmc = False, adjust = True, full_refreshment = True):
         
         self.Target = Target
@@ -33,7 +33,7 @@ class Sampler:
         if not full_refreshment and jnp.isinf(num_decoherence):
             raise ValueError("For the Langevin trajectories num_decoherence should be specifed and cannot be infinite.")
         
-        self.hyp = (num_steps, num_decoherence, eps, jnp.ones(Target.d))
+        self.hyp = (steps_per_sample, num_decoherence, eps, jnp.ones(Target.d))
         
         update_momentum, full_refresh, partial_refresh, get_nu = dynamics.setup(self.Target.d, True, hmc)
 
@@ -42,7 +42,7 @@ class Sampler:
                                                  V= update_momentum,
                                                  d= self.Target.d)
         
-        self.grad_evals_per_step = grads_per_step * num_steps
+        self.grads_per_sample = grads_per_step * steps_per_sample
         id = lambda u, k: (u, k)
         full = lambda u, k: full_refresh(k)
         self.ma_step = dynamics.ma_step(hamiltonian_step, full if full_refreshment else id, partial_refresh, get_nu, adjust)
@@ -162,32 +162,32 @@ class Sampler:
         """sampling routine. It is called by self.sample"""
         
         ### initial conditions ###
-        x, l, g, key = self.get_initial_conditions(x_initial, random_key)
+        dyn = self.get_initial_conditions(x_initial, random_key)
 
         
         if output == OutputType.normal:
-            return self.sample_normal(num_steps, x, l, g, key)
+            return self.sample_normal(num_steps, dyn)
             
         elif output == OutputType.ess:
-            return self.sample_ess(num_steps, x, l, g, key)
+            return self.sample_ess(num_steps, dyn)
 
         
         
-    def sample_normal(self, num_steps, x, l, g, random_key):
+    def sample_normal(self, num_steps, dyn):
         """Stores transform(x) for each step."""
         
         def step(_state, useless):
             state, acc = self.ma_step(*_state, *self.hyp)
             return state, (self.Target.transform(state[0]), acc)
 
-        return jax.lax.scan(step, init=(x, l, g, random_key), xs=None, length=num_steps)[1]
+        return jax.lax.scan(step, init= dyn, xs=None, length=num_steps)[1]
 
 
 
-    def sample_ess(self, num_steps, x, l, g, random_key):
+    def sample_ess(self, num_steps, dyn):
         """Stores the bias of the second moments for each step."""
      
-        b, acc = jax.lax.scan(self.step_ess, init=((x, l, g, random_key), (0., jnp.zeros(len(self.Target.transform(x))))), xs=None, length=num_steps)[1]
+        b, acc = jax.lax.scan(self.step_ess, init=(dyn, (0., jnp.zeros(len(self.Target.transform(dyn[0]))))), xs=None, length=num_steps)[1]
   
         return b, jnp.sum(acc)/(num_steps)
 
@@ -223,35 +223,81 @@ class Sampler:
 
 
 
-    def adaptation_dual_averaging(self, num_steps, x_initial, random_key):
+    def adaptation_dual_averaging(self, num_steps, x_initial= None, random_key= None):
         
         ### initial conditions ###
-        x, l, g, key = self.get_initial_conditions(x_initial, random_key)
+        dyn = self.get_initial_conditions(x_initial, random_key)
+        eps = self.hyp[2]
+        adap = jnp.zeros(4)
         
-        dyn = (x, l, g, random_key)
-        hyp = self.hyp
-        adap = (0., 0., 0., 0)
+        acc_prob_wanted = 0.7
         
         def step(_state, useless):
-            state, acc = self.ma_step(*_state, *self.hyp)
-            adap = dual_averaging(acc, adap, self.acc_prob_wanted)
-            hyp[-2] = jnp.exp(adap[0])  # note: at the end of warmup phase, use average of log step_size
-            return (state, hyp, adap), (self.Target.transform(state[0]), acc, jnp.exp(adap[0]))
+            dyn, eps, adap = _state
+            dyn, acc = self.ma_step(*dyn, self.hyp[0], self.hyp[1], eps, self.hyp[3])
+            adap = dual_averaging(acc, adap, acc_prob_wanted)
+            return (dyn, jnp.exp(adap[0]), adap), (self.Target.transform(dyn[0]), acc, adap)
         
-        _state, track = jax.lax.scan(step, init= (dyn, hyp, adap), xs=None, length=num_steps)
-        state, hyp, adap = _state
+        
+        _state, track = jax.lax.scan(step, init= (dyn, eps, adap), xs=None, length=num_steps)
+        
+        X, acc, adap = track
         
         import matplotlib.pyplot as plt
-        X, acc, stepsize = track
-        eps = jnp.exp(adap[1])
-        hyp[-2] = eps
-        plt.plot(stepsize, '.', color = 'tab:orange')
-        plt.plot(len(stepsize), 'o', color = 'tab:red')
-        plt.savefig('dual_averaging.png')
-        plt.close()
+        plt.figure(figsize= (10, 6))
+        plt.subplot(2, 1, 1)
+        plt.plot(jnp.exp(adap[:, 0]), '.', markersize = 5, color = 'chocolate', label = 'current stepsize')
+        plt.plot(jnp.exp(adap[:, 1]), '-', lw = 3, color = 'xkcd:ruby', label = 'predicted stepsize')
+        plt.ylabel('stepsize')
+        plt.xlabel('# samples')
+        plt.yscale('log')
+        plt.legend()
+        plt.subplot(2, 1, 2)
+        plt.plot(acc, '.', color = 'tab:blue', label = 'actual')
+        plt.plot(acc_prob_wanted - adap[:, 2], color = 'black', label = 'estimated average')
+        plt.plot(jnp.arange(len(acc)), jnp.ones(len(acc)) * acc_prob_wanted, lw = 3, color = 'black', alpha = 0.5, label = 'desired average')
+        plt.ylabel('acceptance probability')
+        plt.xlabel('# samples')
+        plt.legend()
         
-        return state, hyp
+        plt.savefig('dual_averaging_burnin.png')
+        plt.show()
+    
+    
+    def adaptation_predictor(self, num_steps, x_initial= None, random_key= None):
+        
+        ### initial conditions ###
+        dyn = self.get_initial_conditions(x_initial, random_key)
+        eps = self.hyp[2]
+        counter = 0
+        
+        acc_prob_wanted = 0.7
+        
+        data = jnp.zeros((2, num_steps))
+        
+        def step(_state, useless):
+            dyn, eps, data, counter = _state
+            dyn, acc = self.ma_step(*dyn, self.hyp[0], self.hyp[1], eps, self.hyp[3])
+            data = data.at[:, counter].set(jnp.array([eps, acc]))
+            counter += 1            
+            eps = predictor(data, counter, acc_prob_wanted)
+            return (dyn, eps, data, counter), (self.Target.transform(dyn[0]), acc, eps)
+        
+        
+        _state, track = jax.lax.scan(step, init= (dyn, eps, data, counter), xs=None, length=num_steps)
 
+        X, acc, eps = track
+
+        import matplotlib.pyplot as plt
+        plt.figure(figsize= (10, 4))
+        plt.plot(eps, '.', markersize = 5, color = 'chocolate', label = 'stepsize')
+        plt.ylabel('stepsize')
+        plt.xlabel('# samples')
+        plt.yscale('log')
+        plt.legend()
+        plt.savefig('predictor.png')
+        plt.show()
+        
 
     def ESS(self, results):
         #bsq = jnp.average(results.reshape(results.shape[0] * results.shape[1], results.shape[2]), axis = 0)
@@ -261,5 +307,5 @@ class Sampler:
             bsq = results
             
         cutoff_reached = bsq[-1] < 0.01
-        return (100. / (find_crossing(bsq, 0.01) * self.grad_evals_per_step)) * cutoff_reached
+        return (100. / (find_crossing(bsq, 0.01) * self.grads_per_sample)) * cutoff_reached
 

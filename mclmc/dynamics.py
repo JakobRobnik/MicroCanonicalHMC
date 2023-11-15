@@ -85,10 +85,12 @@ def ma_step(hamilton, full, partial, get_nu, adjust):
 
       # accept/reject
       key, key1 = jax.random.split(key)
-      accept = jax.random.uniform(key1) < jnp.exp(-energy_change)
-          
-      return jax.lax.select(accept, (xx, uu, ll, gg, key), (x, u, l, g, key)) , accept
-  
+      acc_prob = jnp.clip(jnp.exp(-energy_change), 0, 1)
+      accept = jax.random.bernoulli(key1, acc_prob)
+      dyn = jax.tree_util.tree_map(lambda new, old: jax.lax.select(accept, new, old), (xx, uu, ll, gg, key), (x, u, l, g, key))
+      
+      return dyn, acc_prob
+      
   
   def unadjusted_step(x, u, l, g, random_key, num_steps, num_decoherence, eps, sigma):
 

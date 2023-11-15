@@ -9,10 +9,10 @@ from mclmc import dynamics
 from benchmarks.benchmarks_mchmc import *
 
 
-
 target= StandardNormal(d = 100)
+target.prior_draw = lambda key: jax.random.normal(key, (target.d,))
 
-sampler = Sampler(target, 5, 0.1, integrator= dynamics.leapfrog, hmc= False, adjust = True, full_refreshment= True)
+sampler = Sampler(target, 3, 10., integrator= dynamics.leapfrog, hmc= False, adjust = True, full_refreshment= True)
 
+x, hyp = sampler.adaptation_predictor(100)
 
-x, hyp = sampler.adaptation_dual_averaging(100)
