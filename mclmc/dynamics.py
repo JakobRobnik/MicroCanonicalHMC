@@ -43,47 +43,17 @@ def minimal_norm(d, T, V):
 
 
 
-<<<<<<< HEAD
-def leapfrog(d, T, V):
-
-  def step(x, u, g, eps, sigma):
-
-    # V T V
-    uu, r1 = V(eps * 0.5, u, g * sigma)
-    xx, l, gg = T(eps, x, uu*sigma)
-    uu, r2 = V(eps * 0.5, uu, gg * sigma)
-    
-    # kinetic energy change
-    kinetic_change = (r1 + r2)
-
-    return xx, uu, l, gg, kinetic_change
-  
-  return step, 1
-
-
-
-def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
-=======
 def mclmc(hamilton, partial, d):
->>>>>>> refs/remotes/origin/jakob
     
   def step(x, u, g, random_key, L, eps, sigma):
       """One step of the generalized dynamics."""
 
       # Hamiltonian step
-<<<<<<< HEAD
-      xx, uu, ll, gg, kinetic_change = hamiltonian_dynamics(x=x, u=u, g=g, eps=eps, sigma = sigma)
-
-      # Langevin-like noise
-      nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.) / d)
-      uu, key = partially_refresh_momentum(u= uu, random_key= random_key, nu= nu)
-=======
       xx, uu, ll, gg, kinetic_change = hamilton(x=x, u=u, g=g, eps=eps, sigma = sigma)
 
       # Langevin-like noise
       nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.) / d)
       uu, key = partial(u= uu, random_key= random_key, nu= nu)
->>>>>>> refs/remotes/origin/jakob
 
       return xx, uu, ll, gg, kinetic_change, key
 
@@ -91,28 +61,6 @@ def mclmc(hamilton, partial, d):
 
 
 
-<<<<<<< HEAD
-def ma_step(hamiltonian_dynamics, rng_momentum_marginal, partially_refresh_momentum, d):
-
-  def step(x, l, g, random_key, N, N2, eps, sigma):
-
-      # bounce
-      u, key = rng_momentum_marginal(random_key)
-      
-      def hamiltonian_steps(state, useless):
-        _x, _u, _l, _g, _kinetic, key = state
-        _x, _u, _l, _g, kinetic_change = hamiltonian_dynamics(x= _x, u= _u, g= _g, eps= eps, sigma= sigma)
-        
-        
-        # Langevin-like noise
-        nu = jnp.sqrt((jnp.exp(2./N2) - 1.) / d)
-        uu, key = partially_refresh_momentum(u= uu, random_key= key, nu= nu)
-
-        return (_x, _u, _l, _g, _kinetic + kinetic_change, key), None
-
-      xx, u, ll, gg, kinetic_change, key = jax.lax.scan(hamiltonian_steps, init = (x, u, l, g, 0., key), xs = None, length = N)[0]
-
-=======
 def ma_step(hamilton, full, partial, get_nu, adjust):
 
   def step(x, u, l, g, random_key, num_steps, num_decoherence, eps, sigma):
@@ -133,78 +81,12 @@ def ma_step(hamilton, full, partial, get_nu, adjust):
       xx, uu, ll, gg, kinetic_change, key = jax.lax.scan(dynamical_steps, init = (x, uu, l, g, 0., key), xs = None, length = num_steps)[0]
 
       # total energy error
->>>>>>> refs/remotes/origin/jakob
       energy_change = kinetic_change + ll - l
 
       # accept/reject
       key, key1 = jax.random.split(key)
       accept = jax.random.uniform(key1) < jnp.exp(-energy_change)
           
-<<<<<<< HEAD
-      return (xx * accept + x *(1-accept), ll * accept + l *(1-accept), gg * accept + g *(1-accept), key), accept
-
-      
-  return step
-
-
-def rng_momentum_marginal(d, sequential= True, hmc = False):
-  """Generates a random sample from the marginal momentum distribution:
-      if hmc: N(0, I)
-      if not hmc: isotropic with unit norm
-    """
-  
-  
-  def rng_sequential(random_key):
-      key, subkey = jax.random.split(random_key)
-      u = jax.random.normal(subkey, shape = (d, ))
-      u /= jnp.sqrt(jnp.sum(jnp.square(u)))
-      return u, key
-  
-  
-  def rng_hmc(random_key):
-      key, subkey = jax.random.split(random_key)
-      u = jax.random.normal(subkey, shape = (d, ))
-      return u, key
-      
-  def rng_parallel(random_key, num_chains):
-      key, subkey = jax.random.split(random_key)
-      u = jax.random.normal(subkey, shape = (num_chains, d))
-      normed_u = u / jnp.sqrt(jnp.sum(jnp.square(u), axis = 1))[:, None]
-      return normed_u, key
-    
-    
-  if sequential:  
-    return rng_sequential if not hmc else rng_hmc
-
-  else:
-    if not hmc: 
-      return rng_parallel
-    else:
-      raise ValueError('parallel hmc not implemented')
-
-
-
-
-def partially_refresh_momentum(d, sequential= True):
-  """Adds a small noise to u and normalizes."""
-    
-    
-  def rng_sequential(u, random_key, nu):
-    key, subkey = jax.random.split(random_key)
-    z = nu * jax.random.normal(subkey, shape = (d, ))
-
-    return (u + z) / jnp.sqrt(jnp.sum(jnp.square(u + z))), key
-  
-
-  def rng_parallel(u, random_key, nu):
-      key, subkey = jax.random.split(random_key)
-      noise = nu * jax.random.normal(subkey, shape= u.shape, dtype=u.dtype)
-
-      return (u + noise) / jnp.sqrt(jnp.sum(jnp.square(u + noise), axis = 1))[:, None], key
-
-
-  return rng_sequential if sequential else rng_parallel
-=======
       return jax.lax.select(accept, (xx, uu, ll, gg, key), (x, u, l, g, key)) , accept
   
   
@@ -332,4 +214,3 @@ def setup(d, sequential= True, hmc = False):
 
 
   return V, full, partial, N2nu
->>>>>>> refs/remotes/origin/jakob
