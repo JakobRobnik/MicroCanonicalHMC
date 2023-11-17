@@ -6,9 +6,9 @@ from jax import Array
 import jax
 import jax.numpy as jnp
 import numpy as np
-from mclmc.sampling import dynamics
+from . import dynamics
 
-from mclmc.sampling.dynamics import MCLMCInfo, MCLMCState, build_kernel, run_kernel
+from .dynamics import MCLMCInfo, MCLMCState, build_kernel, run_kernel
 from .correlation_length import ess_corr
 
 class Target():

@@ -1,8 +1,8 @@
 
 from pytest import raises
 
-from mclmc.sampling.dynamics import leapfrog  
-from mclmc.sampling.sampler import OutputType, Sampler, Target
+from mclmc.dynamics import leapfrog
+from mclmc.sampler import OutputType, Sampler, Target
 
 import jax
 import jax.numpy as jnp

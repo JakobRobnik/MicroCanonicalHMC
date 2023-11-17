@@ -1,5 +1,5 @@
 
-from mclmc.sampling.dynamics import update_momentum
+from mclmc.dynamics import update_momentum
 import jax 
 import jax.numpy as jnp
 
