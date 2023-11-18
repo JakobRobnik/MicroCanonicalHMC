@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mclmc"
+version = "0.2.5"
+description = "Faster gradient based sampling"
+authors = [{ name = "Jakob Robnik", email = "jakob.robnik@gmail.com" }]
+license = {text="LICENSE.md"}
+readme = "README.md"
+dependencies = [
+  "jax >=0.4",
+  "jaxlib >=0.4",
+  "numpy >=1.26",
+  "mypy >=1.7",
+  "pre-commit >=3.5",
+  "matplotlib >=3.8",
+  "pandas >=2.1",
+  "pytest >=7.2",
+  "pytest-benchmark >=3.2"
+  ]
+
+[tool.setuptools.packages]
+find = {namespaces = false}
