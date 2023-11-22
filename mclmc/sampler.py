@@ -78,7 +78,7 @@ class Sampler:
         frac_tune = jnp.array([0.1, 0.1, 0.1])
         if not adjust:
             self.step = dynamics.mclmc(hamiltonian_step, partial_refresh, get_nu)
-            
+
             tune12 = tune.tune12(self.step, self.Target.d, diagonal_preconditioning, frac_tune[:2], varEwanted, 1.5, 150)
             tune3 = tune.tune3(self.step, frac_tune[2], Lfactor)
 

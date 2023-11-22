@@ -8,17 +8,15 @@ from scipy.special import lambertw
 from scipy.integrate import odeint
 
 from mclmc.sampler import Sampler
-from benchmarks.benchmarks_mchmc import StandardNormal
+from benchmarks.benchmarks_mchmc import *
 
 
-target = StandardNormal(d = 100)
+target = IllConditionedGaussian(d = 100, condition_number= 1000.)
 
-sampler = Sampler(target)
+sampler = Sampler(target, diagonal_preconditioning= True)
 
-x = sampler.sample(10000)
+x = sampler.sample(100000)
 
-print(sampler.hyp)
 
-plt.hist(x[:, 0], bins = 20)
-plt.savefig('neki.png')
-plt.close()
+print(sampler.hyp['sigma'] / jnp.sqrt(target.second_moments))
+

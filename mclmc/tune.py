@@ -14,8 +14,10 @@ from .correlation_length import ess_corr
 def run(dyn, hyp, schedule, num_steps):
     
     _dyn, _hyp = dyn, hyp
+    extra_params = None
+
     for program in schedule:
-        _dyn, _hyp = program(_dyn, _hyp, num_steps)
+        _dyn, _hyp, extra_params = program(_dyn, _hyp, num_steps, extra_params)
         
     return _dyn, _hyp
  
@@ -35,15 +37,27 @@ def nan_reject(x, u, l, g, xx, uu, ll, gg, eps, eps_max, dK):
  
 
 
-def tune12(dynamics, d,
-           diag_precond,
-           frac, varEwanted, sigma_xi, neff):
+def tune12(dynamics, d, adjust, 
+           diag_precond, frac, 
+           varEwanted = 1e-3, sigma_xi = 1.5, neff = 150, # these parameters will have no effect if adjust = True
+           acc_prob_wanted = 0.7): # these parameters will have no effect if adjust = False
     
     gamma = (neff - 1.0) / (neff + 1.0)
     
-    def _step(dyn_old, hyp, state_adaptive):
-
-        W, F, eps_max = state_adaptive
+    if adjust:
+        adaptive_state = jnp.zeros(4)
+        _step = dual_averaging      
+        
+    else:
+        adaptive_state = (0., 0., jnp.inf)
+        _step = predictor
+        
+    
+    def predictor(dyn_old, hyp, adaptive_state):
+        """does one step with the dynamics and updates the prediction for the optimal stepsize
+            Designed for the unadjusted MCHMC"""
+        
+        W, F, eps_max = adaptive_state
 
         # dynamics
         dyn_new, energy_change = dynamics(dyn_old, hyp)
@@ -56,20 +70,22 @@ def tune12(dynamics, d,
         dyn = {'x': x, 'u': u, 'l': l, 'g': g, 'key': dyn_new['key']}
         
         # Warning: var = 0 if there were nans, but we will give it a very small weight
-        xi = ((energy_change**2) / (d * varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
+        xi = (jnp.square(energy_change) / (d * varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
         w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * sigma_xi)))  # the weight reduces the impact of stepsizes which are much larger on much smaller than the desired one.
-        
-        F = gamma * F + w * (xi/jnp.power(hyp['eps'], 6.0)),
-        W = gamma * W + w,
-                      
+
+        F = gamma * F + w * (xi/jnp.power(hyp['eps'], 6.0))
+        W = gamma * W + w
         eps = jnp.power(F/W, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
         eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
         hyp_new = {'L': hyp['L'], 'eps': eps, 'sigma': hyp['sigma']}
         
         return dyn, hyp_new, (W, F, eps_max), success
 
+    def dual_averaging():
+        
 
     def update_kalman(x, state, outer_weight, success, eps):
+        """kalman filter to estimate the size of the posterior"""
         W, F1, F2 = state
         w = outer_weight * eps * success
         zero_prevention = 1-outer_weight
@@ -80,34 +96,34 @@ def tune12(dynamics, d,
 
 
     def step(state, outer_weight):
-        """one adaptive step of the dynamics"""
-        dyn, hyp, params, kalman_state = state
-        dyn, hyp, params, success = _step(dyn, hyp, params)
+        """does one step of the dynamcis and updates the estimate of the posterior size and optimal stepsize"""
+        dyn, hyp, adaptive_state, kalman_state = state
+        dyn, hyp, adaptive_state, success = _step(dyn, hyp, adaptive_state)
         kalman_state = update_kalman(dyn['x'], kalman_state, outer_weight, success, hyp['eps'])
 
-        return (dyn, hyp, params, kalman_state), None
+        return (dyn, hyp, adaptive_state, kalman_state), None
 
 
-    def func(_dyn, _hyp, num_steps):
-
+    def func(_dyn, _hyp, num_steps, adjust):
+        
         num_steps1, num_steps2 = (num_steps * frac).astype(int)
             
         # we use the last num_steps2 to compute the diagonal preconditioner
         outer_weights = jnp.concatenate((jnp.zeros(num_steps1), jnp.ones(num_steps2)))
 
         #initial state
-        params = (jnp.power(_hyp['eps'], -6.0) * 1e-5, 1e-5, jnp.inf)
+        
         kalman_state = (0., jnp.zeros(d), jnp.zeros(d))
-    
+
         # run the steps
-        state = jax.lax.scan(step, init= (_dyn, _hyp, params, kalman_state), xs= outer_weights, length= num_steps1 + num_steps2)[0]
-        dyn, hyp, params, kalman_state = state
+        state = jax.lax.scan(step, init= (_dyn, _hyp, adaptive_state, kalman_state), xs= outer_weights, length= num_steps1 + num_steps2)[0]
+        dyn, hyp, adaptive_state, kalman_state = state
         
         # determine L
         if num_steps2 != 0.:
             _, F1, F2 = kalman_state
             variances = F2 - jnp.square(F1)
-            sigma2 = jnp.average(variances)
+            L = jnp.sqrt(jnp.sum(variances))
 
             # optionally we do the diagonal preconditioning (and readjust the stepsize)
             if diag_precond:
@@ -118,18 +134,18 @@ def tune12(dynamics, d,
 
                 #readjust the stepsize
                 steps = num_steps2 // 3 #we do some small number of steps
-                state = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
-                dyn, hyp, params, kalman_state = state
+                state = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)[0]
+                dyn, hyp, adaptive_state, kalman_state = state
             
             else:
-                L = jnp.sqrt(sigma2 * d)
                 sigma = hyp['sigma']
             
         hyp = {'L': L, 'sigma': sigma, 'eps': hyp['eps']}
         
-        return dyn, hyp 
+        return dyn, hyp
 
     return func
+
 
 
 
@@ -144,21 +160,21 @@ def tune3(step, frac, Lfactor):
 
         def _step(state, useless):
             dyn_old = state
-            dyn_new = step(dyn_old, hyp)
+            dyn_new, _ = step(dyn_old, hyp)
             
             return dyn_new, dyn_new['x']
 
         return jax.lax.scan(_step, init=_dyn, xs=None, length=num_steps)
 
 
-    def func(dyn, hyp, num_steps):
+    def func(dyn, hyp, num_steps, extra_params):
         steps = (num_steps * frac).astype(int)
         
         dyn, X = sample_full(steps, dyn, hyp)
         ESS = ess_corr(X) # num steps / effective sample size
         Lnew = Lfactor * hyp['eps'] / ESS # = 0.4 * length corresponding to one effective sample
 
-        return dyn, {'L': Lnew, 'eps': hyp['eps'], 'sigma': hyp['sigma']}
+        return dyn, {'L': Lnew, 'eps': hyp['eps'], 'sigma': hyp['sigma']}, extra_params
 
 
     return func
@@ -169,48 +185,7 @@ def tune3(step, frac, Lfactor):
 
 
 def dual_averaging(acc_prob, state, acc_prob_wanted = 0.7, t0 = 10, gamma= 0.05, kappa= 0.75):
-    """ (copied from numpyro)
-    Dual Averaging is a scheme to solve convex optimization problems. It
-    belongs to a class of subgradient methods which uses subgradients (which
-    lie in a dual space) to update states (in primal space) of a model. Under
-    some conditions, the averages of generated parameters during the scheme are
-    guaranteed to converge to an optimal value. However, a counter-intuitive
-    aspect of traditional subgradient methods is "new subgradients enter the
-    model with decreasing weights" (see reference [1]). Dual Averaging scheme
-    resolves that issue by updating parameters using weights equally for
-    subgradients, hence we have the name "dual averaging".
-
-    This class implements a dual averaging scheme which is adapted for Markov
-    chain Monte Carlo (MCMC) algorithms. To be more precise, we will replace
-    subgradients by some statistics calculated at the end of MCMC trajectories.
-    Following [2], we introduce some free parameters such as ``t0`` and
-    ``kappa``, which is helpful and still guarantees the convergence of the
-    scheme.
-
-    **References:**
-
-    1. *Primal-dual subgradient methods for convex problems*,
-       Yurii Nesterov
-    2. *The No-U-turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo*,
-       Matthew D. Hoffman, Andrew Gelman
-
-    Args:
-        acc_prob: Acceptance probability of the current sample
-        
-        state: (log eps, log eps avg, E[acc prob wanted - acc prob], current time step)
-            
-        acc_prob_wanted: desired average acceptance rate
-        
-        t0: A free parameter introduced in reference [2] that stabilizes
-            the initial steps of the scheme. Defaults to 10.
-        kappa: A free parameter introduced in reference [2] that
-            controls the weights of steps of the scheme. For a small ``kappa``, the
-            scheme will quickly forget states from early steps. This should be a
-            number in :math:`(0.5, 1]`. Defaults to 0.75.
-        gamma: A free parameter introduced in reference [1] which
-            controls the speed of the convergence of the scheme. Defaults to 0.05.
-    
-    """
+    """taken from numpyro, see documentation there"""
 
     g = acc_prob_wanted - acc_prob
     
@@ -239,9 +214,6 @@ def dual_averaging(step, frac, acc_prob_wanted):
         
         steps = (num_steps * frac).astype(int)
 
-        
-        adap = jnp.zeros(4)
-        
         
         def _step(_state, useless):
             dyn, hyp, adap = _state
