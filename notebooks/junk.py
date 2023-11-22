@@ -7,11 +7,18 @@ from scipy.special import lambertw
 
 from scipy.integrate import odeint
 
-num_cores = jax.local_device_count()
-print(num_cores, jax.lib.xla_bridge.get_backend().platform)
+from mclmc.sampler import Sampler
+from benchmarks.benchmarks_mchmc import StandardNormal
 
 
-a = jnp.arange(5)
+target = StandardNormal(d = 100)
 
-b = jnp.tile(a, 3).reshape(3, 5)
-print(b)
+sampler = Sampler(target)
+
+x = sampler.sample(10000)
+
+print(sampler.hyp)
+
+plt.hist(x[:, 0], bins = 20)
+plt.savefig('neki.png')
+plt.close()

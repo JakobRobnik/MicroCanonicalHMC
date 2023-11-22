@@ -17,6 +17,7 @@ class StandardNormal():
         self.variance_second_moments = 2 * self.second_moments
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
+        self.name= 'stn'
 
     def nlogp(self, x):
         """- log p of the target distribution"""
@@ -39,7 +40,7 @@ class IllConditionedGaussian():
         """numpy_seed is used to generate a random rotation for the covariance matrix.
             If None, the covariance matrix is diagonal."""
 
-        self.name = 'ICG_easy'
+        self.name = 'icg'
         self.d = d
         self.condition_number = condition_number
         eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
@@ -423,7 +424,7 @@ class Rosenbrock():
 
         self.d = d
         self.Q = Q
-
+        self.name = 'rosenbrock'
         #ground truth moments
         var_x = 2.0
 
