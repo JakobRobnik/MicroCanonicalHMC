@@ -6,7 +6,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from . import dynamics
-from .correlation_length import ess_corr
+from . import tune
+
 
 class Target():
 
@@ -27,17 +28,22 @@ class Target():
 OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
 
 
+
+
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
-    def __init__(self, Target : Target, L = None, eps = None,
-                 integrator = dynamics.minimal_norm, varEwanted = 5e-4,
+    def __init__(self, Target : Target, adjust= False, 
+                 L = None, eps = None,
+                 integrator = dynamics.minimal_norm, 
+                 varEwanted = 5e-4, acc_prob_wanted = 0.7,
                  diagonal_preconditioning= False,
-                 frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
                  ):
         """Args:
                 Target: the target distribution class
 
+                adjust: False
+                
                 L: momentum decoherence scale (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting frac_tune2 and 3 to zero (see below))
 
                 eps: initial integration step-size (it is then automaticaly tuned before the sampling starts unless you turn-off the tuning by setting all frac_tune1 and 2 to zero (see below))
@@ -49,7 +55,7 @@ class Sampler:
                 diagonal_preconditioning: if you already have your own preconditioning or if you suspect diagonal preconditioning is not useful, turn this off as it can also make matters worse
                                           (but it can also be very useful if you did not precondition the parameters (make their posterior variances close to 1))
 
-                frac_tune1: (num_samples * frac_tune1) steps will be used as a burn-in and to autotune the stepsize
+                frac_tune: (num_samples * frac_tune1) steps will be used as a burn-in and to autotune the stepsize
 
                 frac_tune2: (num_samples * frac_tune2) steps will be used to autotune L (should be around 10 effective samples long for the optimal performance)
 
@@ -58,85 +64,46 @@ class Sampler:
         """
 
         self.Target = Target
-        self.sigma = jnp.ones(Target.d)
 
-        ### integrator ###
-        hamiltonian_step, self.grad_evals_per_step = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
-                                                                V= dynamics.update_momentum(self.Target.d, sequential=True),
-                                                                d= self.Target.d)
-        self.dynamics = dynamics.mclmc(hamiltonian_step, dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
-        self.random_unit_vector = dynamics.rng_momentum_marginal(self.Target.d, True, False)
+                
+        update_momentum, self.full_refresh, partial_refresh, get_nu = dynamics.setup(self.Target.d, True, False)
 
-        ### preconditioning ###
-        self.diagonal_preconditioning = diagonal_preconditioning
-
-        ### autotuning parameters ###
-
-        # length of autotuning
-        self.frac_tune1 = frac_tune1 # num_samples * frac_tune1 steps will be used to autotune eps
-        self.frac_tune2 = frac_tune2 # num_samples * frac_tune2 steps will be used to approximately autotune L
-        self.frac_tune3 = frac_tune3 # num_samples * frac_tune3 steps will be used to improve L tuning.
-
-        self.varEwanted = varEwanted # 1e-3 #targeted energy variance Var[E]/d
-        neff = 150 # effective number of steps used to determine the stepsize in the adaptive step
-        self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
-        self.sigma_xi= 1.5 # determines how much do we trust the stepsize predictions from the too large and too small stepsizes
-
-        self.Lfactor = 0.4 #in the third stage we set L = Lfactor * (configuration space distance bewteen independent samples)
+        hamiltonian_step, self.grads_per_step = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
+                                                 V= update_momentum,
+                                                 d= self.Target.d)
 
 
-        ### default eps and L ###
-        if L != None:
-            self.L = L
-        else: #default value (works if the target is well preconditioned). If you are not happy with the default value and have not run the grid search we suggest using the autotuning
-            self.L = jnp.sqrt(Target.d)
-        if eps != None:
-            self.eps = eps
-        else: #defualt value (assumes preconditioned target and even then it might not work). Unless you have done a grid search to determine this value we suggest using the autotuning
-            self.eps = jnp.sqrt(Target.d) * 0.4
-
-
-
-
-    def nan_reject(self, x, u, l, g, xx, uu, ll, gg, eps, eps_max, dK):
-        """if there are nans, let's reduce the stepsize, and not update the state. The function returns the old state in this case."""
+        Lfactor = 0.4 
         
-        nonans = jnp.all(jnp.isfinite(xx))
+        frac_tune = jnp.array([0.1, 0.1, 0.1])
+        if not adjust:
+            self.step = dynamics.mclmc(hamiltonian_step, partial_refresh, get_nu)
+            
+            tune12 = tune.tune12(self.step, self.Target.d, diagonal_preconditioning, frac_tune[:2], varEwanted, 1.5, 150)
+            tune3 = tune.tune3(self.step, frac_tune[2], Lfactor)
 
-        return nonans, *jax.tree_util.tree_map(lambda new, old: jax.lax.select(nonans, jnp.nan_to_num(new), old), (xx, uu, ll, gg, eps_max, dK), (x, u, l, g, eps * 0.8, 0.))
+            if frac_tune[2] == 0.:
+                self.schedule = [tune12,]
+            
+            else:
+                self.schedule = [tune12, tune3]
+            
+            
+        else:
+            self.step = dynamics.ma_step(hamiltonian_step, lambda u, k: self.full_refresh(k), partial_refresh, get_nu, adjust)
+            
+            self.acc_prob_wanted = acc_prob_wanted
+    
+
+        self.hyp = {'L': L if L!= None else jnp.sqrt(Target.d), 
+                    'eps': eps if eps != None else jnp.sqrt(Target.d) * 0.4, 
+                    'sigma': jnp.ones(self.Target.d)}
+
+
         
+    def init_dyn(self, x_initial, random_key):
+        """initialize the dynamical state"""
         
-        
-    def dynamics_adaptive(self, state, L, sigma):
-        """One step of the dynamics with the adaptive stepsize"""
-
-        x, u, l, g, E, Feps, Weps, eps_max, key = state
-
-        eps = jnp.power(Feps/Weps, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
-        eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
-
-        # dynamics
-        xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)
-
-        # step updating
-        success, xx, uu, ll, gg, eps_max, kinetic_change = self.nan_reject(x, u, l, g, xx, uu, ll, gg, eps, eps_max, kinetic_change)
-
-        DE = kinetic_change + ll - l  # energy difference
-        EE = E + DE  # energy
-        # Warning: var = 0 if there were nans, but we will give it a very small weight
-        xi = ((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
-        w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * self.sigma_xi)))  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
-        Feps = self.gamma * Feps + w * (xi/jnp.power(eps, 6.0))  # Kalman update the linear combinations
-        Weps = self.gamma * Weps + w
-
-        return xx, uu, ll, gg, EE, Feps, Weps, eps_max, key, eps * success
-
-
-
-    ### sampling routine ###
-
-    def get_initial_conditions(self, x_initial, random_key):
-
         ### random key ###
         if random_key is None:
             key = jax.random.PRNGKey(0)
@@ -150,14 +117,14 @@ class Sampler:
         
         l, g = self.Target.grad_nlogp(x_initial)
 
-        u, key = self.random_unit_vector(key)
+        u, key = self.full_refresh(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
 
-        return x_initial, u, l, g, key
+        return {'x': x_initial, 'u': u, 'l': l, 'g': g, 'key': key}
 
 
 
-    def sample(self, num_steps, num_chains = 1, x_initial = None, random_key= None, output = OutputType.normal, thinning= 1):
+    def sample(self, num_steps, num_chains = 1, x_initial = None, random_key= None, output = OutputType.normal):
         """Args:
                num_steps: number of integration steps to take.
 
@@ -181,9 +148,6 @@ class Sampler:
                         'ess': Effective Sample Size per gradient evaluation, float.
                             In this case, self.Target.variance = <x_i^2>_true should be defined.
 
-                thinning: only one every 'thinning' steps is stored. Defaults to 1.
-                        This is not the recommended solution to save memory. It is better to use the transform functionality.
-                        If this is not sufficient consider saving only the expected values, by setting output= 'expectation'.
         """
         
         if output == OutputType.ess:
@@ -192,7 +156,7 @@ class Sampler:
                     raise AttributeError("Target." + ground_truth + " should be defined if you want to use output = ess.")
         
         if num_chains == 1:
-            results = self.single_chain_sample(num_steps, x_initial, random_key, output, thinning) #the function which actually does the sampling
+            results = self.single_chain_sample(num_steps, x_initial, random_key, output) #the function which actually does the sampling
             if output == OutputType.ess:
                 return self.bias_plot(results)
 
@@ -215,7 +179,7 @@ class Sampler:
                 keys = jax.random.split(key, num_chains)
 
 
-            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output, thinning)
+            f = lambda i: self.single_chain_sample(num_steps, x0[i], keys[i], output)
 
             if num_cores != 1: #run the chains on parallel cores
                 parallel_function = jax.pmap(jax.vmap(f))
@@ -247,199 +211,72 @@ class Sampler:
 
 
 
-    def single_chain_sample(self, num_steps, x_initial, random_key, output, thinning):
+    def single_chain_sample(self, num_steps, x_initial, random_key, output):
         """sampling routine. It is called by self.sample"""
         
         ### initial conditions ###
-        x, u, l, g, key = self.get_initial_conditions(x_initial, random_key)
-        L, eps = self.L, self.eps #the initial values, given at the class initialization (or set to the default values)
+        dyn = self.init_dyn(x_initial, random_key)
+        
+        hyp = self.hyp
 
-        sigma = jnp.ones(self.Target.d) # jnp.ones(self.Target.d)  # no diagonal preconditioning
-
-        ### auto-tune the hyperparameters L and eps ###
-        if self.frac_tune1 + self.frac_tune2 + self.frac_tune3 != 0.:
-            steps1 = (int)(num_steps * self.frac_tune1)
-            steps2 = (int)(num_steps * self.frac_tune2)
-            L, eps, sigma, x, u, l, g, key = self.tune12(x, u, l, g, key, L, eps, sigma, steps1, steps2) #the cheap tuning (100 steps)
-            if self.frac_tune3 != 0: #if we want to further improve L tuning we go to the second stage (which is a bit slower)
-                steps3 = (int)(num_steps * self.frac_tune3)
-                L, x, u, l, g, key = self.tune3(x, u, l, g, key, L, eps, sigma, steps3)
+        ### tuning ###
+        dyn, hyp = tune.run(dyn, hyp, self.schedule, num_steps)
+        self.hyp = hyp
 
         ### sampling ###
 
-        
         if output == OutputType.normal or output == OutputType.detailed:
-            X, _, E = self.sample_normal(num_steps, x, u, l, g, key, L, eps, sigma, thinning)
+            X, _, E = self.sample_normal(num_steps, dyn, hyp)
             if output == OutputType.detailed:
-                return X, E, L, eps
+                return X, E
             else:
                 return X
         elif output == OutputType.expectation:
-            return self.sample_expectation(num_steps, x, u, l, g, key, L, eps, sigma)
+            return self.sample_expectation(num_steps, dyn, hyp)
 
         elif output == OutputType.ess:
-            return self.sample_ess(num_steps, x, u, l, g, key, L, eps, sigma)
+            return self.sample_ess(num_steps, dyn, hyp)
 
        
     ### for loops which do the sampling steps: ###
 
-    def sample_normal(self, num_steps, x, u, l, g, random_key, L, eps, sigma, thinning):
+    def sample_normal(self, num_steps, _dyn, hyp):
         """Stores transform(x) for each step."""
         
         def step(state, useless):
 
-            x, u, l, g, key = state
-            xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)
-
-            # left in as a comment since it may be useful when experimenting with neighbour lists in MD
-            # if self.Target.nbrs:
-            #     self.Target.nbrs = self.Target.nbrs.update(jnp.reshape(xx, (-1,3)), neighbor=self.Target.nbrs)
+            dyn, energy_change = self.step(state, hyp)
+ 
             
-            de = kinetic_change + ll - l
-            
-            return (xx, uu, ll, gg, key), (self.Target.transform(xx), ll, de)
+            return dyn, (self.Target.transform(dyn['x']), dyn['l'], energy_change)
 
 
-        if thinning == 1:
-            return jax.lax.scan(step, init=(x, u, l, g, random_key), xs=None, length=num_steps)[1]
-
-        else:
-            return self.sample_thinning(num_steps, x, u, l, g, random_key, L, eps, sigma, thinning)
-
-
-    def sample_thinning(self, num_steps, x, u, l, g, random_key, L, eps, sigma, thinning):
-        """Stores transform(x) for each step."""
-
-        def step(state, useless):
-
-            def substep(state, useless):
-                x, u, l, g, _, key = state
-                xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)
-                de = kinetic_change + ll - l
-                return (xx, uu, ll, gg, de, key), None
-
-            state = jax.lax.scan(substep, init=state, xs=None, length= thinning)[0] #do 'thinning' steps without saving
-
-            return state, (self.Target.transform(state[0]), state[2], state[4]) #save one sample
-
-        return jax.lax.scan(step, init=(x, u, l, g, 0., random_key), xs=None, length= num_steps // thinning)[1]
+        return jax.lax.scan(step, init= _dyn, xs=None, length=num_steps)[1]
 
 
 
-    def sample_expectation(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
-        """Stores no history but keeps the expected value of transform(x)."""
-        
-        def step(state, useless):
-            
-            x, u, _, g, _, key = self.dynamics(*(state[0]), L, eps, sigma)
-            
-            return (state[0], state[1] + self.Target.transform(x)), None
 
-        state1 = (x, u, g, random_key)
-        state2= jnp.zeros(self.Target.transform(x).shape)
-        return  jax.lax.scan(step, init= (state1, state2), xs=None, length=num_steps)[0][1] / num_steps
-        
-
-
-
-    def sample_ess(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
+    def sample_ess(self, num_steps, _dyn, hyp):
         """Stores the bias of the second moments for each step."""
         
         def step(state_track, useless):
-            
-            x, u, l, g, E, key = state_track[0]
-            x, u, ll, g, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)
-            W, F2 = state_track[1]
+            dyn, expe = state_track
+            dyn, _ = self.step(dyn, hyp)
+            W, F2 = expe
         
-            F2 = (W * F2 + jnp.square(self.Target.transform(x))) / (W + 1)  # Update <f(x)> with a Kalman filter
+            F2 = (W * F2 + jnp.square(self.Target.transform(dyn['x']))) / (W + 1)  # Update <f(x)> with a Kalman filter
             W += 1
             bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
             bias = jnp.average(bias_d)
             #bias = jnp.max(bias_d)
 
-            return ((x, u, ll, g, E + kinetic_change + ll - l, key), (W, F2)), bias
+            return (dyn, (W, F2)), bias
 
         
-        _, b = jax.lax.scan(step, init=((x, u, l, g, 0., random_key), (1, jnp.square(self.Target.transform(x)))), xs=None, length=num_steps)
+        _, b = jax.lax.scan(step, init=(_dyn, (1, jnp.square(self.Target.transform(_dyn['x'])))), xs=None, length=num_steps)
 
-        #nans = jnp.any(jnp.isnan(b))
+        return b
 
-        return b #+ nans * 1e5 #return a large bias if there were nans
-
-
-    ### tuning phase: ###
-
-    def tune12(self, x, u, l, g, random_key, L_given, eps, sigma_given, num_steps1, num_steps2):
-        """cheap hyperparameter tuning"""
-        
-        sigma = sigma_given
-
-        def step(state, outer_weight):
-            """one adaptive step of the dynamics"""
-            x, u, l, g, E, Feps, Weps, eps_max, key, eps = self.dynamics_adaptive(state[0], L, sigma)
-            W, F1, F2 = state[1]
-            w = outer_weight * eps
-            zero_prevention = 1-outer_weight
-            F1 = (W*F1 + w*x) / (W + w + zero_prevention)  # Update <f(x)> with a Kalman filter
-            F2 = (W*F2 + w*jnp.square(x)) / (W + w + zero_prevention)  # Update <f(x)> with a Kalman filter
-            W += w
-
-            return ((x, u, l, g, E, Feps, Weps, eps_max, key), (W, F1, F2)), eps
-
-        L = L_given
-
-        # we use the last num_steps2 to compute the diagonal preconditioner
-        outer_weights = jnp.concatenate((jnp.zeros(num_steps1), jnp.ones(num_steps2)))
-
-        #initial state
-        state = ((x, u, l, g, 0., jnp.power(eps, -6.0) * 1e-5, 1e-5, jnp.inf, random_key), (0., jnp.zeros(len(x)), jnp.zeros(len(x))))
-        # run the steps
-        state, eps = jax.lax.scan(step, init=state, xs= outer_weights, length= num_steps1 + num_steps2)
-        # determine L
-        if num_steps2 != 0.:
-            F1, F2 = state[1][1], state[1][2]
-            variances = F2 - jnp.square(F1)
-            sigma2 = jnp.average(variances)
-
-            # optionally we do the diagonal preconditioning (and readjust the stepsize)
-            if self.diagonal_preconditioning:
-
-                # diagonal preconditioning
-                sigma = jnp.sqrt(variances)
-                L = jnp.sqrt(self.Target.d)
-
-                #readjust the stepsize
-                steps = num_steps2 // 3 #we do some small number of steps
-                state, eps = jax.lax.scan(step, init= state, xs= jnp.ones(steps), length= steps)
-            else:
-                L = jnp.sqrt(sigma2 * self.Target.d)
-
-        xx, uu, ll, gg, key = state[0][0], state[0][1], state[0][2], state[0][3], state[0][-1] # the final state
-        return L, eps[-1], sigma, xx, uu, ll, gg, key #return the tuned hyperparameters and the final state
-
-
-
-    def tune3(self, x, u, l, g, random_key, L, eps, sigma, num_steps):
-        """determine L by the autocorrelations (around 10 effective samples are needed for this to be accurate)"""
-        X, xx, uu, ll, gg, key = self.sample_full(num_steps, x, u, l, g, random_key, L, eps, sigma)
-        ESS = ess_corr(X)
-        Lnew = self.Lfactor * eps / ESS # = 0.4 * correlation length
-
-        return Lnew, xx, uu, ll, gg, key
-
-
-    def sample_full(self, num_steps, x, u, l, g, random_key, L, eps, sigma):
-        """Stores full x for each step. Used in tune2."""
-
-        def step(state, useless):
-            x, u, l, g, E, key = state
-            xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)
-            EE = E + kinetic_change + ll - l
-            return (xx, uu, ll, gg, EE, key), xx
-
-        state, track = jax.lax.scan(step, init=(x, u, l, g, 0., random_key), xs=None, length=num_steps)
-        xx, uu, ll, gg, key = state[0], state[1], state[2], state[3], state[5]
-        return track, xx, uu, ll, gg, key
 
 
 

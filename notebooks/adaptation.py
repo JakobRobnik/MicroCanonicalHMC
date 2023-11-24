@@ -15,4 +15,3 @@ target.prior_draw = lambda key: jax.random.normal(key, (target.d,))
 sampler = Sampler(target, 3, 10., integrator= dynamics.leapfrog, hmc= False, adjust = True, full_refreshment= True)
 
 x, hyp = sampler.adaptation_predictor(100)
-

@@ -43,42 +43,52 @@ def minimal_norm(d, T, V):
 
 
 
-def mclmc(hamilton, partial, d):
+def mclmc(hamilton, partial, get_nu):
     
-  def step(x, u, g, random_key, L, eps, sigma):
+  def step(dyn, hyp):
       """One step of the generalized dynamics."""
-
+      
       # Hamiltonian step
-      xx, uu, ll, gg, kinetic_change = hamilton(x=x, u=u, g=g, eps=eps, sigma = sigma)
+      x, u, l, g, kinetic_change = hamilton(x=dyn['x'], u=dyn['u'], g=dyn['g'], eps=hyp['eps'], sigma = hyp['sigma'])
 
       # Langevin-like noise
-      nu = jnp.sqrt((jnp.exp(2 * eps / L) - 1.) / d)
-      uu, key = partial(u= uu, random_key= random_key, nu= nu)
+      u, key = partial(u= u, random_key= dyn['key'], nu= get_nu(hyp['L']/hyp['eps']))
 
-      return xx, uu, ll, gg, kinetic_change, key
+      energy_change = kinetic_change + l - dyn['l']
+      
+      return {'x': x, 'u': u, 'l': l, 'g': g, 'key': key}, energy_change
 
   return step
 
 
 
-def ma_step(hamilton, full, partial, get_nu, adjust):
+def ma_step(hamilton, full, partial, get_nu):
 
-  def step(x, u, l, g, random_key, num_steps, num_decoherence, eps, sigma):
-
-      uu, key = full(u, random_key) # do full refreshment (unless full is the identity)
+  def step(dyn, hyp):
       
-      def dynamical_steps(state, useless):
-        _x, _u, _l, _g, _kinetic, key = state
-        _x, _u, _l, _g, kinetic_change = hamilton(x= _x, u= _u, g= _g, eps= eps, sigma= sigma)
+      x, l, g = dyn['x'], dyn['l'], dyn['g']    
+      
+      u, key = full(dyn['u'], dyn['key']) # do full refreshment (unless full is the identity)
+      
+      nu = get_nu(0.5 * dyn['L'] / dyn['eps']) # 1/2 because we use two O updates per step
         
-        # Langevin-like noise
-        nu = get_nu(num_decoherence)
+      def dynamical_steps(state, useless):
+        _x, _u, _l, _g, key, _kinetic = state
+        
+        # O
         _u, key = partial(u= _u, random_key= key, nu= nu)
+        
+        # BAB (or BABAB in case of Minimal norm integrator)
+        _x, _u, _l, _g, kinetic_change = hamilton(x=_x, u=_u, g=_g, eps= hyp['eps'], sigma= hyp['sigma'])
+        
+        # O
+        _u, key = partial(u= _u, random_key= key, nu= nu)
+        
+        return (_x, _u, _l, _g, key, _kinetic + kinetic_change), None
 
-        return (_x, _u, _l, _g, _kinetic + kinetic_change, key), None
 
       # do num_steps of the Hamiltonian (Langevin) dynamics
-      xx, uu, ll, gg, kinetic_change, key = jax.lax.scan(dynamical_steps, init = (x, uu, l, g, 0., key), xs = None, length = num_steps)[0]
+      xx, uu, ll, gg, key, kinetic_change = jax.lax.scan(dynamical_steps, init = (x, u, l, g, key, 0.), xs = None, length = hyp['N'])[0]
 
       # total energy error
       energy_change = kinetic_change + ll - l
@@ -87,34 +97,16 @@ def ma_step(hamilton, full, partial, get_nu, adjust):
       key, key1 = jax.random.split(key)
       acc_prob = jnp.clip(jnp.exp(-energy_change), 0, 1)
       accept = jax.random.bernoulli(key1, acc_prob)
-      dyn = jax.tree_util.tree_map(lambda new, old: jax.lax.select(accept, new, old), (xx, uu, ll, gg, key), (x, u, l, g, key))
+      dyn = {'x': xx * accept + x * (1-accept), 
+             'u': uu * accept + u * (1-accept), 
+             'l': ll * accept + l * (1-accept), 
+             'g': gg * accept + g * (1-accept), 
+             'key': key}
       
-      return dyn, acc_prob
+      return dyn, energy_change
       
   
-  def unadjusted_step(x, u, l, g, random_key, num_steps, num_decoherence, eps, sigma):
-
-      uu, key = full(u, random_key) # do full refreshment (unless full is the identity)
-      
-      def dynamical_steps(state, useless):
-        _x, _u, _l, _g, _kinetic, key = state
-        _x, _u, _l, _g, kinetic_change = hamilton(x= _x, u= _u, g= _g, eps= eps, sigma= sigma)
-        
-        # Langevin-like noise
-        nu = get_nu(num_decoherence)
-        _u, key = partial(u= _u, random_key= key, nu= nu)
-
-        return (_x, _u, _l, _g, _kinetic + kinetic_change, key), _x
-      
-      # do num_steps of the Hamiltonian (Langevin) dynamics
-      state, track = jax.lax.scan(dynamical_steps, init = (x, uu, l, g, 0., key), xs = None, length = num_steps)
-      
-      xx, uu, ll, gg, kinetic_change, key = state
-      
-      return (xx, uu, ll, gg, key), track # we also return the entire trajectory
-
-      
-  return step if adjust else unadjusted_step
+  return step
 
 
 
@@ -134,7 +126,7 @@ def update_position(grad_nlogp):
 def setup(d, sequential= True, hmc = False):
   
   if hmc:
-    N2nu = lambda N2: jnp.exp(-1./N2)
+    Ndnu = lambda Nd: jnp.exp(-1./Nd) # MEADS paper, Equation 6 (https://proceedings.mlr.press/v151/hoffman22a/hoffman22a.pdf)
     
     if sequential:
 
@@ -144,24 +136,22 @@ def setup(d, sequential= True, hmc = False):
         return u, key
 
       def partial(u, random_key, nu):
-        return u, random_key
-        # key, subkey = jax.random.split(random_key)
-        # z = jax.random.normal(subkey, shape = (d, ))
-        # return u * nu + jnp.sqrt(1- nu**2) * z, key    
+        key, subkey = jax.random.split(random_key)
+        z = jax.random.normal(subkey, shape = (d, ))
+        return u * nu + jnp.sqrt(1- nu**2) * z, key    
 
       def V(eps, u, g):
           uu = u - eps * g
           return uu, 0.5 * (jnp.dot(uu, uu) - jnp.dot(u, u))
 
-        
     else:
       raise ValueError('Ensemble HMC is not implemented.')
+
     
   else:
 
-    N2nu = lambda N2: jnp.sqrt((jnp.exp(2./N2) - 1.) / d)
+    Ndnu = lambda Nd: jnp.sqrt((jnp.exp(2./Nd) - 1.) / d) #MCHMC paper (Nd = L/eps)
 
-      
     if sequential:
     
       def full(random_key):
@@ -215,4 +205,4 @@ def setup(d, sequential= True, hmc = False):
           return uu / (jnp.sqrt(jnp.sum(jnp.square(uu), axis=1)).T)[:, None], delta_r * (d-1)
 
 
-  return V, full, partial, N2nu
+  return V, full, partial, Ndnu

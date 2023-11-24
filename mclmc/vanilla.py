@@ -24,6 +24,7 @@ class Sampler:
         Langevin: do Langevin dynamics
         
     """
+    
     def __init__(self, Target, 
                  steps_per_sample, eps, num_decoherence = jnp.inf,
                  integrator = dynamics.minimal_norm, hmc = False, adjust = True, full_refreshment = True,
@@ -165,8 +166,8 @@ class Sampler:
         
         ### initial conditions ###
         dyn = self.get_initial_conditions(x_initial, random_key)
-
         
+
         if output == OutputType.normal:
             return self.sample_normal(num_steps, dyn)
             
