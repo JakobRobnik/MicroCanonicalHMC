@@ -6,10 +6,12 @@ from jax import Array
 import jax
 import jax.numpy as jnp
 import numpy as np
-from mclmc.sampling import dynamics
 
-from mclmc.sampling.dynamics import MCLMCInfo, MCLMCState, build_kernel, run_kernel
+from mclmc.dynamics import *#MCLMCInfo, MCLMCState, build_kernel, run_kernel
+
 from .correlation_length import ess_corr
+
+
 
 class Target():
   """#Class for target distribution
@@ -44,8 +46,10 @@ class Target():
 
     raise Exception("Not implemented")
 
+
 OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
 """ @private """
+
 
 class Parameters(NamedTuple):
     """Tunable parameters
@@ -55,15 +59,17 @@ class Parameters(NamedTuple):
     eps: float
     sigma: Array
 
+
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, 
                  Target : Target,
                  L = None, eps = None,
-                 integrator = dynamics.minimal_norm, varEwanted = 5e-4,
+                 integrator = minimal_norm, varEwanted = 5e-4,
                  diagonal_preconditioning= False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
+                 boundary = None
                  ):
         """Args:
                 Target: the target distribution class
@@ -85,6 +91,8 @@ class Sampler:
 
                 **frac_tune3**: (num_samples * frac_tune3) steps will be used to improve the L tuning (should be around 10 effective samples long for the optimal performance). This stage is not neccessary if the posterior is close to a Gaussian and does not change much in general.
                             It can be memory intensive in high dimensions so try turning it off if you have problems with the memory.
+                
+                **boundary**: use if some parameters need to be constrained (a Boundary class object)
         """
 
         self.Target = Target
@@ -92,13 +100,14 @@ class Sampler:
         self.integrator = integrator
 
         self.integrator = integrator
-
+        
+        self.boundary = boundary
         ### integrator ###
-        hamiltonian_step, self.grad_evals_per_step = self.integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
-                                                                V= dynamics.update_momentum(self.Target.d, sequential=True),
+        hamiltonian_step, self.grad_evals_per_step = self.integrator(T= update_position(self.Target.grad_nlogp, boundary), 
+                                                                V= update_momentum(self.Target.d, sequential=True),
                                                                 d= self.Target.d)
-        self.dynamics = dynamics.mclmc(hamiltonian_step, dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
-        self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, True)
+        self.dynamics = mclmc(hamiltonian_step, partially_refresh_momentum(self.Target.d, True), self.Target.d)
+        self.random_unit_vector = random_unit_vector(self.Target.d, True)
 
         ### preconditioning ###
         self.diagonal_preconditioning = diagonal_preconditioning
@@ -324,7 +333,7 @@ class Sampler:
     def sample_normal(self, num_steps : int, state : MCLMCState, params : Parameters, thinning : int):
         """Stores transform(x) for each step."""
 
-        kernel = build_kernel(self.Target, self.integrator, params=params)
+        kernel = build_kernel(self.Target, self.integrator, params=params, boundary= self.boundary)
         if thinning == 1:
             return run_kernel(kernel=kernel, num_steps=num_steps, initial_state=state)
 
@@ -509,3 +518,99 @@ def point_reduction(num_points, reduction_factor):
     indexes = np.concatenate((np.arange(1, 1 + num_points // reduction_factor, dtype=int),
                               np.arange(1 + num_points // reduction_factor, num_points, reduction_factor, dtype=int)))
     return indexes
+
+
+
+
+class Boundary():
+    """Forms a transformation map which will bound the parameter space (this transformation will be applied in the position_update of the Hamiltonian dynamics integration)"""
+  
+    def __init__(self, d):
+        self.d = d
+
+    def positive(self, where):
+        """Used if some parameters are positive.
+           where: indices of positive parameters
+           
+           Example:
+              x = [x0, x1, x2, x3] and we want to constrain x1>0 and x2>0
+              We should use: where = jnp.array([1, 2])
+        """
+        mask = self.to_mask(where)
+        
+        self.map = lambda x: (jnp.abs(x) * mask + x * (1- mask), x < 0.)
+
+
+    def rectangular(self, where, a, b):
+        """Used if some parameters are rectangularly constrained (a< x < b)
+            
+           where: indices of constrained parameters
+           a: lower bounds
+           b: upper bounds
+            
+           Example:
+                x = [x0, x1, x2, x3, x4] and we want constraints 
+                1 < x2 < 3
+                -1 < x4 < -0.5.
+                
+                We should use: 
+                where = jnp.array([2, 4])
+                a = jnp.array([1., -1.])
+                b = jnp.array([3., -0.5.])
+        """
+
+        mask = self.to_mask(where)
+        
+        A, B = self.extend_bounds(mask, a, b)
+
+        self.map = lambda x: self.rect(x, A, B) * mask + x * (1- mask)
+
+
+    def positive_and_rectangular(self, where_positive, where_rectangular, a, b):
+        """Used if some parameters are positive (x>0) and some parameters are rectangularly constrained (a < x < b).
+            where_positive: indices of positively constrained parameters
+            where_rectangular: indices of rectangularly constrained parameters
+            a: lower bounds
+            b: upper bounds
+            
+            Example:
+                x = [x0, x1, x2, x3, x4, x5, x6] and we want constraints:
+                x1 > 0
+                x6 > 0
+                1 < x2 < 3
+                -1 < x5 < -0.5
+                
+                We should have:
+                where_positive = jnp.array([1, 6])
+                where_rectangular = jnp.array([2, 5])
+                a = jnp.array([1., -1.])
+                b = jnp.array([3., -0.5.])
+        """
+
+        mask_positive = self.to_mask(where_positive)
+        mask_rectangular = self.to_mask(where_rectangular)
+        A, B = self.extend_bounds(mask_rectangular, a, b)
+
+        # check that masks are not overlaping
+        if jnp.any(mask_positive & mask_rectangular):
+            raise ValueError('Parameter cannot be simultanously constrained to x > 0 and a < x < b.')
+
+
+        self.map = lambda x: jnp.abs(x) * mask_positive + self.rect(x, A, B) * mask_rectangular+ x * (1- mask_positive - mask_rectangular)
+
+
+    def rect(self, x, A, B):
+        return jnp.mod(x - A, B-A) + A
+
+
+    def extend_bounds(self, mask, a, b):
+        A = jnp.zeros(len(mask))
+        A[mask] = a
+        B = jnp.ones(len(mask))
+        B[mask] = b
+
+        return A, B
+    
+    def to_mask(self, where):
+        mask = jnp.zeros(self.d, dtype = bool)
+        return mask.at[where].set(True)

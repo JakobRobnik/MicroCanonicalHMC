@@ -26,6 +26,7 @@ class MCLMCInfo(NamedTuple):
     l: Array
     de: float
 
+
 def update_momentum(d, sequential):
   """The momentum updating map of the esh dynamics (see https://arxiv.org/pdf/2111.02434.pdf)
   similar to the implementation: https://github.com/gregversteeg/esh_dynamics
@@ -60,15 +61,20 @@ def update_momentum(d, sequential):
   return update_sequential if sequential else update_parallel
 
 
-
-def update_position(grad_nlogp):
+def update_position(grad_nlogp, boundary):
+  
   
   def update(eps, x, u):
     xx = x + eps * u
     ll, gg = grad_nlogp(xx)
-    return xx, ll, gg
+    return xx, ll, gg, jnp.zeros(xx.shape, dtype = bool)
   
-  return update
+  def update_with_boundary(eps, x, u):
+    xx, reflect = boundary.map(x + eps * u)
+    ll, gg = grad_nlogp(xx)
+    return xx, ll, gg, reflect
+    
+  return update if boundary == None else update_with_boundary
 
 
 
@@ -79,9 +85,11 @@ def minimal_norm(d, T, V):
 
       # V T V T V
       uu, r1 = V(eps * lambda_c, u, g * sigma)
-      xx, ll, gg = T(eps, x, 0.5*uu*sigma)
+      xx, ll, gg, reflect = T(eps, x, 0.5*uu*sigma)
+      uu = (1 - 2 * reflect) * uu
       uu, r2 = V(eps * (1 - 2 * lambda_c), uu, gg * sigma)
-      xx, ll, gg = T(eps, xx, 0.5*uu*sigma)
+      xx, ll, gg, reflect = T(eps, xx, 0.5*uu*sigma)
+      uu = (1 - 2 * reflect) * uu
       uu, r3 = V(eps * lambda_c, uu, gg * sigma)
 
       #kinetic energy change
@@ -99,7 +107,8 @@ def leapfrog(d, T, V):
 
     # V T V
     uu, r1 = V(eps * 0.5, u, g * sigma)
-    xx, l, gg = T(eps, x, uu*sigma)
+    xx, l, gg, reflect = T(eps, x, uu*sigma)
+    uu = (1 - 2 * reflect) * uu
     uu, r2 = V(eps * 0.5, uu, gg * sigma)
     
     # kinetic energy change
@@ -128,11 +137,11 @@ def mclmc(hamiltonian_dynamics, partially_refresh_momentum, d):
   return step
 
 
-def build_kernel(Target, integrator, params, sequential=True):
+def build_kernel(Target, integrator, params, sequential=True, boundary = None):
 
         L,eps, sigma = params
 
-        hamiltonian_step, _ = integrator(T= update_position(Target.grad_nlogp), 
+        hamiltonian_step, _ = integrator(T= update_position(Target.grad_nlogp, boundary), 
                                                                 V= update_momentum(Target.d, sequential=sequential),
                                                                 d= Target.d)
         move = mclmc(hamiltonian_step, partially_refresh_momentum(Target.d, sequential=sequential), Target.d)
