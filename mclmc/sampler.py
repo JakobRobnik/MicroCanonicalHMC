@@ -7,8 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from mclmc.dynamics import *#MCLMCInfo, MCLMCState, build_kernel, run_kernel
-
+from .dynamics import *# MCLMCInfo, MCLMCState, build_kernel, run_kernel
 from .correlation_length import ess_corr
 
 

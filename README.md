@@ -19,6 +19,7 @@ The associated papers are:
 - [method and benchmark tests](https://arxiv.org/abs/2212.08549)
 - [formulation as a stochastic process and first application to the lattice field theory](https://arxiv.org/abs/2303.18221)
 
-If you have any questions do not hesitate to contact me at jakob_robnik@berkeley.edu
+The code is still in active development, so let us know if you encounter any issues, including bad sampling performance, and we will do our best to help you out.
+You can submit a github issue or contact us at jakob_robnik@berkeley.edu .
 
 ![ensamble](img/rosenbrock.gif)
