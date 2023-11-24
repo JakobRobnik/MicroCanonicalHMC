@@ -68,7 +68,6 @@ def stn(d, hmc, adjust, full_refreshment= True, neff_required = 100.):
         return e, jnp.average(a)
 
     ess(5, 10., jnp.inf)
-    
 
     # set the grid
     Nopt, epsopt = predict_optimal(d, hmc, adjust)

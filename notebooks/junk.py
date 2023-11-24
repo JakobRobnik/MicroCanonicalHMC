@@ -3,15 +3,15 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from scipy.special import lambertw
-
-from scipy.integrate import odeint
-
-num_cores = jax.local_device_count()
-print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
 
-a = jnp.arange(5)
 
-b = jnp.tile(a, 3).reshape(3, 5)
-print(b)
+
+def uniform_halton(float_index, max_bits=10):
+  float_index = jnp.asarray(float_index)
+  bit_masks = 2**jnp.arange(max_bits, dtype=float_index.dtype)
+  return jnp.einsum('i,i->', jnp.mod((float_index + 1) // bit_masks, 2), 0.5 / bit_masks)
+
+plt.plot([uniform_halton(i + 0.) for i in range(100)])
+
+plt.show()
