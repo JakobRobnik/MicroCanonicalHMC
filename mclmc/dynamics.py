@@ -86,10 +86,10 @@ def minimal_norm(d, T, V):
       # V T V T V
       uu, r1 = V(eps * lambda_c, u, g * sigma)
       xx, ll, gg, reflect = T(eps, x, 0.5*uu*sigma)
-      uu = (1 - 2 * reflect) * uu
+      uu *= reflect
       uu, r2 = V(eps * (1 - 2 * lambda_c), uu, gg * sigma)
       xx, ll, gg, reflect = T(eps, xx, 0.5*uu*sigma)
-      uu = (1 - 2 * reflect) * uu
+      uu *= reflect
       uu, r3 = V(eps * lambda_c, uu, gg * sigma)
 
       #kinetic energy change
@@ -108,9 +108,9 @@ def leapfrog(d, T, V):
     # V T V
     uu, r1 = V(eps * 0.5, u, g * sigma)
     xx, l, gg, reflect = T(eps, x, uu*sigma)
-    uu = (1 - 2 * reflect) * uu
+    uu *= reflect
     uu, r2 = V(eps * 0.5, uu, gg * sigma)
-    
+
     # kinetic energy change
     kinetic_change = (r1 + r2) * (d-1)
 

@@ -307,9 +307,11 @@ class Sampler:
 
         ### sampling ###
 
+        hyp = Parameters(L, eps, sigma)
+        self.hyp = hyp
         
         if output == OutputType.normal or output == OutputType.detailed:
-            X, _, E = self.sample_normal(num_steps, MCLMCState(x, u, l, g, key), Parameters(L, eps, sigma), thinning)
+            X, _, E = self.sample_normal(num_steps, MCLMCState(x, u, l, g, key), hyp, thinning)
             if output == OutputType.detailed:
                 return X, E, L, eps
             else:
@@ -537,8 +539,11 @@ class Boundary():
         """
         mask = self.to_mask(where)
         
-        self.map = lambda x: (jnp.abs(x) * mask + x * (1- mask), x < 0.)
+        self.map = lambda x: (jnp.abs(x) * mask + x * (1- mask), self.to_reflect((x < 0.) * mask))
 
+    def to_reflect(self, mask):
+        return 1 - 2 * mask
+    
 
     def rectangular(self, where, a, b):
         """Used if some parameters are rectangularly constrained (a< x < b)
