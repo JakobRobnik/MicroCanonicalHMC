@@ -67,7 +67,7 @@ def update_position(grad_nlogp, boundary):
   def update(eps, x, u):
     xx = x + eps * u
     ll, gg = grad_nlogp(xx)
-    return xx, ll, gg, jnp.zeros(xx.shape, dtype = bool)
+    return xx, ll, gg, jnp.ones(xx.shape)
   
   def update_with_boundary(eps, x, u):
     xx, reflect = boundary.map(x + eps * u)
