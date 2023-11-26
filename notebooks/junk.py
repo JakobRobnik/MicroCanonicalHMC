@@ -13,10 +13,9 @@ from benchmarks.benchmarks_mchmc import *
 
 target = IllConditionedGaussian(d = 100, condition_number= 1000.)
 
-sampler = Sampler(target, diagonal_preconditioning= True)
+sampler = Sampler(target, diagonal_preconditioning= True, adjust = False)
 
-x = sampler.sample(100000)
-
-
-print(sampler.hyp['sigma'] / jnp.sqrt(target.second_moments))
+x = sampler.sample(10000)
+print(sampler.hyp)
+print(sampler.hyp.sigma / jnp.sqrt(target.second_moments))
 
