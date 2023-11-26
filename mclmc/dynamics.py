@@ -1,8 +1,22 @@
 import jax
 import jax.numpy as jnp
-
+from typing import NamedTuple
 
 lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the minimal norm integrator
+
+
+
+
+class State(NamedTuple):
+    """Dynamical state"""
+
+    x: jax.Array
+    u: jax.Array
+    l: float
+    g: jax.Array
+    key: tuple
+      
+
 
 
 def leapfrog(d, T, V):
@@ -49,14 +63,14 @@ def mclmc(hamilton, partial, get_nu):
       """One step of the generalized dynamics."""
       
       # Hamiltonian step
-      x, u, l, g, kinetic_change = hamilton(x=dyn['x'], u=dyn['u'], g=dyn['g'], eps=hyp['eps'], sigma = hyp['sigma'])
+      x, u, l, g, kinetic_change = hamilton(x=dyn.x, u=dyn.u, g=dyn.g, eps=hyp.eps, sigma = hyp.sigma)
 
       # Langevin-like noise
-      u, key = partial(u= u, random_key= dyn['key'], nu= get_nu(hyp['L']/hyp['eps']))
+      u, key = partial(u= u, random_key= dyn.key, nu= get_nu(hyp.L/hyp.eps))
 
-      energy_change = kinetic_change + l - dyn['l']
+      energy_change = kinetic_change + l - dyn.l
       
-      return {'x': x, 'u': u, 'l': l, 'g': g, 'key': key}, energy_change
+      return State(x, u, l, g, key), energy_change
 
   return step
 
@@ -66,12 +80,12 @@ def ma_step(hamilton, full, partial, get_nu):
 
   def step(dyn, hyp):
       
-      x, l, g = dyn['x'], dyn['l'], dyn['g']    
+      x, l, g = dyn.x, dyn.l, dyn.g
       
-      u, key = full(dyn['u'], dyn['key']) # do full refreshment (unless full is the identity)
+      u, key = full(dyn.u, dyn.key) # do full refreshment (unless full is the identity)
       
-      nu = get_nu(0.5 * dyn['L'] / dyn['eps']) # 1/2 because we use two O updates per step
-        
+      nu = get_nu(0.5 * hyp.Ld / hyp.eps) # 1/2 because we use two O updates per step
+      
       def dynamical_steps(state, useless):
         _x, _u, _l, _g, key, _kinetic = state
         
@@ -79,16 +93,16 @@ def ma_step(hamilton, full, partial, get_nu):
         _u, key = partial(u= _u, random_key= key, nu= nu)
         
         # BAB (or BABAB in case of Minimal norm integrator)
-        _x, _u, _l, _g, kinetic_change = hamilton(x=_x, u=_u, g=_g, eps= hyp['eps'], sigma= hyp['sigma'])
+        _x, _u, _l, _g, kinetic_change = hamilton(x=_x, u=_u, g=_g, eps= hyp.eps, sigma= hyp.sigma)
         
         # O
         _u, key = partial(u= _u, random_key= key, nu= nu)
         
         return (_x, _u, _l, _g, key, _kinetic + kinetic_change), None
 
-
+      N = 5#jnp.rint(hyp['L'] / hyp['eps']).astype(int)
       # do num_steps of the Hamiltonian (Langevin) dynamics
-      xx, uu, ll, gg, key, kinetic_change = jax.lax.scan(dynamical_steps, init = (x, u, l, g, key, 0.), xs = None, length = hyp['N'])[0]
+      xx, uu, ll, gg, key, kinetic_change = jax.lax.scan(dynamical_steps, init = (x, u, l, g, key, 0.), xs = None, length = N)[0]
 
       # total energy error
       energy_change = kinetic_change + ll - l
@@ -97,11 +111,11 @@ def ma_step(hamilton, full, partial, get_nu):
       key, key1 = jax.random.split(key)
       acc_prob = jnp.clip(jnp.exp(-energy_change), 0, 1)
       accept = jax.random.bernoulli(key1, acc_prob)
-      dyn = {'x': xx * accept + x * (1-accept), 
-             'u': uu * accept + u * (1-accept), 
-             'l': ll * accept + l * (1-accept), 
-             'g': gg * accept + g * (1-accept), 
-             'key': key}
+      dyn = State(xx * accept + x * (1-accept), 
+                  uu * accept + u * (1-accept), 
+                  ll * accept + l * (1-accept), 
+                  gg * accept + g * (1-accept), 
+                  key)
       
       return dyn, energy_change
       

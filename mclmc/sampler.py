@@ -28,8 +28,7 @@ class Target():
 OutputType = Enum('Output', ['normal', 'detailed', 'expectation', 'ess'])
 
 
-
-
+        
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
@@ -65,43 +64,36 @@ class Sampler:
 
         self.Target = Target
 
-                
+        ### dynamics ###
+        
         update_momentum, self.full_refresh, partial_refresh, get_nu = dynamics.setup(self.Target.d, True, False)
 
         hamiltonian_step, self.grads_per_step = integrator(T= dynamics.update_position(self.Target.grad_nlogp), 
                                                  V= update_momentum,
                                                  d= self.Target.d)
 
+        self.step = dynamics.ma_step(hamiltonian_step, lambda u, k: self.full_refresh(k), partial_refresh, get_nu) if adjust else dynamics.mclmc(hamiltonian_step, partial_refresh, get_nu)
 
-        Lfactor = 0.4 
+        ### initialize the hyperparameters
+        self.hyp = tune.Hyperparameters(L if L!= None else jnp.sqrt(self.Target.d), 
+                                        eps if eps != None else jnp.sqrt(self.Target.d) * 0.25, 
+                                        jnp.ones(self.Target.d), 
+                                        jnp.inf)
+
+
+        ### hyperparameter tuning ###
         
-        frac_tune = jnp.array([0.1, 0.1, 0.1])
-        if not adjust:
-            self.step = dynamics.mclmc(hamiltonian_step, partial_refresh, get_nu)
-            
-            tune12 = tune.tune12(self.step, self.Target.d, diagonal_preconditioning, frac_tune[:2], varEwanted, 1.5, 150)
-            tune3 = tune.tune3(self.step, frac_tune[2], Lfactor)
-
-            if frac_tune[2] == 0.:
-                self.schedule = [tune12,]
-            
-            else:
-                self.schedule = [tune12, tune3]
-            
-            
-        else:
-            self.step = dynamics.ma_step(hamiltonian_step, lambda u, k: self.full_refresh(k), partial_refresh, get_nu, adjust)
-            
-            self.acc_prob_wanted = acc_prob_wanted
-    
-
-        self.hyp = {'L': L if L!= None else jnp.sqrt(Target.d), 
-                    'eps': eps if eps != None else jnp.sqrt(Target.d) * 0.4, 
-                    'sigma': jnp.ones(self.Target.d)}
-
-
+        tune12 = tune.tune12(self.step, self.Target.d, adjust, diagonal_preconditioning, frac= jnp.array([0.1, 0.1]), 
+                             varEwanted= varEwanted, sigma_xi = 1.5, neff = 150, # these parameters will have no effect if adjust = True
+                             acc_prob_wanted = acc_prob_wanted, t0 = 10, gamma_dual= 0.05, kappa= 0.75) # these parameters will have no effect if adjust = False
         
-    def init_dyn(self, x_initial, random_key):
+        tune3 = tune.tune3(self.step, frac= 0.1, Lfactor= 0.4)
+
+        self.schedule = [tune12, tune3]
+        
+
+
+    def initialize(self, x_initial, random_key):
         """initialize the dynamical state"""
         
         ### random key ###
@@ -113,15 +105,16 @@ class Sampler:
         ### initial conditions ###
         if x_initial is None:  # draw the initial x from the prior
             key, prior_key = jax.random.split(key)
-            x_initial = self.Target.prior_draw(prior_key)
-        
-        l, g = self.Target.grad_nlogp(x_initial)
+            x = self.Target.prior_draw(prior_key)
+        else:
+            x = x_initial
+            
+        l, g = self.Target.grad_nlogp(x)
 
         u, key = self.full_refresh(key)
         #u = - g / jnp.sqrt(jnp.sum(jnp.square(g))) #initialize momentum in the direction of the gradient of log p
 
-        return {'x': x_initial, 'u': u, 'l': l, 'g': g, 'key': key}
-
+        return dynamics.State(x, u, l, g, key)
 
 
     def sample(self, num_steps, num_chains = 1, x_initial = None, random_key= None, output = OutputType.normal):
@@ -215,14 +208,15 @@ class Sampler:
         """sampling routine. It is called by self.sample"""
         
         ### initial conditions ###
-        dyn = self.init_dyn(x_initial, random_key)
+        dyn = self.initialize(x_initial, random_key)
         
         hyp = self.hyp
-
+        
         ### tuning ###
         dyn, hyp = tune.run(dyn, hyp, self.schedule, num_steps)
         self.hyp = hyp
 
+        
         ### sampling ###
 
         if output == OutputType.normal or output == OutputType.detailed:
@@ -248,7 +242,7 @@ class Sampler:
             dyn, energy_change = self.step(state, hyp)
  
             
-            return dyn, (self.Target.transform(dyn['x']), dyn['l'], energy_change)
+            return dyn, (self.Target.transform(dyn.x), dyn.l, energy_change)
 
 
         return jax.lax.scan(step, init= _dyn, xs=None, length=num_steps)[1]
@@ -264,7 +258,7 @@ class Sampler:
             dyn, _ = self.step(dyn, hyp)
             W, F2 = expe
         
-            F2 = (W * F2 + jnp.square(self.Target.transform(dyn['x']))) / (W + 1)  # Update <f(x)> with a Kalman filter
+            F2 = (W * F2 + jnp.square(self.Target.transform(dyn.x))) / (W + 1)  # Update <f(x)> with a Kalman filter
             W += 1
             bias_d = jnp.square(F2 - self.Target.second_moments) / self.Target.variance_second_moments
             bias = jnp.average(bias_d)
@@ -273,7 +267,7 @@ class Sampler:
             return (dyn, (W, F2)), bias
 
         
-        _, b = jax.lax.scan(step, init=(_dyn, (1, jnp.square(self.Target.transform(_dyn['x'])))), xs=None, length=num_steps)
+        _, b = jax.lax.scan(step, init=(_dyn, (1, jnp.square(self.Target.transform(_dyn.x)))), xs=None, length=num_steps)
 
         return b
 

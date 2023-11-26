@@ -3,15 +3,19 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
+from scipy.special import lambertw
+
+from scipy.integrate import odeint
+
+from mclmc.sampler import Sampler
+from benchmarks.benchmarks_mchmc import *
 
 
+target = IllConditionedGaussian(d = 100, condition_number= 1000.)
 
+sampler = Sampler(target, diagonal_preconditioning= True, adjust = False)
 
-def uniform_halton(float_index, max_bits=10):
-  float_index = jnp.asarray(float_index)
-  bit_masks = 2**jnp.arange(max_bits, dtype=float_index.dtype)
-  return jnp.einsum('i,i->', jnp.mod((float_index + 1) // bit_masks, 2), 0.5 / bit_masks)
+x = sampler.sample(10000)
+print(sampler.hyp)
+print(sampler.hyp.sigma / jnp.sqrt(target.second_moments))
 
-plt.plot([uniform_halton(i + 0.) for i in range(100)])
-
-plt.show()
