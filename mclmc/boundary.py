@@ -49,7 +49,7 @@ class Boundary():
         self.mask_periodic = self.to_mask(where_periodic)
 
 
-        self.a, self.b = self.extend_bounds(self.mask_reflect | self.mask_periodic, a, b)
+        self.a, self.b = self.extend_bounds(jnp.logical_or(self.mask_reflect, self.mask_periodic), a, b)
         
     
     def map(self, x):
@@ -68,7 +68,7 @@ class Boundary():
         x2, r2 = self._reflect(x)
         x3, r3 = self._periodic(x)
 
-        combine = lambda y0, y1, y2, y3: self.mask_positive * y1 + self.mask_reflect * y2 + self.mask_periodic * y3 + (1- self.mask_positive - self.mask_reflect - self.mask_periodic) * y0
+        combine = lambda y0, y1, y2, y3: self.mask_positive * y1 + self.mask_reflect * y2 + self.mask_periodic * y3 + (1- (self.mask_positive + self.mask_reflect + self.mask_periodic)) * y0
                 
         return combine(x0, x1, x2, x3), 1 - 2 * combine(r0, r1, r2, r3)
         
@@ -78,8 +78,7 @@ class Boundary():
         return jnp.abs(x), x < 0.
     
     def _periodic(self, x):
-        y = (x - self.a) / (self.b - self.a)
-        return jnp.mod(y, 1.)*(self.b - self.a) + self.a, False
+        return jnp.mod(x - self.a, self.b - self.a) + self.a, False
     
     def _reflect(self, x):
         y = jnp.mod((x - self.a) / (self.b - self.a), 2.)

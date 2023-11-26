@@ -2,13 +2,15 @@
 
 from enum import Enum
 from typing import NamedTuple
-from jax import Array
 import jax
+from jax import Array
 import jax.numpy as jnp
 import numpy as np
 
-from .dynamics import *# MCLMCInfo, MCLMCState, build_kernel, run_kernel
-from .correlation_length import ess_corr
+from . import dynamics
+from . import tune
+
+
 
 
 
@@ -59,13 +61,14 @@ class Parameters(NamedTuple):
     sigma: Array
 
 
+
 class Sampler:
     """the MCHMC (q = 0 Hamiltonian) sampler"""
 
     def __init__(self, 
                  Target : Target,
                  L = None, eps = None,
-                 integrator = minimal_norm, varEwanted = 5e-4,
+                 integrator = dynamics.minimal_norm, varEwanted = 5e-4,
                  diagonal_preconditioning= False,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
                  boundary = None
@@ -95,82 +98,35 @@ class Sampler:
         """
 
         self.Target = Target
-        self.sigma = jnp.ones(Target.d)
-        self.integrator = integrator
 
+        ### kernel ###
         self.integrator = integrator
-        
         self.boundary = boundary
-        ### integrator ###
-        hamiltonian_step, self.grad_evals_per_step = self.integrator(T= update_position(self.Target.grad_nlogp, boundary), 
-                                                                V= update_momentum(self.Target.d, sequential=True),
+
+        hamiltonian_step, self.grad_evals_per_step = self.integrator(T= dynamics.update_position(self.Target.grad_nlogp, boundary), 
+                                                                V= dynamics.update_momentum(self.Target.d, sequential=True),
                                                                 d= self.Target.d)
-        self.dynamics = mclmc(hamiltonian_step, partially_refresh_momentum(self.Target.d, True), self.Target.d)
-        self.random_unit_vector = random_unit_vector(self.Target.d, True)
+        self.dynamics = dynamics.mclmc(hamiltonian_step, dynamics.partially_refresh_momentum(self.Target.d, True), self.Target.d)
+        self.random_unit_vector = dynamics.random_unit_vector(self.Target.d, True)
 
-        ### preconditioning ###
-        self.diagonal_preconditioning = diagonal_preconditioning
-
-        ### autotuning parameters ###
-
-        # length of autotuning
-        self.frac_tune1 = frac_tune1 # num_samples * frac_tune1 steps will be used to autotune eps
-        self.frac_tune2 = frac_tune2 # num_samples * frac_tune2 steps will be used to approximately autotune L
-        self.frac_tune3 = frac_tune3 # num_samples * frac_tune3 steps will be used to improve L tuning.
-
-        self.varEwanted = varEwanted # 1e-3 #targeted energy variance Var[E]/d
-        neff = 150 # effective number of steps used to determine the stepsize in the adaptive step
-        self.gamma = (neff - 1.0) / (neff + 1.0) # forgeting factor in the adaptive step
-        self.sigma_xi= 1.5 # determines how much do we trust the stepsize predictions from the too large and too small stepsizes
-
-        self.Lfactor = 0.4 #in the third stage we set L = Lfactor * (configuration space distance bewteen independent samples)
-
-
-        ### default eps and L ###
-        if L != None:
-            self.L = L
-        else: #default value (works if the target is well preconditioned). If you are not happy with the default value and have not run the grid search we suggest using the autotuning
-            self.L = jnp.sqrt(Target.d)
-        if eps != None:
-            self.eps = eps
-        else: #defualt value (assumes preconditioned target and even then it might not work). Unless you have done a grid search to determine this value we suggest using the autotuning
-            self.eps = jnp.sqrt(Target.d) * 0.4
-
-
-
-    def nan_reject(self, x, u, l, g, xx, uu, ll, gg, eps, eps_max, dK):
-        """if there are nans, let's reduce the stepsize, and not update the state. The function returns the old state in this case."""
         
-        nonans = jnp.all(jnp.isfinite(xx))
+        ### hyperparameters ###
+        self.hyp = {'L': L if L!= None else jnp.sqrt(Target.d), 
+                    'eps': eps if eps != None else jnp.sqrt(Target.d) * 0.4, 
+                    'sigma': jnp.ones(self.Target.d)}
 
-        return nonans, *jax.tree_util.tree_map(lambda new, old: jax.lax.select(nonans, jnp.nan_to_num(new), old), (xx, uu, ll, gg, eps_max, dK), (x, u, l, g, eps * 0.8, 0.))
+
+        ### adaptation ###
+        tune12 = tune.tune12(self.step, self.Target.d, diagonal_preconditioning, jnp.array([frac_tune1, frac_tune2]), varEwanted, 1.5, 150)
+        tune3 = tune.tune3(self.step, frac_tune3, 0.4)
+
+        if frac_tune3 == 0.:
+            self.schedule = [tune12,]
+        else:
+            self.schedule = [tune12, tune3]
         
-        
-        
-    def dynamics_adaptive(self, state, L, sigma):
-        """One step of the dynamics with the adaptive stepsize"""
-
-        x, u, l, g, E, Feps, Weps, eps_max, key = state
-
-        eps = jnp.power(Feps/Weps, -1.0/6.0) #We use the Var[E] = O(eps^6) relation here.
-        eps = (eps < eps_max) * eps + (eps > eps_max) * eps_max  # if the proposed stepsize is above the stepsize where we have seen divergences
-
-        # dynamics
-        xx, uu, ll, gg, kinetic_change, key = self.dynamics(x, u, g, key, L, eps, sigma)
-
-        # step updating
-        success, xx, uu, ll, gg, eps_max, kinetic_change = self.nan_reject(x, u, l, g, xx, uu, ll, gg, eps, eps_max, kinetic_change)
-
-        DE = kinetic_change + ll - l  # energy difference
-        EE = E + DE  # energy
-        # Warning: var = 0 if there were nans, but we will give it a very small weight
-        xi = ((DE ** 2) / (self.Target.d * self.varEwanted)) + 1e-8  # 1e-8 is added to avoid divergences in log xi
-        w = jnp.exp(-0.5 * jnp.square(jnp.log(xi) / (6.0 * self.sigma_xi)))  # the weight which reduces the impact of stepsizes which are much larger on much smaller than the desired one.
-        Feps = self.gamma * Feps + w * (xi/jnp.power(eps, 6.0))  # Kalman update the linear combinations
-        Weps = self.gamma * Weps + w
-
-        return xx, uu, ll, gg, EE, Feps, Weps, eps_max, key, eps * success
-
+    
+    
 
 
     ### sampling routine ###
