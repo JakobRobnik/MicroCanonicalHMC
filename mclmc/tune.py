@@ -12,7 +12,7 @@ class Hyperparameters(NamedTuple):
 
     L: float
     eps: float
-    sigma: jax.Array
+    sigma: any
 
 
 # all tuning functions are wrappers, recieving some parameters and returning a function

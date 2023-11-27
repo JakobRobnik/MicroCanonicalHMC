@@ -8,10 +8,10 @@ lambda_c = 0.1931833275037836 #critical value of the lambda parameter for the mi
 class State(NamedTuple):
     """Dynamical state"""
 
-    x: jax.Array
-    u: jax.Array
+    x: any#jax.Array
+    u: any#jax.Array
     l: float
-    g: jax.Array
+    g: any#jax.Array
     key: tuple
 
 
