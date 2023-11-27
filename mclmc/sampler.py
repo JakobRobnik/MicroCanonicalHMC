@@ -37,6 +37,7 @@ class Sampler:
                  integrator = dynamics.minimal_norm, 
                  varEwanted = 5e-4, acc_prob_wanted = 0.7,
                  diagonal_preconditioning= False,
+                 frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1
                  ):
         """Args:
                 Target: the target distribution class
@@ -83,14 +84,15 @@ class Sampler:
 
         ### hyperparameter tuning ###
         
-        tune12 = tune.tune12(self.step, self.Target.d, adjust, diagonal_preconditioning, frac= jnp.array([0.1, 0.1]), 
+        tune12 = tune.tune12(self.step, self.Target.d, adjust, diagonal_preconditioning, frac= jnp.array([frac_tune1, frac_tune2]), 
                              varEwanted= varEwanted, sigma_xi = 1.5, neff = 150, # these parameters will have no effect if adjust = True
                              acc_prob_wanted = acc_prob_wanted, t0 = 10, gamma_dual= 0.05, kappa= 0.75) # these parameters will have no effect if adjust = False
         
-        tune3 = tune.tune3(self.step, frac= 0.1, Lfactor= 0.4)
-
-        self.schedule = [tune12, tune3]
-        
+        if frac_tune3 != 0.:
+            tune3 = tune.tune3(self.step, frac= frac_tune3, Lfactor= 0.4)
+            self.schedule = [tune12, tune3]
+        else:
+            self.schedule = [tune12, ]    
 
 
     def initialize(self, x_initial, random_key):
