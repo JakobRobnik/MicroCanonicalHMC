@@ -254,7 +254,7 @@ class Sampler:
         
         
         
-    def build_kernel(self, thinning):
+    def build_kernel(self, thinning : int):
         """kernel for sampling_normal"""
         
         def kernel_with_thinning(dyn, hyp):
@@ -287,7 +287,7 @@ class Sampler:
 
 
 
-    def sample_ess(self, num_steps, _dyn, hyp):
+    def sample_ess(self, num_steps : int, _dyn : dynamics.State, hyp : tune.Hyperparameters):
         """Stores the bias of the second moments for each step."""
         
         def step(state_track, useless):
