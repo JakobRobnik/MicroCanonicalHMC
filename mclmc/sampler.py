@@ -56,7 +56,7 @@ class Sampler:
                  Target : Target,
                  L = None, eps = None,
                  integrator = dynamics.minimal_norm, varEwanted = 5e-4,
-                 diagonal_preconditioning= False,
+                 diagonal_preconditioning= True,
                  frac_tune1 = 0.1, frac_tune2 = 0.1, frac_tune3 = 0.1,
                  boundary = None
                  ):
