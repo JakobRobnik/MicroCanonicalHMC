@@ -22,7 +22,7 @@ The associated papers are:
 The code is still in active development, so let us know if you encounter any issues, including bad sampling performance, and we will do our best to help you out.
 You can submit a github issue or contact us at jakob_robnik@berkeley.edu .
 
-## Some common misconceptions and frequently asked questions:
+## Frequently asked questions:
 
 ### How can I sample with MCHMC if my parameters have bounds?
 Check out [this tutorial](notebooks/tutorials/Constraints.ipynb).
