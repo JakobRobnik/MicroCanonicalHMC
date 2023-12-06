@@ -121,6 +121,8 @@ def tune12(dynamics, d,
         dyn, _, hyp, adap, kalman_state = state
         
         # determine L
+        L = hyp.L
+        sigma = hyp.sigma
         if num_steps2 != 0.:
             _, F1, F2 = kalman_state
             variances = F2 - jnp.square(F1)
