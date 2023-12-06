@@ -31,7 +31,7 @@ SEED = 0
 # USE ipython, for some reason version of something is different in ipython
 # for this to pass, the MCLMC repo's prngkeys must all be set to SEED
 # the seeds in tuning also need to be set to SEED in blackjax
-def test_mclmc_sampler():
+def aligned():
     # Set up your test inputs
     num_steps = 1000
     num_chains = 1
@@ -145,4 +145,4 @@ def run_mclmc(logdensity_fn,num_steps, initial_position, key):
 # out = run_mclmc(logdensity_fn=lambda x: -0.5 * jnp.sum(jnp.square(x)), num_steps=1000, initial_position=jnp.array([1., 1.]), key=jax.random.PRNGKey(0))
 # print(out.shape, out)
 
-test_mclmc_sampler()
+aligned()
