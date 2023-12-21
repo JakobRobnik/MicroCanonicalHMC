@@ -293,21 +293,6 @@ class Sampler:
         return (100. / (find_crossing(bsq, 0.01) * self.grad_evals_per_step)) * cutoff_reached
 
 
-def find_crossing(array, cutoff):
-    """the smallest M such that array[m] < cutoff for all m > M"""
-
-    def step(carry, element):
-        """carry = (, 1 if (array[i] > cutoff for all i < current index) else 0"""
-        above_threshold = element > cutoff
-        never_been_below = carry[1] * above_threshold  #1 if (array[i] > cutoff for all i < current index) else 0
-        return (carry[0] + never_been_below, never_been_below), above_threshold
-
-    state, track = jax.lax.scan(step, init=(0, 1), xs=array, length=len(array))
-
-    return state[0]
-    #return jnp.sum(track) #total number of indices for which array[m] < cutoff
-
-
 
 def point_reduction(num_points, reduction_factor):
     """reduces the number of points for plotting purposes"""
