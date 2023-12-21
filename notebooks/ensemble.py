@@ -1,15 +1,10 @@
-import numpy as np
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
-import pandas as pd
 
 import blackjax.mcmc.mclmc_ensemble as emclmc
 
 from benchmarks.targets import *
-#from benchmarks.german_credit import Target as GermanCredit
-from benchmarks.brownian import Target as Brownian
-from benchmarks.IRT import Target as IRT
 from benchmarks import error
 
 
@@ -84,8 +79,8 @@ def run(target, num_steps, chains, key):
     key_sampling, key_init = jax.random.split(key)
     
     x_init = jax.vmap(target.prior_draw)(jax.random.split(key_init, chains))
-    
-    info = emclmc.stage1(lambda x: -target.nlogp(x), num_steps, x_init, chains, key_sampling, observables = jnp.square)
+    observables = lambda x: jnp.square(target.transform(x))
+    info = emclmc.stage1(lambda x: -target.nlogp(x), num_steps, x_init, chains, key_sampling, observables = observables)
     bias = [error.err(target.second_moments, target.variance_second_moments, contract)(info['expected vals']) for contract in [jnp.max, jnp.average]]
     
     grads, success = error.grads_to_low_error(bias[0])
@@ -102,16 +97,16 @@ def mainn():
 
     targets = [[Banana(prior = 'prior'), 100],
                 [IllConditionedGaussianGamma(prior = 'prior'), 600],
-                #[GermanCredit(), 400],
+                [GermanCredit(), 400],
                 [Brownian(), 500],
-                #[IRT(), 700],
+                [ItemResponseTheory(), 700],
                 [StochasticVolatility(), 2000]]
 
     chains = 2048
 
     key = jax.random.PRNGKey(42)
     
-    for i in [0,]:
+    for i in [0, 1, 2, 3, 4, 5]:
         target, num_steps = targets[i]
         print(target.name)
         run(target, num_steps, chains, key)
@@ -122,5 +117,4 @@ def mainn():
 if __name__ == '__main__':
     
     mainn()
-
 

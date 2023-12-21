@@ -93,6 +93,7 @@ class IllConditionedESH():
 
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
 
+
     def nlogp(self, x):
         """- log p of the target distribution"""
         return 0.5 * jnp.sum(jnp.square(x) / self.variance, axis= -1)
@@ -498,7 +499,7 @@ class Brownian():
         self.d = self.num_data + 2
         self.name = 'brownian'
 
-        ground_truth_moments = jnp.load('/ground_truth/' + self.name + '/ground_truth.npy')
+        ground_truth_moments = jnp.load(dirr + '/ground_truth/' + self.name + '/ground_truth.npy')
         self.second_moments, self.variance_second_moments = ground_truth_moments[0], ground_truth_moments[1]
 
         self.data = jnp.array([0.21592641, 0.118771404, -0.07945447, 0.037677474, -0.27885845, -0.1484156, -0.3250906, -0.22957903,
@@ -576,10 +577,14 @@ class GermanCredit:
         self.d = 51 #global scale + 25 local scales + 25 weights
         self.name = 'GC'
 
-        self.labels = jnp.load('data/gc_labels.npy')
-        self.features = jnp.load('data/gc_features.npy')
+        self.labels = jnp.load(dirr + '/data/gc_labels.npy')
+        self.features = jnp.load(dirr + '/data/gc_features.npy')
+
+        truth = jnp.load(dirr+'/ground_truth/' + self.name + '/ground_truth.npy')
+        self.second_moments, self.variance_second_moments = truth[0], truth[1]
 
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
 
     def transform(self, x):
         return jnp.concatenate((jnp.exp(x[:26]), x[26:]))
@@ -626,8 +631,8 @@ class ItemResponseTheory:
         self.students = 400
         self.questions = 100
 
-        self.mask = jnp.load('data/irt_mask.npy')
-        self.labels = jnp.load('data/irt_labels.npy')
+        self.mask = jnp.load(dirr + '/data/irt_mask.npy')
+        self.labels = jnp.load(dirr + '/data/irt_labels.npy')
 
         truth = jnp.load(dirr+'/ground_truth/' + self.name + '/ground_truth.npy')
         self.second_moments, self.variance_second_moments = truth[0], truth[1]
@@ -665,7 +670,7 @@ class StochasticVolatility():
     """Example from https://num.pyro.ai/en/latest/examples/stochastic_volatility.html"""
 
     def __init__(self):
-        self.SP500_returns = jnp.load('data/SP500.npy')
+        self.SP500_returns = jnp.load(dirr + '/data/SP500.npy')
 
         self.name = 'SV'
         self.d = 2429
