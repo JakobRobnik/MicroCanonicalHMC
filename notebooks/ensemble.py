@@ -6,7 +6,7 @@ import pandas as pd
 
 import blackjax.mcmc.mclmc_ensemble as emclmc
 
-from benchmarks.benchmarks_mchmc import *
+from benchmarks.targets import *
 #from benchmarks.german_credit import Target as GermanCredit
 from benchmarks.brownian import Target as Brownian
 from benchmarks.IRT import Target as IRT

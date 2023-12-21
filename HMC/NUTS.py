@@ -4,8 +4,8 @@ from scipy.stats import special_ortho_group
 import jax
 from numpyro.infer import MCMC, NUTS, HMC
 
-import benchmarks.benchmarks_numpyro as targets
-import benchmarks.benchmarks_mchmc as MCHMC_targets
+import benchmarks.targets_numpyro as targets
+import benchmarks.targets as MCHMC_targets
 
 import pandas as pd
 

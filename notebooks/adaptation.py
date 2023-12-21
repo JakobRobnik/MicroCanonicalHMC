@@ -6,7 +6,7 @@ import pandas as pd
 
 from mclmc.vanilla import Sampler
 from mclmc import dynamics
-from benchmarks.benchmarks_mchmc import *
+from benchmarks.targets import *
 
 
 target= StandardNormal(d = 100)
