@@ -15,7 +15,6 @@ dirr = os.path.dirname(os.path.realpath(__file__))
 
 name = 'german_credit'
 target_base = gym.targets.GermanCreditNumericSparseLogisticRegression()
-gym.targets.BrownianMotionMissingMiddleObservations
 prior_distribution = target_base.prior_distribution()
 
 target = gym.targets.VectorModel(target_base, flatten_sample_transformations=True)
@@ -30,7 +29,8 @@ target_nlog_prob_grad_fn = jax.grad(target_nlog_prob_fn)
 
 
 
-class Target():
+
+class Target:
 
     def __init__(self):
         """local scales (25), global scale (1), unscaled weights (25)"""
@@ -171,6 +171,22 @@ def joint_ground_truth():
 
 if __name__ == '__main__':
 
-    ground_truth(2)
+    gc = Target()
+    key = jax.random.PRNGKey(0)
+    x = gc.prior_draw(key)
+    grad1 = gc.grad_nlogp(x)[1]
+
+
+    from benchmarks.benchmarks_mchmc import GermanCredit
+    gc1 = GermanCredit()
+
+    grad2 = gc1.grad_nlogp(x)[1]
+
+    print(grad1)
+    print(grad2)
+
+    print(jnp.max(jnp.abs(grad1-grad2)))
+
+    #ground_truth(2)
 
     #joint_ground_truth()

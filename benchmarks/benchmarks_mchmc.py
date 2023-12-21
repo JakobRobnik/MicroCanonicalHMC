@@ -399,7 +399,7 @@ class Funnel_with_Data():
         z = x[:- 1][subset]
 
         prior_theta = jnp.square(theta / self.sigma_theta)
-        prior_z = np.sum(subset) * theta + jnp.exp(-theta) * jnp.sum(jnp.square(z*subset))
+        prior_z = jnp.sum(subset) * theta + jnp.exp(-theta) * jnp.sum(jnp.square(z*subset))
         likelihood = jnp.sum(jnp.square((z - self.data)*subset / self.sigma_data))
 
         return 0.5 * (prior_theta + prior_z + likelihood)
@@ -465,7 +465,7 @@ class Rosenbrock():
         return jax.random.normal(key, shape = (self.d, ))
 
 
-    def compute_moments(self):
+    def ground_truth(self):
         num = 100000000
         x = np.random.normal(loc=1.0, scale=1.0, size=num)
         y = np.random.normal(loc=np.square(x), scale=jnp.sqrt(self.Q), size=num)
@@ -482,18 +482,197 @@ class Rosenbrock():
 
 
 
+class Brownian():
+    """
+    log sigma_i ~ N(0, 2)
+    log sigma_obs ~N(0, 2)
+
+    x ~ RandomWalk(0, sigma_i)
+    x_observed = (x + noise) * mask
+    noise ~ N(0, sigma_obs)
+    mask = 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1
+    """
+
+    def __init__(self):
+        self.num_data = 30
+        self.d = self.num_data + 2
+        self.name = 'brownian'
+
+        ground_truth_moments = jnp.load('/ground_truth/' + self.name + '/ground_truth.npy')
+        self.second_moments, self.variance_second_moments = ground_truth_moments[0], ground_truth_moments[1]
+
+        self.data = jnp.array([0.21592641, 0.118771404, -0.07945447, 0.037677474, -0.27885845, -0.1484156, -0.3250906, -0.22957903,
+                               -0.44110894, -0.09830782, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.8786016, -0.83736074,
+                               -0.7384849, -0.8939254, -0.7774566, -0.70238715, -0.87771565, -0.51853573, -0.6948214, -0.6202789])
+        # sigma_obs = 0.15, sigma_i = 0.1
+
+        self.observable = jnp.concatenate((jnp.ones(10), jnp.zeros(10), jnp.ones(10)))
+        self.num_observable = jnp.sum(self.observable)  # = 20
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
+    def nlogp(self, x):
+        # y = softplus_to_log(x[:2])
+
+        lik = 0.5 * jnp.exp(-2 * x[1]) * jnp.sum(self.observable * jnp.square(x[2:] - self.data)) + x[
+            1] * self.num_observable
+        prior_x = 0.5 * jnp.exp(-2 * x[0]) * (x[2] ** 2 + jnp.sum(jnp.square(x[3:] - x[2:-1]))) + x[0] * self.num_data
+        prior_logsigma = 0.5 * jnp.sum(jnp.square(x / 2.0))
+
+        return lik + prior_x + prior_logsigma
+
+
+    def transform(self, x):
+        return jnp.concatenate((jnp.exp(x[:2]), x[2:]))
+
+    # def prior_draw(self, key):
+    #     """draws x from the prior"""
+
+    #     return jax.scipy.optimize.minimize(self.nlogp, x0 = jnp.zeros(self.d), method = 'BFGS', options = {'maxiter': 100}).x
+
+    def prior_draw(self, key):
+        key_walk, key_sigma = jax.random.split(key)
+
+        # original prior
+        # log_sigma = jax.random.normal(key_sigma, shape= (2, )) * 2
+
+        # narrower prior
+        log_sigma = jnp.log(np.array([0.1, 0.15])) + jax.random.normal(key_sigma, shape=(
+        2,)) * 0.1  # *0.05# log sigma_i, log sigma_obs
+
+        walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
+
+        return jnp.concatenate((log_sigma, walk))
+
+    def generate_data(self, key):
+        key_walk, key_sigma, key_noise = jax.random.split(key, 3)
+
+        log_sigma = jax.random.normal(key_sigma, shape=(2,)) * 2  # log sigma_i, log sigma_obs
+
+        walk = random_walk(key_walk, self.d - 2) * jnp.exp(log_sigma[0])
+        noise = jax.random.normal(key_noise, shape=(self.d - 2,)) * jnp.exp(log_sigma[1])
+
+        return walk + noise
+
+
+class GermanCredit:
+    """ Taken from inference gym.
+
+        x = (global scale, local scales, weights)
+
+        global_scale ~ Gamma(0.5, 0.5)
+
+        for i in range(num_features):
+            unscaled_weights[i] ~ Normal(loc=0, scale=1)
+            local_scales[i] ~ Gamma(0.5, 0.5)
+            weights[i] = unscaled_weights[i] * local_scales[i] * global_scale
+
+        for j in range(num_datapoints):
+            label[j] ~ Bernoulli(features @ weights)
+
+        We use a log transform for the scale parameters.
+    """
+
+    def __init__(self):
+        self.d = 51 #global scale + 25 local scales + 25 weights
+        self.name = 'GC'
+
+        self.labels = jnp.load('data/gc_labels.npy')
+        self.features = jnp.load('data/gc_features.npy')
+
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
+    def transform(self, x):
+        return jnp.concatenate((jnp.exp(x[:26]), x[26:]))
+
+    def nlogp(self, x):
+
+        scales = jnp.exp(x[:26])
+
+        # prior
+        pr = jnp.sum(0.5 * scales + 0.5 * x[:26]) + 0.5 * jnp.sum(jnp.square(x[26:]))
+
+        # transform
+        transform = -jnp.sum(x[:26])
+
+        # likelihood
+        weights = scales[0] * scales[1:26] * x[26:]
+        logits = self.features @ weights # = jnp.einsum('nd,...d->...n', self.features, weights)
+        lik = jnp.sum(self.labels * jnp.logaddexp(0., -logits) + (1-self.labels)* jnp.logaddexp(0., logits))
+
+        return lik + pr + transform
+    #
+    # def prior_draw(self, key):
+    #     key1, key2 = jax.random.split(key)
+    #
+    #     scales = jax.random.gamma(key1, 0.5, shape=(26,)) * 2.  # we divided by beta = 0.5
+    #     unscaled_weights = jax.random.normal(key2, shape=(25,))
+    #
+    #     return jnp.concatenate((scales, unscaled_weights))
+    #
+
+    def prior_draw(self, key):
+        weights = jax.random.normal(key, shape = (25, ))
+        return jnp.concatenate((jnp.zeros(26), weights))
+
+
+
+
+class ItemResponseTheory:
+    """ Taken from inference gym."""
+
+    def __init__(self):
+        self.d = 501
+        self.name = 'IRT'
+        self.students = 400
+        self.questions = 100
+
+        self.mask = jnp.load('data/irt_mask.npy')
+        self.labels = jnp.load('data/irt_labels.npy')
+
+        truth = jnp.load(dirr+'/ground_truth/' + self.name + '/ground_truth.npy')
+        self.second_moments, self.variance_second_moments = truth[0], truth[1]
+
+        self.grad_nlogp = jax.value_and_grad(self.nlogp)
+        self.transform = lambda x: x
+
+    def nlogp(self, x):
+
+        students = x[:self.students]
+        mean = x[self.students]
+        questions = x[self.students + 1:]
+
+        # prior
+        pr = 0.5 * (jnp.square(mean - 0.75) + jnp.sum(jnp.square(students)) + jnp.sum(jnp.square(questions)))
+
+        # likelihood
+        logits = mean + students[:, jnp.newaxis] - questions[jnp.newaxis, :]
+        bern = self.labels * jnp.logaddexp(0., -logits) + (1 - self.labels) * jnp.logaddexp(0., logits)
+        bern = jnp.where(self.mask, bern, jnp.zeros_like(bern))
+        lik = jnp.sum(bern)
+
+        return lik + pr
+
+
+    def prior_draw(self, key):
+        x = jax.random.normal(key, shape = (self.d,))
+        x = x.at[self.students].add(0.75)
+        return x
+
+
+
+
 class StochasticVolatility():
     """Example from https://num.pyro.ai/en/latest/examples/stochastic_volatility.html"""
 
     def __init__(self):
-        self.SP500_returns = np.load(dirr + '/SP500.npy')
+        self.SP500_returns = jnp.load('data/SP500.npy')
 
         self.name = 'SV'
         self.d = 2429
 
         self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
 
-        data = np.load(dirr + '/ground_truth/stochastic_volatility/ground_truth_0.npy')
+        data = jnp.load(dirr + '/ground_truth/stochastic_volatility/ground_truth_0.npy')
         self.second_moments = data[0]
         self.variance_second_moments = data[1]
         self.grad_nlogp = jax.value_and_grad(self.nlogp)
@@ -535,7 +714,10 @@ class StochasticVolatility():
         walk = random_walk(key_walk, self.d - 2) * params[0]
         return jnp.concatenate((walk, jnp.log(params/scales)))
     
-    
+
+
+
+
 def nlogp_StudentT(x, df, scale):
     y = x / scale
     z = (
@@ -546,6 +728,7 @@ def nlogp_StudentT(x, df, scale):
         - jax.scipy.special.gammaln(0.5 * (df + 1.0))
     )
     return 0.5 * (df + 1.0) * jnp.log1p(y**2.0 / df) + z
+
 
 
 def random_walk(key, num):
@@ -567,6 +750,7 @@ def random_walk(key, num):
         return (x, randkey), x
 
     return jax.lax.scan(step, init=(0.0, key), xs=None, length=num)[1]
+
 
 
 class DiagonalPreconditioned():
@@ -614,20 +798,6 @@ def get_contour_plot(target, x, y):
 
     return X, Y, Z
 
-
-
-def check_gradient(target, x):
-    """check the analytical gradient of the target at point x"""
-
-    from scipy import optimize
-
-    approx_grad= optimize.approx_fprime(x, target.nlogp, 1e-3)
-
-    grad= target.grad_nlogp(x)
-
-    print('numerical grad: ', approx_grad)
-    print('analytical grad: ', grad)
-    print('ratio: ', grad / approx_grad)
 
 
 

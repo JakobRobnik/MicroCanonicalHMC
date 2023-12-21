@@ -121,13 +121,9 @@ def joint_ground_truth():
 
 if __name__ == '__main__':
 
-    kkey = jax.random.PRNGKey(0)
-    key = jax.random.split(kkey, 100)
-    t = Target()
+    key = jax.random.PRNGKey(0)
 
-    x = jax.vmap(t.prior_draw)(key)
-    g = jax.vmap(lambda x: t.grad_nlogp(x)[1])(x)
+    from benchmarks.benchmarks_mchmc import ItemResponseTheory
+    gc1 = ItemResponseTheory()
 
-    print(jnp.average(x * g, axis=0))
-
-    #Target().prior_draw(jax.random.PRNGKey(0))
+    gc1.prior_draw(key)
