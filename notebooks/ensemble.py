@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 
+from mclmc.ensemble import Sampler
 import blackjax.mcmc.mclmc_ensemble as emclmc
 
 from benchmarks.targets import *
@@ -89,27 +90,34 @@ def run(target, num_steps, chains, key):
     
     if success:
        print(grads.astype(int))
+
+
+
+
+def run_old(target, num_steps, chains, key):
     
-        
+    sampler = Sampler(target, chains, diagonal_preconditioning = False, alpha = 1.)
+    x = sampler.sample(num_steps)
+    
 
 def mainn():
 
 
     targets = [[Banana(prior = 'prior'), 100],
-                [IllConditionedGaussianGamma(prior = 'prior'), 600],
+                [IllConditionedGaussianGamma(prior = 'prior'), 500],
                 [GermanCredit(), 400],
                 [Brownian(), 500],
                 [ItemResponseTheory(), 700],
                 [StochasticVolatility(), 2000]]
 
-    chains = 2048
+    chains = 1024
 
     key = jax.random.PRNGKey(42)
     
-    for i in [0, 1, 2, 3, 4, 5]:
+    for i in [4, ]:
         target, num_steps = targets[i]
         print(target.name)
-        run(target, num_steps, chains, key)
+        run_old(target, num_steps, chains, key)
 
    
     
