@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
-from mclmc.sampling import dynamics
+from mclmc import dynamics
 
-from mclmc.sampling.dynamics import update_momentum
+from .dynamics import update_momentum
 
 
 class vmap_target:
