@@ -4,7 +4,7 @@ For details, please refer to https://microcanonical-monte-carlo.netlify.app/.
 
 ## Usage
 
-This library is currently deprecated, in favor of the implementation in Blackjax: https://blackjax-devs.github.io/sampling-book/algorithms/mclmc.html.
+This repository is currently deprecated, in favor of the implementation in Blackjax: https://blackjax-devs.github.io/sampling-book/algorithms/mclmc.html.
 
 A Julia implementation is also available [here](https://github.com/JaimeRZP/MicroCanonicalHMC.jl).
 
