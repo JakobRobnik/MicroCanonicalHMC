@@ -1,81 +1,116 @@
-import numpy as np
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
-from scipy.stats import norm
+import blackjax
 
 
-a = 30.
-m = 0.3
+def anneal_target(logp, shift, mass):
 
-def p(x):
-    return (1- m) *norm.pdf(x, 0.0, 1.0) + m * norm.pdf(x, a, 2.0)
+    def logp2(x):
+        return jnp.logaddexp(logp(x), jnp.log(mass) - 0.5 * d * jnp.log(2 * jnp.pi) - 0.5 * jnp.sum(jnp.square(x-shift)))
 
-
-
-def shift_annealing():
+    return logp2
 
 
-    x = np.linspace(-40, 40,  400)
+def evidence(x, final_shift, mass):
 
-    def get_ind(xmin, xmax):
-        return (x < xmax) & (x > xmin)
+    M, d = x.shape
 
-    num = 5
-    plt.figure(figsize= (6, 4 * num))
+    # count the number of particles in the standard Gaussian mode
 
-    beta = [0, 0.1, 0.2, 0.4, 1]
-    for i in range(num):
-        plt.subplot(num, 1, i+1)
-        ax = plt.gca()
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
-        ax.spines['left'].set_visible(False)
+    def is_in_mode2(y):
+        dist = jnp.sum(jnp.square(y - final_shift))
+        prob = jax.scipy.stats.chi2.sf(dist, d)
+        return prob > 1 / M
 
-        b = beta[i]
-        plt.title(r'$\beta = $' + str(b), y = 0.85, color = 'royalblue')
-        p1 = p(x)
-        p2 = p(x + (1 - b) * a)
-        plt.plot(x, p1, color= 'tab:blue', alpha = 0.5)
-        plt.plot(x, p2, color='tab:red', alpha = 0.5)
-        plt.plot(x, p1 + p2, color = 'black', lw = 1)
-        mask1 = get_ind(-10, 20 + 20 * (i == num-1))
-        plt.fill_between(x[mask1], np.zeros(len(x))[mask1], (p1 + p2)[mask1], color = 'black', alpha = 0.1)
-        plt.ylim(0, 1.2 * np.max(p1 + p2))
-        #if i != num-1:
-        plt.xticks([])
+    mode2 = jax.vmap(is_in_mode2)(x)
+    num2 = jnp.sum(mode2)
+    print(M- num2, num2)
+    print(mode2)
 
-        plt.yticks([])
-
-    plt.tight_layout()
-    plt.savefig('shift_annealing.png')
-    plt.show()
+    return mass * (M - num2) / num2
 
 
-def temperature_annealing():
-    x = np.linspace(-10, 50,  400)
+def shift_annealing(logp, sampler, init, mass, rng_key):
+    """Estimates the evidence: int e^logp(x) dx by shift annealing.
+        Args:
+            logp: a function with mode close to x = 0 and preconditioned to be as close to the standard Gaussian as possible (doesn't actually need to be a Gaussian)
+            sampler: a function with signature: (logp, initial condition for n particles, random key) -> final state of n particles
+            initial condition: location of n particles. 2n particles will be run. shape = (n, d)
+            mass: float. The annealing target is q(x | mu) = e^logp(x) + mass * N(mu, 1). mass should be the estimate of the evidence that we have before running this algorithm
+        Returns:
+            evidence: float
+    """
+    d = init.shape[1]
+    key_a, key_init, key_sampler = jax.random.split(rng_key, 3)
+    
+    ### random unit vector for a:
+    a = jax.random.normal(key_a, shape= (d,))
+    a /= jnp.sqrt(jnp.sum(jnp.square(a)))
+    
+    ### annealing schedule
+    schedule = jnp.sqrt(d) * jnp.linspace(0., 1.5, 20)
 
-    num = 5
-    plt.figure(figsize= (6, 4 * num))
+    ### initial condition (half of particles from the given distribution, the other half from the added Gaussian)
+    y = jax.random.normal(key_init, shape= init.shape) + schedule[0] * a
+    x = jnp.concatenate((init, y))
 
-    beta = [0, 0.01, 0.05, 0.1, 1]
-    for i in range(num):
-        plt.subplot(num, 1, i+1)
-        ax = plt.gca()
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
-        ax.spines['left'].set_visible(False)
+    ### run the algorithm
+    key = jax.random.split(key_sampler, len(schedule))
+    folder = 'data/shift_annealing/stn/'
+    jnp.save(folder + '0.npy', x)
+    for i in range(len(schedule)):
+        print(str(i) + '/' + str(len(schedule)))
+        target = anneal_target(logp, schedule[i] * a, mass)
+        x = sampler(target, x, key[i])
+        jnp.save(folder + str(i+1) + '.npy', x)
+    
+    ev= evidence(x, schedule[-1] * a, mass)
+    print(ev)
+    
+    return ev
+    
 
-        b = beta[i]
-        plt.title(r'$\beta = $' + str(b), y = 0.85, color= 'royalblue')
-        p1 = p(x)**b
-        plt.plot(x, p1, color = 'tab:blue', lw = 1)
 
-        plt.ylim(0, 1.2 * np.max(p1))
+def prepare_mclmc(num_steps, stepsize, L):
 
-        plt.xticks([])
-        plt.yticks([])
+    def mclmc(logp, initial_position, rng_key):
 
-    plt.tight_layout()
-    plt.savefig('temperature_annealing.png')
-    plt.show()
+        alg = blackjax.mclmc(logp, L, stepsize)
 
-shift_annealing()
+        run = lambda key, x: blackjax.util.run_inference_algorithm(rng_key= key, initial_state_or_position= x, inference_algorithm=alg, num_steps=num_steps, progress_bar= False, transform = lambda state: None)[0].position
+
+        return jax.vmap(run)(jax.random.split(rng_key, initial_position.shape[0]), initial_position)
+    
+    return mclmc
+
+
+def IllConditionedGaussian(d, condition_number):
+    """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber^1/2 to condition_number^1/2."""
+
+    eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d) # eigenvalues of the covariance matrix
+    eigs /= jnp.average(eigs)
+    Hessian = 1. / eigs
+
+    N = - 0.5 * jnp.sum(jnp.log(2 * jnp.pi * eigs))
+    logp = lambda x: -0.5 * jnp.dot(Hessian, jnp.square(x)) + N
+
+    posterior_draw = lambda key: (jax.random.normal(key, shape=(d,)) * jnp.sqrt(eigs))
+
+    return logp, posterior_draw
+
+
+d, condition_number = 100, 1.
+logp, posterior_draw = IllConditionedGaussian(d, condition_number)
+
+
+key = jax.random.PRNGKey(42)
+num_particles = 500
+
+key_prior, key_sampling = jax.random.split(key)
+init = jax.vmap(posterior_draw)(jax.random.split(key_prior, num_particles//2))
+
+
+mclmc = prepare_mclmc(100000, 2., jnp.sqrt(d))
+
+m = shift_annealing(logp, mclmc, init, 0.5, key_sampling)
