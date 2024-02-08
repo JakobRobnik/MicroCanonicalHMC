@@ -81,7 +81,7 @@ def run(target, num_steps, chains, key):
     
     x_init = jax.vmap(target.prior_draw)(jax.random.split(key_init, chains))
     observables = lambda x: jnp.square(target.transform(x))
-    info1, info2 = emclmc(lambda x: -target.nlogp(x), num_steps, x_init, chains, key_sampling, observables)    
+    info = emclmc(lambda x: -target.nlogp(x), num_steps, x_init, chains, key_sampling, observables)    
     
     return 
     bias = [error.err(target.second_moments, target.variance_second_moments, contract)(info['expected vals']) for contract in [jnp.max, jnp.average]]
