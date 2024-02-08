@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from mclmc.ensemble import Sampler
-import blackjax.mcmc.mclmc_ensemble as emclmc
+from blackjax.mcmc.ensemble_mclmc import algorithm as emclmc
 
 from benchmarks.targets import *
 from benchmarks import error
@@ -81,7 +81,9 @@ def run(target, num_steps, chains, key):
     
     x_init = jax.vmap(target.prior_draw)(jax.random.split(key_init, chains))
     observables = lambda x: jnp.square(target.transform(x))
-    info = emclmc.stage1(lambda x: -target.nlogp(x), num_steps, x_init, chains, key_sampling, observables = observables)
+    info = emclmc.stage1(lambda x: -target.nlogp(x), num_steps, x_init, chains, key_sampling, observables)    
+    
+    return 
     bias = [error.err(target.second_moments, target.variance_second_moments, contract)(info['expected vals']) for contract in [jnp.max, jnp.average]]
     
     grads, success = error.grads_to_low_error(bias[0])
@@ -114,10 +116,10 @@ def mainn():
 
     key = jax.random.PRNGKey(42)
     
-    for i in [4, ]:
+    for i in [0, ]:
         target, num_steps = targets[i]
         print(target.name)
-        run_old(target, num_steps, chains, key)
+        run(target, num_steps, chains, key)
 
    
     
