@@ -44,7 +44,6 @@ def update_momentum(d):
 
 def update_position(grad_nlogp, boundary):
   
-  
   def update(eps, x, u, sigma):
     xx = x + eps * u * sigma
     ll, gg = grad_nlogp(xx)
@@ -55,7 +54,6 @@ def update_position(grad_nlogp, boundary):
     ll, gg = grad_nlogp(xx)
     uu = reflect * u
     return xx, uu, ll, gg
-  
     
   return update if boundary == None else update_with_boundary
 

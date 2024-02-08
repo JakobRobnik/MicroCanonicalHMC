@@ -43,12 +43,13 @@ class IllConditionedGaussian():
         self.name = 'icg'
         self.d = d
         self.condition_number = condition_number
-        eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
-
+        eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d) # eigenvalues of the covariance matrix
+        eigs /= jnp.average(eigs)
+        
         if numpy_seed == None:  # diagonal
             self.second_moments = eigs
             self.R = jnp.eye(d)
-            self.Hessian = jnp.diag(1 / eigs)
+            self.Hessian = jnp.diag(1. / eigs)
             self.Cov = jnp.diag(eigs)
 
         else:  # randomly rotate
