@@ -159,6 +159,54 @@ class IllConditionedGaussianGamma():
     
 
 
+# class IllConditionedGaussianGamma():
+#     """Inference gym's Ill conditioned Gaussian"""
+
+#     def __init__(self, prior = 'prior'):
+#         self.name = 'ICG'
+#         self.d = 100
+
+#         # define the Hessian
+#         rng = np.random.RandomState(seed=10 & (2 ** 32 - 1))
+#         eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.d)) #eigenvalues of the Hessian
+#         eigs *= jnp.average(1.0/eigs)
+#         self.entropy = 0.5 * self.d
+#         self.maxmin = (1./jnp.sqrt(eigs[0]), 1./jnp.sqrt(eigs[-1])) 
+#         R, _ = np.linalg.qr(rng.randn(self.d, self.d)) #random rotation
+#         self.map_to_worst = (R.T)[[0, -1], :]
+#         self.Hessian = R @ np.diag(eigs) @ R.T
+
+#         # analytic ground truth moments
+#         self.second_moments = jnp.diagonal(R @ np.diag(1.0/eigs) @ R.T)
+#         self.variance_second_moments = 2 * jnp.square(self.second_moments)
+
+#         # norm = jnp.diag(1/jnp.sqrt(self.second_moments))
+#         # Sigma = R @ np.diag(1/eigs) @ R.T
+#         # reduced = norm @ Sigma @ norm
+#         # print(np.linalg.cond(reduced), np.linalg.cond(Sigma))
+        
+#         # gradient
+#         self.grad_nlogp = jax.value_and_grad(self.nlogp)
+
+#         if prior == 'map':
+#             self.prior_draw = lambda key: jnp.zeros(self.d)
+
+#         elif prior == 'posterior':
+#             self.prior_draw = lambda key: R @ (jax.random.normal(key, shape=(self.d,)) / jnp.sqrt(eigs))
+
+#         else: # N(0, sigma_true_max)
+#             self.prior_draw = lambda key: jax.random.normal(key, shape=(self.d,)) * jnp.max(1.0/jnp.sqrt(eigs))
+            
+#     def nlogp(self, x):
+#         """- log p of the target distribution"""
+#         return 0.5 * x.T @ self.Hessian @ x
+
+#     def transform(self, x):
+#         return x
+    
+    
+
+
 class Banana():
     """Banana target fromm the Inference Gym"""
 
