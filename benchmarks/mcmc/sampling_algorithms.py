@@ -1,19 +1,77 @@
 
 
+from typing import Callable, Union
+from chex import PRNGKey
 import jax
 import jax.numpy as jnp
+from benchmarks import mcmc
 import blackjax
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
 # from blackjax.adaptation.window_adaptation import da_adaptation
-from blackjax.mcmc.integrators import calls_per_integrator_step, generate_euclidean_integrator, generate_isokinetic_integrator
-# from blackjax.mcmc.mhmclmc import rescale
+from blackjax.mcmc.integrators import calls_per_integrator_step, generate_euclidean_integrator, generate_isokinetic_integrator, integrator_order
+from blackjax.mcmc.adjusted_mclmc import rescale
 from blackjax.util import run_inference_algorithm
 import blackjax
+from blackjax.util import pytree_size
+from blackjax.adaptation.step_size import (
+    DualAveragingAdaptationState,
+    dual_averaging_adaptation,
+)
 
 __all__ = ["samplers"]
 
 
+target_acceptance_rate_of_order = {2: 0.65, 4: 0.8}
 
+def da_adaptation(
+    rng_key: PRNGKey,
+    initial_position,
+    algorithm,
+    logdensity_fn: Callable,
+    num_steps: int = 1000,
+    initial_step_size: float = 1.0,
+    target_acceptance_rate: float = 0.80,
+    progress_bar: bool = False,
+    integrator = blackjax.mcmc.integrators.velocity_verlet,
+    ):
+    
+    da_init, da_update, da_final = dual_averaging_adaptation(target_acceptance_rate)
+
+    kernel = algorithm.build_kernel(integrator=integrator)
+    init_kernel_state = algorithm.init(initial_position, logdensity_fn)
+    inverse_mass_matrix = jnp.ones(pytree_size(initial_position))
+    
+    def step(state, key):
+
+
+        adaptation_state, kernel_state = state
+
+        new_kernel_state, info = kernel(
+            key,
+            kernel_state,
+            logdensity_fn,
+            jnp.exp(adaptation_state.log_step_size),
+            inverse_mass_matrix)
+
+        new_adaptation_state = da_update(
+            adaptation_state,
+            info.acceptance_rate,
+        )
+
+        return (
+            (new_adaptation_state, new_kernel_state),
+            (True),
+            )
+
+    keys = jax.random.split(rng_key, num_steps)
+    init_state = da_init(initial_step_size), init_kernel_state
+    (adaptation_state, kernel_state), _ = jax.lax.scan(
+            step,
+            init_state,
+            keys,
+        )
+    # print(adaptation_state, "adaptation_state\n\n")
+    return kernel_state, {"step_size" : da_final(adaptation_state), "inverse_mass_matrix" : inverse_mass_matrix}
 
 def run_nuts(
     coefficients, logdensity_fn, num_steps, initial_position, transform, key, preconditioning):
@@ -82,6 +140,8 @@ def run_mclmc(coefficients, logdensity_fn, num_steps, initial_position, transfor
     )
 
     # jax.debug.print("params {x}", x=(blackjax_mclmc_sampler_params.L, blackjax_mclmc_sampler_params.step_size))
+    # jax.debug.print("params {x}", x=blackjax_mclmc_sampler_params.std_mat**2)
+
 
     sampling_alg = blackjax.mclmc(
         logdensity_fn,
@@ -106,16 +166,16 @@ def run_mclmc(coefficients, logdensity_fn, num_steps, initial_position, transfor
     return samples, blackjax_mclmc_sampler_params, calls_per_integrator_step(coefficients), acceptance_rate, None, None
 
 
-def run_mhmclmc(coefficients, logdensity_fn, num_steps, initial_position, transform, key, preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=None):
+def run_adjusted_mclmc(coefficients, logdensity_fn, num_steps, initial_position, transform, key, preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=None):
     integrator = generate_isokinetic_integrator(coefficients)
 
     init_key, tune_key, run_key = jax.random.split(key, 3)
 
-    initial_state = blackjax.mcmc.mhmclmc.init(
+    initial_state = blackjax.mcmc.adjusted_mclmc.init(
         position=initial_position, logdensity_fn=logdensity_fn, random_generator_arg=init_key
     )
 
-    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, std_mat: blackjax.mcmc.mhmclmc.build_kernel(
+    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, std_mat: blackjax.mcmc.adjusted_mclmc.build_kernel(
                 integrator=integrator,
                 integration_steps_fn = lambda k : jnp.ceil(jax.random.uniform(k) * rescale(avg_num_integration_steps)),
                 std_mat=std_mat,
@@ -134,7 +194,7 @@ def run_mhmclmc(coefficients, logdensity_fn, num_steps, initial_position, transf
         blackjax_mclmc_sampler_params,
         params_history,
         final_da
-    ) = blackjax.adaptation.mclmc_adaptation.mhmclmc_find_L_and_step_size(
+    ) = blackjax.adaptation.mclmc_adaptation.adjusted_mclmc_find_L_and_step_size(
         mclmc_kernel=kernel,
         num_steps=num_steps,
         state=initial_state,
@@ -153,7 +213,7 @@ def run_mhmclmc(coefficients, logdensity_fn, num_steps, initial_position, transf
     # jax.debug.print("params {x}", x=(blackjax_mclmc_sampler_params.step_size, blackjax_mclmc_sampler_params.L))
 
 
-    alg = blackjax.mcmc.mhmclmc.mhmclmc(
+    alg = blackjax.adjusted_mclmc(
         logdensity_fn=logdensity_fn,
         step_size=step_size,
         integration_steps_fn = lambda key: jnp.ceil(jax.random.uniform(key) * rescale(L/step_size)) ,
@@ -176,12 +236,12 @@ def run_mhmclmc(coefficients, logdensity_fn, num_steps, initial_position, transf
 
     return out, blackjax_mclmc_sampler_params, calls_per_integrator_step(coefficients) * (L/step_size), info.acceptance_rate, params_history, final_da
 
-# we should do at least: mclmc, nuts, unadjusted hmc, mhmclmc, langevin
+# we should do at least: mclmc, nuts, unadjusted hmc, adjusted_mclmc, langevin
 
 samplers = {
     'nuts' : run_nuts,
     'mclmc' : run_mclmc, 
-    'mhmclmc': run_mhmclmc, 
+    'adjusted_mclmc': run_adjusted_mclmc, 
     }
 
 

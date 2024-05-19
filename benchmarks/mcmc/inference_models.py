@@ -43,7 +43,6 @@ class IllConditionedGaussian():
         self.name = 'IllConditionedGaussian'
         self.condition_number = condition_number
         eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
-
         if numpy_seed == None:  # diagonal
             self.E_x2 = eigs
             self.R = jnp.eye(d)
@@ -871,21 +870,21 @@ def random_walk(key, num):
 
 models = {
 
-    ## Rosenbrock(): {'mclmc': 40000, 'mhmclmc' : 40000, 'nuts': 40000}, # no Ex2
-    # Cauchy(100) : {'mclmc': 2000, 'mhmclmc' : 2000, 'nuts': 2000}, 
-    # StandardNormal(100) : {'mclmc': 10000, 'mhmclmc' : 10000, 'nuts': 10000}, 
-    # Banana() : {'mclmc': 10000, 'mhmclmc' : 10000, 'nuts': 10000}, 
-    Brownian() : {'mclmc': 20000, 'mhmclmc' : 80000, 'nuts': 40000},
-    # Funnel() : {'mclmc': 20000, 'mhmclmc' : 80000, 'nuts': 40000},
+    ## Rosenbrock(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}, # no Ex2
+    # Cauchy(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000}, 
+    # StandardNormal(100) : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000}, 
+    # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000}, 
+    # Brownian() : {'mclmc': 20000, 'adjusted_mclmc' : 80000, 'nuts': 40000},
+    # Funnel() : {'mclmc': 20000, 'adjusted_mclmc' : 80000, 'nuts': 40000},
 
 
-    # Banana() : {'mclmc': 10000, 'mhmclmc' : 10000, 'nuts': 10000},
-    # IllConditionedGaussian(10, 2):   {'mclmc': 10000, 'mhmclmc' : 10000, 'nuts': 10000},
-    # GermanCredit(): {'mclmc': 80000, 'mhmclmc' : 40000, 'nuts': 40000},
-    # ItemResponseTheory(): {'mclmc': 20000, 'mhmclmc' : 40000, 'nuts': 20000},
-    # StochasticVolatility(): {'mclmc': 40000, 'mhmclmc' : 40000, 'nuts': 40000}
+    # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000},
+    # IllConditionedGaussian(100, 100):   {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
+    GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
+    # ItemResponseTheory(): {'mclmc': 20000, 'adjusted_mclmc' : 40000, 'nuts': 20000},
+    # StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}
     }
 
-# models = {'Brownian Motion': (Brownian(), {'mclmc': 50000, 'mhmclmc' : 40000, 'nuts': 1000}),
-#         #   'Item Response Theory': (ItemResponseTheory(), {'mclmc': 50000, 'mhmclmc' : 50000, 'nuts': 1000})
+# models = {'Brownian Motion': (Brownian(), {'mclmc': 50000, 'adjusted_mclmc' : 40000, 'nuts': 1000}),
+#         #   'Item Response Theory': (ItemResponseTheory(), {'mclmc': 50000, 'adjusted_mclmc' : 50000, 'nuts': 1000})
 #           }
