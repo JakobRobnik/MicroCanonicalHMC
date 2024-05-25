@@ -6,7 +6,7 @@ dist
 mclmc.egg*
 *.jpg
 *.mp4
-*.npy
+# *.npy
 *.pdf
 *.csv
 .ipynb_checkpoints
