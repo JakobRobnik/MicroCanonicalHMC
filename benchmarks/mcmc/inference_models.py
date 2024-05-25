@@ -879,8 +879,8 @@ models = {
 
 
     # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000},
-    # IllConditionedGaussian(100, 100):   {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
-    GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
+    IllConditionedGaussian(100, 100):   {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
+    # GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
     # ItemResponseTheory(): {'mclmc': 20000, 'adjusted_mclmc' : 40000, 'nuts': 20000},
     # StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}
     }

@@ -121,10 +121,10 @@ def run_mclmc(coefficients, logdensity_fn, num_steps, initial_position, transfor
     )
 
     
-    kernel = lambda std_mat : blackjax.mcmc.mclmc.build_kernel(
+    kernel = lambda sqrt_diag_cov : blackjax.mcmc.mclmc.build_kernel(
         logdensity_fn=logdensity_fn,
         integrator=integrator,
-        std_mat=std_mat,
+        sqrt_diag_cov=sqrt_diag_cov,
     )
 
     (
@@ -140,17 +140,17 @@ def run_mclmc(coefficients, logdensity_fn, num_steps, initial_position, transfor
     )
 
     # jax.debug.print("params {x}", x=(blackjax_mclmc_sampler_params.L, blackjax_mclmc_sampler_params.step_size))
-    # jax.debug.print("params {x}", x=blackjax_mclmc_sampler_params.std_mat**2)
+    # jax.debug.print("params {x}", x=blackjax_mclmc_sampler_params.sqrt_diag_cov**2)
 
 
     sampling_alg = blackjax.mclmc(
         logdensity_fn,
         L=blackjax_mclmc_sampler_params.L,
         step_size=blackjax_mclmc_sampler_params.step_size,
-        std_mat=blackjax_mclmc_sampler_params.std_mat,
+        sqrt_diag_cov=blackjax_mclmc_sampler_params.sqrt_diag_cov,
         integrator = integrator,
 
-        # std_mat=jnp.ones((initial_position.shape[0],)),
+        # sqrt_diag_cov=jnp.ones((initial_position.shape[0],)),
     )
 
     _, samples, _ = run_inference_algorithm(
@@ -175,10 +175,10 @@ def run_adjusted_mclmc(coefficients, logdensity_fn, num_steps, initial_position,
         position=initial_position, logdensity_fn=logdensity_fn, random_generator_arg=init_key
     )
 
-    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, std_mat: blackjax.mcmc.adjusted_mclmc.build_kernel(
+    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
                 integrator=integrator,
                 integration_steps_fn = lambda k : jnp.ceil(jax.random.uniform(k) * rescale(avg_num_integration_steps)),
-                std_mat=std_mat,
+                sqrt_diag_cov=sqrt_diag_cov,
             )(
                 rng_key=rng_key, 
                 state=state, 
@@ -218,7 +218,7 @@ def run_adjusted_mclmc(coefficients, logdensity_fn, num_steps, initial_position,
         step_size=step_size,
         integration_steps_fn = lambda key: jnp.ceil(jax.random.uniform(key) * rescale(L/step_size)) ,
         integrator=integrator,
-        std_mat=blackjax_mclmc_sampler_params.std_mat,
+        sqrt_diag_cov=blackjax_mclmc_sampler_params.sqrt_diag_cov,
         
 
     )
