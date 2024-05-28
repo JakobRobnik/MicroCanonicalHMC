@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from blackjax.adaptation.ensemble_mclmc import algorithm as emclmc
-
+from blackjax.adaptation.ensemble_umclmc import Parallelization
 from benchmarks.targets import *
 
 
@@ -143,6 +143,8 @@ def mainn():
     chains = 1024
 
     key = jax.random.PRNGKey(42)
+    par = Parallelization(pmap_chains= 1, vmap_chains= 1024)
+    #par = Parallelization(pmap_chains= 128, vmap_chains= 8)
     
     for i in [5,]:
         target, num_steps = targets[i]
@@ -150,8 +152,6 @@ def mainn():
         run(target, num_steps, chains, key)
 
    
-    
-
 if __name__ == '__main__':
 
     mainn()
