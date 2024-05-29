@@ -24,7 +24,7 @@ import numpy as np
 
 import blackjax
 from benchmarks.mcmc.sampling_algorithms import integrator_order, run_mclmc, run_adjusted_mclmc, run_nuts, samplers
-from benchmarks.mcmc.inference_models import Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility, models
+from benchmarks.mcmc.inference_models import Banana, Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility, models
 from blackjax.mcmc.integrators import generate_euclidean_integrator, generate_isokinetic_integrator, isokinetic_mclachlan, mclachlan_coefficients, omelyan_coefficients, velocity_verlet, velocity_verlet_coefficients, yoshida_coefficients
 from blackjax.mcmc.adjusted_mclmc import rescale
 from blackjax.util import run_inference_algorithm
@@ -539,16 +539,19 @@ def run_benchmarks_simple():
 
     # sampler = run_adjusted_mclmc
     sampler = run_mclmc
-    # model = IllConditionedGaussian(100,100) 
-    model = IllConditionedGaussian(100,10000)
+    # model = IllConditionedGaussian(10,100) 
+    # model = Brownian()
+    # model = StandardNormal(10)
+    model = Banana()
     integrator_type = "mclachlan"
     contract = jnp.max # how we average across dimensions
-    num_steps = 20000
-    num_chains = 128
+    num_steps = 10000
+    num_chains = 1
     for i in range(1):
         key1 = jax.random.PRNGKey(i)
 
-        for preconditioning in [True, False]:
+        for preconditioning in [False]:
+
             ess, grad_calls, params , acceptance_rate, step_size_over_da = benchmark_chains(model, partial(sampler, integrator_type=integrator_type, preconditioning=preconditioning, 
                         # target_acc_rate=0.95, frac_tune3=0.1
                         ),key1, n=num_steps, batch=num_chains, contract=contract)

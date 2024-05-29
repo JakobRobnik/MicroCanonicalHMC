@@ -196,6 +196,31 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
         # sqrt_diag_cov=jnp.ones((initial_position.shape[0],)),
     )
 
+    # try doing low mem version twice
+
+    expectation, _, blahblah = run_inference_algorithm(
+        rng_key=run_key,
+        initial_state=blackjax_state_after_tuning,
+        inference_algorithm=sampling_alg,
+        num_steps=num_steps,
+        return_state_history=False,
+        transform=lambda x: transform(x.position),
+        # expectation=lambda x: jnp.array([x**2, x]),
+        expectation=lambda x: x,
+        progress_bar=True,
+    )
+
+    # jax.debug.print("blahblah[1] {x}", x=blahblah)
+
+    # ex2 = expectation[0]
+    # ex = expectation[1]
+    # var = ex2 - ex**2
+    # print(expectation.shape, "blah blah")
+
+    jax.debug.print("expectation {x}", x=expectation)
+    # jax.debug.print("var {x}", x=var)
+
+    # [num_steps, dim_model] # [1000, 1e8]
     _, samples, _ = run_inference_algorithm(
         rng_key=run_key,
         initial_state=blackjax_state_after_tuning,
@@ -204,6 +229,21 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
         transform=lambda x: transform(x.position),
         progress_bar=True,
     )
+    # E[x^2]
+
+    # Var[f] = E[f^2] - E[f]^2
+
+    def cumulative_avg(samples):
+        return jnp.cumsum(samples, axis = 0) / jnp.arange(1, samples.shape[0] + 1)[:, None]
+
+
+    # print(samples.mean(axis=0))
+    jax.debug.print("samples {x}", x=(samples).mean(axis=0))
+    # jax.debug.print("samples {x}", x=cumulative_avg(samples))
+    # jax.debug.print("samples {x}", x=jnp.var(samples, axis=0))
+    jax.debug.print("comparison {x}", x=blahblah[1]-cumulative_avg(samples))
+
+    # raise Exception
 
     acceptance_rate = 1.
     return samples, blackjax_mclmc_sampler_params, calls_per_integrator_step(integrator_type), acceptance_rate, None, None
