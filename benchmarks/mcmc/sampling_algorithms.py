@@ -8,7 +8,7 @@ from benchmarks import mcmc
 import blackjax
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
 # from blackjax.adaptation.window_adaptation import da_adaptation
-from blackjax.mcmc.integrators import calls_per_integrator_step, generate_euclidean_integrator, generate_isokinetic_integrator, integrator_order
+from blackjax.mcmc.integrators import generate_euclidean_integrator, generate_isokinetic_integrator, mclachlan, yoshida, velocity_verlet, omelyan, isokinetic_mclachlan, isokinetic_velocity_verlet, isokinetic_yoshida, isokinetic_omelyan
 from blackjax.mcmc.adjusted_mclmc import rescale
 from blackjax.util import run_inference_algorithm
 import blackjax
@@ -18,7 +18,35 @@ from blackjax.adaptation.step_size import (
     dual_averaging_adaptation,
 )
 
-__all__ = ["samplers"]
+# __all__ = ["samplers"]
+
+
+def calls_per_integrator_step(c):
+    if c == "velocity_verlet":
+        return 1
+    if c == "mclachlan":
+        return 2
+    if c == "yoshida":
+        return 3
+    if c == "omelyan":
+        return 5
+
+    else:
+        raise Exception("No such integrator exists in blackjax")
+
+
+def integrator_order(c):
+    if c == "velocity_verlet":
+        return 2
+    if c == "mclachlan":
+        return 2
+    if c == "yoshida":
+        return 4
+    if c == "omelyan":
+        return 4
+
+    else:
+        raise Exception("No such integrator exists in blackjax")
 
 
 target_acceptance_rate_of_order = {2: 0.65, 4: 0.8}
@@ -73,10 +101,27 @@ def da_adaptation(
     # print(adaptation_state, "adaptation_state\n\n")
     return kernel_state, {"step_size" : da_final(adaptation_state), "inverse_mass_matrix" : inverse_mass_matrix}
 
+# blackjax doesn't export coefficients, which is inconvenient
+map_integrator_type_to_integrator = {
+    'hmc': {
+        "mclachlan" : mclachlan,
+        "yoshida" : yoshida,
+        "velocity_verlet" : velocity_verlet,
+        "omelyan" : omelyan
+    },
+    'mclmc' : {
+        "mclachlan" : isokinetic_mclachlan,
+        "yoshida" : isokinetic_yoshida,
+        "velocity_verlet" : isokinetic_velocity_verlet,
+        "omelyan" : isokinetic_omelyan
+    }
+}
+
 def run_nuts(
-    coefficients, logdensity_fn, num_steps, initial_position, transform, key, preconditioning):
+    integrator_type, logdensity_fn, num_steps, initial_position, transform, key, preconditioning):
     
-    integrator = generate_euclidean_integrator(coefficients)
+    # integrator = generate_euclidean_integrator(coefficients)
+    integrator = map_integrator_type_to_integrator['hmc'][integrator_type]
     # integrator = blackjax.mcmc.integrators.velocity_verlet # note: defaulted to in nuts
 
     rng_key, warmup_key = jax.random.split(key, 2)
@@ -105,13 +150,11 @@ def run_nuts(
         progress_bar=True
     )
 
-    # print("INFO\n\n",info_history.num_integration_steps)
+    return state_history, params, info_history.num_integration_steps.mean() * calls_per_integrator_step(integrator_type), info_history.acceptance_rate.mean(), None, None
 
-    return state_history, params, info_history.num_integration_steps.mean() * calls_per_integrator_step(coefficients), info_history.acceptance_rate.mean(), None, None
+def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, transform, key, preconditioning):
 
-def run_mclmc(coefficients, logdensity_fn, num_steps, initial_position, transform, key, preconditioning):
-
-    integrator = generate_isokinetic_integrator(coefficients)
+    integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
 
     init_key, tune_key, run_key = jax.random.split(key, 3)
 
@@ -163,11 +206,11 @@ def run_mclmc(coefficients, logdensity_fn, num_steps, initial_position, transfor
     )
 
     acceptance_rate = 1.
-    return samples, blackjax_mclmc_sampler_params, calls_per_integrator_step(coefficients), acceptance_rate, None, None
+    return samples, blackjax_mclmc_sampler_params, calls_per_integrator_step(integrator_type), acceptance_rate, None, None
 
 
-def run_adjusted_mclmc(coefficients, logdensity_fn, num_steps, initial_position, transform, key, preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=None):
-    integrator = generate_isokinetic_integrator(coefficients)
+def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, transform, key, preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=None):
+    integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
 
     init_key, tune_key, run_key = jax.random.split(key, 3)
 
@@ -186,7 +229,7 @@ def run_adjusted_mclmc(coefficients, logdensity_fn, num_steps, initial_position,
                 logdensity_fn=logdensity_fn)
     
     if target_acc_rate is None:
-        target_acc_rate = target_acceptance_rate_of_order[integrator_order(coefficients)]
+        target_acc_rate = target_acceptance_rate_of_order[integrator_order(integrator_type)]
         print("target acc rate")
 
     (
@@ -234,7 +277,7 @@ def run_adjusted_mclmc(coefficients, logdensity_fn, num_steps, initial_position,
     
 
 
-    return out, blackjax_mclmc_sampler_params, calls_per_integrator_step(coefficients) * (L/step_size), info.acceptance_rate, params_history, final_da
+    return out, blackjax_mclmc_sampler_params, calls_per_integrator_step(integrator_type) * (L/step_size), info.acceptance_rate, params_history, final_da
 
 # we should do at least: mclmc, nuts, unadjusted hmc, adjusted_mclmc, langevin
 
