@@ -545,7 +545,7 @@ def run_benchmarks_simple():
     model = Banana()
     integrator_type = "mclachlan"
     contract = jnp.max # how we average across dimensions
-    num_steps = 10000
+    num_steps = 1000
     num_chains = 1
     for i in range(1):
         key1 = jax.random.PRNGKey(i)

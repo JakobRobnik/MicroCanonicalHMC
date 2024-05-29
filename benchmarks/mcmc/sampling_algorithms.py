@@ -205,20 +205,20 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
         num_steps=num_steps,
         return_state_history=False,
         transform=lambda x: transform(x.position),
-        # expectation=lambda x: jnp.array([x**2, x]),
-        expectation=lambda x: x,
+        expectation=lambda x: jnp.array([x**2, x]),
+        # expectation=lambda x: x,
         progress_bar=True,
     )
 
     # jax.debug.print("blahblah[1] {x}", x=blahblah)
 
-    # ex2 = expectation[0]
-    # ex = expectation[1]
-    # var = ex2 - ex**2
+    ex2 = expectation[0]
+    ex = expectation[1]
+    var = ex2 - ex**2
     # print(expectation.shape, "blah blah")
 
-    jax.debug.print("expectation {x}", x=expectation)
-    # jax.debug.print("var {x}", x=var)
+    jax.debug.print("expectation {x}", x=ex)
+    # jax.debug.print("ex2 {x}", x=var)
 
     # [num_steps, dim_model] # [1000, 1e8]
     _, samples, _ = run_inference_algorithm(
@@ -241,7 +241,7 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
     jax.debug.print("samples {x}", x=(samples).mean(axis=0))
     # jax.debug.print("samples {x}", x=cumulative_avg(samples))
     # jax.debug.print("samples {x}", x=jnp.var(samples, axis=0))
-    jax.debug.print("comparison {x}", x=blahblah[1]-cumulative_avg(samples))
+    # jax.debug.print("comparison {x}", x=blahblah[1]-cumulative_avg(samples))
 
     # raise Exception
 
