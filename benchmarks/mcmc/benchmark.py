@@ -169,14 +169,14 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None, contract = jnp.av
     init_pos = pvmap(model.sample_init)(init_keys) # [batch_size, dim_model]
 
     # samples, params, avg_num_steps_per_traj = jax.pmap(lambda pos, key: sampler(model.logdensity_fn, n, pos, model.transform, key))(init_pos, keys)
-    samples, params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da = pvmap(lambda pos, key: sampler(logdensity_fn=model.logdensity_fn, num_steps=n, initial_position= pos,transform= model.transform, key=key))(init_pos, keys)
+    ex2_empirical, params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da = pvmap(lambda pos, key: sampler(logdensity_fn=model.logdensity_fn, num_steps=n, initial_position= pos,transform= model.transform, key=key))(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
     try:
         print(jnp.nanmean(params.step_size,axis=0), jnp.nanmean(params.L,axis=0))
     except: pass
     
-    full = lambda arr : err(model.E_x2, model.Var_x2, contract)(cumulative_avg(arr))
-    err_t = pvmap(full)(samples**2)
+    full = lambda arr : err(model.E_x2, model.Var_x2, contract)(arr)
+    err_t = pvmap(full)(ex2_empirical)
 
     # outs = [calculate_ess(b, grad_evals_per_step=avg_grad_calls_per_traj) for b in err_t]
     # # print(outs[:10])
