@@ -1,14 +1,17 @@
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
+import os
+#os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 
 from blackjax.adaptation.ensemble_mclmc import algorithm as emclmc
 from blackjax.adaptation.ensemble_umclmc import Parallelization
 from benchmarks.targets import *
 
+num_cores = 1#jax.local_device_count()
+print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
-#num_cores = jax.local_device_count()
-#print(num_cores, jax.lib.xla_bridge.get_backend().platform)
+parallelization = Parallelization(pmap_chains= num_cores, vmap_chains= 1024//num_cores)
 
 
 
@@ -103,24 +106,25 @@ def plot_trace(info1, info2, target, mclachlan):
 
 
 
-def run(target, num_steps, chains, key):
+def run(target, num_steps, num_steps_per_sample, key):
     
     mclachlan = True
     key_sampling, key_init = jax.random.split(key)
-    
-    x_init = jax.vmap(target.prior_draw)(jax.random.split(key_init, chains))
-    transform = jax.vmap(target.transform)
+    keys_init = jax.random.split(key_init, parallelization.num_chains).reshape(parallelization.shape)
+    x_init = parallelization.pvmap(target.prior_draw)(keys_init)
+    transform = parallelization.pvmap(target.transform)
     
     def observables(x):
         f = jnp.average(jnp.square(transform(x)), axis = 0)
         bsq = jnp.square(f - target.second_moments) / target.variance_second_moments    
         return jnp.array([jnp.max(bsq), jnp.average(bsq)])
 
-    info1, info2 = emclmc(lambda x: -target.nlogp(x), num_steps, chains, 
+    info1, info2 = emclmc(lambda x: -target.nlogp(x), num_steps, parallelization,
                           x_init, key_sampling, 
-                          mclachlan, 
+                          num_steps_per_sample, mclachlan, 
                           observables)
     
+
     #grads, success = error.grads_to_low_error(bias[0])
     
     plot_trace(info1, info2, target, mclachlan)
@@ -140,19 +144,17 @@ def mainn():
                 [ItemResponseTheory(), 1000],
                 [StochasticVolatility(), 2500]]
 
-    chains = 1024
-
-    key = jax.random.PRNGKey(42)
-    par = Parallelization(pmap_chains= 1, vmap_chains= 1024)
-    #par = Parallelization(pmap_chains= 128, vmap_chains= 8)
+    key = jax.random.key(42)
+    num_steps_per_sample = 30
     
     for i in [5,]:
         target, num_steps = targets[i]
         print(target.name)
-        run(target, num_steps, chains, key)
+        run(target, num_steps, num_steps_per_sample, key)
 
-   
+
 if __name__ == '__main__':
 
     mainn()
+
 
