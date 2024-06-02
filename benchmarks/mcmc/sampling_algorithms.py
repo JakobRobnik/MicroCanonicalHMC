@@ -216,7 +216,7 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
     # ex = expectations[-1][1]
     # var = expectations[:, 0] - ex[:, 1]**2
 
-    jax.debug.print("expectation {x}", x=expectations[-1])
+    # jax.debug.print("expectation {x}", x=expectations[-1])
 
     _, samples, _ = run_inference_algorithm(
         rng_key=run_key,
@@ -232,7 +232,7 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
 
 
     # print(samples.mean(axis=0))
-    jax.debug.print("samples {x}", x=(samples**2).mean(axis=0))
+    # jax.debug.print("samples {x}", x=(samples**2).mean(axis=0))
     # jax.debug.print("samples {x}", x=cumulative_avg(samples))
     # jax.debug.print("samples {x}", x=jnp.var(samples, axis=0))
     # jax.debug.print("comparison {x}", x=jnp.mean(expectations))

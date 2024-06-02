@@ -570,22 +570,22 @@ def benchmark_omelyan(batch_size):
 
 def run_benchmarks_simple():
 
-    # sampler = run_adjusted_mclmc
-    sampler = run_mclmc
-    # model = IllConditionedGaussian(10,100) 
+    sampler = run_adjusted_mclmc
+    # sampler = run_mclmc
+    model = IllConditionedGaussian(100,100) 
     # model = Brownian()
     # model = StandardNormal(10)
-    model = Banana()
+    # model = Banana()
     integrator_type = "mclachlan"
     contract = jnp.max # how we average across dimensions
-    num_steps = 1000
+    num_steps = 10000
     num_chains = 1
     for i in range(1):
         key1 = jax.random.PRNGKey(i)
 
-        for preconditioning in [False]:
+        for preconditioning in [True, False]:
 
-            ess, grad_calls, params , acceptance_rate, step_size_over_da = benchmark_chains(model, partial(sampler, integrator_type=integrator_type, preconditioning=preconditioning,),key1, n=num_steps, contract=contract, batch=num_chains,)
+            ess, grad_calls, params , acceptance_rate, step_size_over_da = benchmark_chains(model, partial(sampler, integrator_type=integrator_type, preconditioning=preconditioning,target_acc_rate=0.9),key1, n=num_steps, contract=contract, batch=num_chains)
 
             print(f"Effective Sample Size (ESS) of {model.name} with preconditioning set to {preconditioning} is {ess}")
 
