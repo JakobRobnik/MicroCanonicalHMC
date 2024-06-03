@@ -198,17 +198,17 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
 
     # try doing low mem version twice
 
-    _, _, expectations = run_inference_algorithm(
-        rng_key=run_key,
-        initial_state=blackjax_state_after_tuning,
-        inference_algorithm=sampling_alg,
-        num_steps=num_steps,
-        return_state_history=False,
-        transform=lambda x: transform(x.position),
-        # expectation=lambda x: jnp.array([x**2, x]),
-        expectation=lambda x: x**2,
-        progress_bar=True,
-    )
+    # _, _, expectations = run_inference_algorithm(
+    #     rng_key=run_key,
+    #     initial_state=blackjax_state_after_tuning,
+    #     inference_algorithm=sampling_alg,
+    #     num_steps=num_steps,
+    #     return_state_history=False,
+    #     transform=lambda x: transform(x.position),
+    #     # expectation=lambda x: jnp.array([x**2, x]),
+    #     expectation=lambda x: x**2,
+    #     progress_bar=True,
+    # )
 
     # jax.debug.print("blahblah[1] {x}", x=blahblah)
 
@@ -216,7 +216,6 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
     # ex = expectations[-1][1]
     # var = expectations[:, 0] - ex[:, 1]**2
 
-    # jax.debug.print("expectation {x}", x=expectations[-1])
 
     _, samples, _ = run_inference_algorithm(
         rng_key=run_key,
@@ -232,6 +231,10 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
 
 
     # print(samples.mean(axis=0))
+    # jax.debug.print("allclose {x}", x=jnp.allclose((samples**2).mean(axis=0), expectations[-1], atol=1e-2))
+
+    
+    # jax.debug.print("expectation {x}", x=expectations[-1])
     # jax.debug.print("samples {x}", x=(samples**2).mean(axis=0))
     # jax.debug.print("samples {x}", x=cumulative_avg(samples))
     # jax.debug.print("samples {x}", x=jnp.var(samples, axis=0))
@@ -240,10 +243,10 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
     # raise Exception
 
     acceptance_rate = 1.
-    return expectations, blackjax_mclmc_sampler_params, calls_per_integrator_step(integrator_type), acceptance_rate, None, None
+    return samples, blackjax_mclmc_sampler_params, calls_per_integrator_step(integrator_type), acceptance_rate, None, None
 
 
-def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, transform, key, preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=None):
+def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, transform, key, preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=None, L_proposal_factor=jnp.inf):
     integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
 
     init_key, tune_key, run_key = jax.random.split(key, 3)
@@ -251,6 +254,7 @@ def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_positi
     initial_state = blackjax.mcmc.adjusted_mclmc.init(
         position=initial_position, logdensity_fn=logdensity_fn, random_generator_arg=init_key
     )
+
 
     kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
                 integrator=integrator,
@@ -260,7 +264,8 @@ def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_positi
                 rng_key=rng_key, 
                 state=state, 
                 step_size=step_size, 
-                logdensity_fn=logdensity_fn)
+                logdensity_fn=logdensity_fn,
+                L_proposal_factor=L_proposal_factor)
     
     if target_acc_rate is None:
         target_acc_rate = target_acceptance_rate_of_order[integrator_order(integrator_type)]
@@ -296,6 +301,7 @@ def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_positi
         integration_steps_fn = lambda key: jnp.ceil(jax.random.uniform(key) * rescale(L/step_size)) ,
         integrator=integrator,
         sqrt_diag_cov=blackjax_mclmc_sampler_params.sqrt_diag_cov,
+        L_proposal_factor=L_proposal_factor
         
 
     )
@@ -313,7 +319,6 @@ def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_positi
 
     return out, blackjax_mclmc_sampler_params, calls_per_integrator_step(integrator_type) * (L/step_size), info.acceptance_rate, params_history, final_da
 
-# we should do at least: mclmc, nuts, unadjusted hmc, adjusted_mclmc, langevin
 
 samplers = {
     'nuts' : run_nuts,
