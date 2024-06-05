@@ -276,7 +276,7 @@ def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_positi
         blackjax_mclmc_sampler_params,
         params_history,
         final_da
-    ) = blackjax.adaptation.mclmc_adaptation.adjusted_mclmc_find_L_and_step_size(
+    ) = blackjax.adjusted_mclmc_find_L_and_step_size(
         mclmc_kernel=kernel,
         num_steps=num_steps,
         state=initial_state,
