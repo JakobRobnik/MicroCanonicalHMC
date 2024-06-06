@@ -874,12 +874,12 @@ models = {
     # Cauchy(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000}, 
     # StandardNormal(100) : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000}, 
     # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000}, 
-    # Brownian() : {'mclmc': 20000, 'adjusted_mclmc' : 80000, 'nuts': 40000},
+    Brownian() : {'mclmc': 2000, 'adjusted_mclmc' : 8000, 'nuts': 4000},
     # Funnel() : {'mclmc': 20000, 'adjusted_mclmc' : 80000, 'nuts': 40000},
 
 
     # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000},
-    IllConditionedGaussian(100, 100):   {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
+    # IllConditionedGaussian(100, 100):   {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
     # GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
     # ItemResponseTheory(): {'mclmc': 20000, 'adjusted_mclmc' : 40000, 'nuts': 20000},
     # StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}
