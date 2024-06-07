@@ -872,9 +872,9 @@ models = {
 
     ## Rosenbrock(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}, # no Ex2
     # Cauchy(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000}, 
-    # StandardNormal(100) : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000}, 
+    StandardNormal(10) : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000}, 
     # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000}, 
-    Brownian() : {'mclmc': 2000, 'adjusted_mclmc' : 8000, 'nuts': 4000},
+    # Brownian() : {'mclmc': 2000, 'adjusted_mclmc' : 8000, 'nuts': 4000},
     # Funnel() : {'mclmc': 20000, 'adjusted_mclmc' : 80000, 'nuts': 40000},
 
 
