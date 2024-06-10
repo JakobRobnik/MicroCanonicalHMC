@@ -338,61 +338,16 @@ def benchmark_mhmchmc(batch_size):
     integrators = ["mclachlan"]
     for model in models:
         results = defaultdict(tuple)
-        for preconditioning, integrator_type in itertools.product([True], integrators):
-        
-            num_chains = batch_size # 1 + batch_size//model.ndims
-            print(f"NUMBER OF CHAINS for {model.name} and adjusted_mclmc is {num_chains}")
-            num_steps = models[model]["adjusted_mclmc"]
-            print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {num_steps}")
-
-            ####### run mclmc with standard tuning
-
-            contract = jnp.max
-            
-            if True:
-                ess, grad_calls, params , _, step_size_over_da = benchmark_chains(
-                    model,
-                    partial(run_mclmc,integrator_type=integrator_type, preconditioning=preconditioning),
-                    key0,
-                    n=num_steps,
-                    batch=num_chains,
-                    contract=contract)
-                results[(model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1., preconditioning, 0)] = ess.item()
-                print(f'mclmc with tuning ESS {ess}')
+        num_chains = batch_size # 1 + batch_size//model.ndims
+        print(f"NUMBER OF CHAINS for {model.name} and adjusted_mclmc is {num_chains}")
+        num_steps = models[model]["adjusted_mclmc"]
+        print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {num_steps}")
 
 
-                ####### run adjusted_mclmc with standard tuning 
-                for target_acc_rate, L_proposal_factor in itertools.product([0.9], [jnp.inf]): # , 3., 1.25, 0.5] ):
-                    # coeffs = mclachlan_coefficients
-                    ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
-                        model, 
-                        partial(run_adjusted_mclmc, target_acc_rate=target_acc_rate, L_proposal_factor=L_proposal_factor, integrator_type=integrator_type, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, preconditioning=preconditioning), 
-                        key1, 
-                        n=num_steps, 
-                        batch=num_chains, 
-                        contract=contract)
-                    results[(model.name, model.ndims, "mhmclmc:"+str(target_acc_rate), jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 1/L_proposal_factor)] = ess.item()
-                    print(f'adjusted_mclmc with tuning ESS {ess}')
-                    
-                    # integrator_type = mclachlan_coefficients
-                    ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
-                        model, 
-                        partial(run_adjusted_mclmc, target_acc_rate=target_acc_rate,  L_proposal_factor=L_proposal_factor,integrator_type=integrator_type, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, preconditioning=preconditioning), 
-                        key1, 
-                        n=num_steps, 
-                        batch=num_chains, 
-                        contract=contract)
-                    results[(model.name, model.ndims, "mhmclmc:st3:"+str(target_acc_rate), jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 1/L_proposal_factor)] = ess.item()
-                    print(f'adjusted_mclmc with tuning ESS {ess}')
 
-            ####### run nuts
-
-            ess, grad_calls, _ , acceptance_rate, _ = benchmark_chains(model, partial(run_nuts,integrator_type=integrator_type, preconditioning=preconditioning),key3, n=models[model]["nuts"], batch=num_chains, contract=contract)
-            results[(model.name, model.ndims, "nuts", 0., 0., (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 0)] = ess.item()
-            
         if True:
             ####### run adjusted_mclmc with standard tuning + grid search
-
+            integrator_type = "mclachlan"
             
 
             init_pos_key, init_key, tune_key, grid_key, bench_key = jax.random.split(key2, 5)
@@ -499,6 +454,58 @@ def benchmark_mhmchmc(batch_size):
 
                 
             print(results)
+
+
+        for preconditioning, integrator_type in itertools.product([True], integrators):
+        
+            
+
+            ####### run mclmc with standard tuning
+
+            contract = jnp.max
+            
+            if True:
+                ess, grad_calls, params , _, step_size_over_da = benchmark_chains(
+                    model,
+                    partial(run_mclmc,integrator_type=integrator_type, preconditioning=preconditioning),
+                    key0,
+                    n=num_steps,
+                    batch=num_chains,
+                    contract=contract)
+                results[(model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1., preconditioning, 0)] = ess.item()
+                print(f'mclmc with tuning ESS {ess}')
+
+
+                ####### run adjusted_mclmc with standard tuning 
+                for target_acc_rate, L_proposal_factor in itertools.product([0.9], [jnp.inf]): # , 3., 1.25, 0.5] ):
+                    # coeffs = mclachlan_coefficients
+                    ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
+                        model, 
+                        partial(run_adjusted_mclmc, target_acc_rate=target_acc_rate, L_proposal_factor=L_proposal_factor, integrator_type=integrator_type, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, preconditioning=preconditioning), 
+                        key1, 
+                        n=num_steps, 
+                        batch=num_chains, 
+                        contract=contract)
+                    results[(model.name, model.ndims, "mhmclmc:"+str(target_acc_rate), jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 1/L_proposal_factor)] = ess.item()
+                    print(f'adjusted_mclmc with tuning ESS {ess}')
+                    
+                    # integrator_type = mclachlan_coefficients
+                    ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
+                        model, 
+                        partial(run_adjusted_mclmc, target_acc_rate=target_acc_rate,  L_proposal_factor=L_proposal_factor,integrator_type=integrator_type, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, preconditioning=preconditioning), 
+                        key1, 
+                        n=num_steps, 
+                        batch=num_chains, 
+                        contract=contract)
+                    results[(model.name, model.ndims, "mhmclmc:st3:"+str(target_acc_rate), jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 1/L_proposal_factor)] = ess.item()
+                    print(f'adjusted_mclmc with tuning ESS {ess}')
+
+            ####### run nuts
+
+            ess, grad_calls, _ , acceptance_rate, _ = benchmark_chains(model, partial(run_nuts,integrator_type=integrator_type, preconditioning=preconditioning),key3, n=models[model]["nuts"], batch=num_chains, contract=contract)
+            results[(model.name, model.ndims, "nuts", 0., 0., (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 0)] = ess.item()
+            
+        
                 
         df = pd.Series(results).reset_index()
         df.columns = ["model", "dims", "sampler", "L", "step_size", "integrator", "tuning", "acc_rate", "preconditioning", "inv_L_prop", "ESS"] 

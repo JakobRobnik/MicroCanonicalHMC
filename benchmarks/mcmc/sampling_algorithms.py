@@ -152,7 +152,7 @@ def run_nuts(
 
     return state_history, params, info_history.num_integration_steps.mean() * calls_per_integrator_step(integrator_type), info_history.acceptance_rate.mean(), None, None
 
-def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, transform, key, preconditioning, frac_tune3):
+def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, transform, key, preconditioning, frac_tune3=0.1):
 
     integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
 
