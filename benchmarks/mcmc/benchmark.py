@@ -303,25 +303,15 @@ def run_benchmarks_step_size(batch_size):
             position=initial_position, logdensity_fn=model.logdensity_fn, random_generator_arg=key3)
             ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(model, run_adjusted_mclmc_no_tuning(initial_state=initial_state, integrator_type=mclachlan_coefficients, step_size=step_size, L= 5*step_size, sqrt_diag_cov=1.),key1, n=num_steps, batch=num_chains, contract=contract)
 
-            # print(f"step size over da {step_size_over_da.shape} \n\n\n\n")
-            # jax.numpy.save(f"step_size_over_da.npy", step_size_over_da.mean(axis=0))
-            # jax.numpy.save(f"acceptance.npy_{step_size}", acceptance_rate)
-
-
-            # print(f"grads to low bias: {grad_calls}")
-            # print(f"acceptance rate is {acceptance_rate, acceptance_rate.mean()}")
-
+           
             results[((model.name, model.ndims), sampler, (coefficients), "standard", acceptance_rate.mean().item(), params.L.mean().item(), params.step_size.mean().item(), num_chains, num_steps, contract)] = ess.item()
-            # results[(model.name, model.ndims, "nuts", 0., 0., (coeffs), "standard", acceptance_rate)]
 
             
-    # print(results)
+            print(results)
             
 
     df = pd.Series(results).reset_index()
     df.columns = ["model", "sampler", "integrator", "tuning", "acc rate", "L", "stepsize", "num_chains", "num steps", "contraction", "ESS"] 
-    # df.result = df.result.apply(lambda x: x[0].item())
-    # df.model = df.model.apply(lambda x: x[1])
     df.to_csv("results_step_size.csv", index=False)
 
     return results
@@ -332,188 +322,165 @@ def benchmark_mhmchmc(batch_size):
 
     key0, key1, key2, key3 = jax.random.split(jax.random.PRNGKey(5), 4)
 
-    # coefficients = [yoshida_coefficients, mclachlan_coefficients, velocity_verlet_coefficients, omelyan_coefficients]
-    # coefficients = [mclachlan_coefficients, velocity_verlet_coefficients]
-    # integrators = ["mclachlan", "velocity_verlet", "omelyan", "yoshida"]
-    integrators = ["velocity_verlet"]
-    for model, integrator_type in itertools.product(models, integrators):
+    integrators = ["velocity_verlet", "mclachlan"]
+    for model in models:
         results = defaultdict(tuple)
-        num_chains = batch_size # 1 + batch_size//model.ndims
-        print(f"NUMBER OF CHAINS for {model.name} and adjusted_mclmc is {num_chains}")
-        num_steps = models[model]["adjusted_mclmc"]
-        print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {num_steps}")
+        for integrator_type in integrators:
+            num_chains = batch_size # 1 + batch_size//model.ndims
+            print(f"NUMBER OF CHAINS for {model.name} and adjusted_mclmc is {num_chains}")
+            num_steps = models[model]["adjusted_mclmc"]
+            print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {num_steps}")
 
 
 
-        if True:
-            ####### run adjusted_mclmc with standard tuning + grid search
-            
-            integrator_type = "mclachlan"
-
-            init_pos_key, init_key, tune_key, grid_key, bench_key = jax.random.split(key2, 5)
-            initial_position = model.sample_init(init_pos_key)
-
-            integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
-
-            init_key, tune_key, tune_key2, run_key = jax.random.split(init_key, 4)
-
-            initial_state = blackjax.mcmc.adjusted_mclmc.init(
-                position=initial_position, logdensity_fn=model.logdensity_fn, random_generator_arg=init_key
-            )
-            
-            unadjusted_initial_state = blackjax.mcmc.mclmc.init(
-                position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=init_key
-            )
-
-            L_proposal_factor = jnp.inf
-
-
-            kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
-                        integrator=integrator,
-                        integration_steps_fn = lambda k : jnp.ceil(jax.random.uniform(k) * rescale(avg_num_integration_steps)),
-                        sqrt_diag_cov=sqrt_diag_cov,
-                    )(
-                        rng_key=rng_key, 
-                        state=state, 
-                        step_size=step_size, 
-                        logdensity_fn=model.logdensity_fn,
-                        L_proposal_factor=L_proposal_factor)
-            
-            target_acc_rate = target_acceptance_rate_of_order[integrator_order(integrator_type)]
-
-            (
-                blackjax_state_after_tuning,
-                _,
-                params_history,
-                final_da
-            ) = blackjax.adjusted_mclmc_find_L_and_step_size(
-                mclmc_kernel=kernel,
-                num_steps=num_steps,
-                state=initial_state,
-                rng_key=tune_key,
-                target=target_acc_rate,
-                frac_tune1=0.1,
-                frac_tune2=0.1,
-                frac_tune3=0.1,
-                diagonal_preconditioning=False,
-            )
-
-            
-
-            # unadjusted_kernel = lambda sqrt_diag_cov : blackjax.mcmc.mclmc.build_kernel(
-            #     logdensity_fn=model.logdensity_fn,
-            #     integrator=integrator,
-            #     sqrt_diag_cov=sqrt_diag_cov,
-            # )
-
-            # (
-            #     _,
-            #     unadjusted_blackjax_mclmc_sampler_params,
-            # ) = blackjax.mclmc_find_L_and_step_size(
-            #     mclmc_kernel=kernel,
-            #     num_steps=num_steps,
-            #     state=initial_state,
-            #     rng_key=tune_key,
-            #     diagonal_preconditioning=True,
-            #     # desired_energy_var= 1e-5
-            # )
-
-            unadjusted_kernel = lambda sqrt_diag_cov : blackjax.mcmc.mclmc.build_kernel(
-                logdensity_fn=model.logdensity_fn,
-                integrator=integrator,
-                sqrt_diag_cov=sqrt_diag_cov,
-            )
-
-            (
-                _,
-                blackjax_unadjusted_mclmc_sampler_params,
-            ) = blackjax.mclmc_find_L_and_step_size(
-                mclmc_kernel=unadjusted_kernel,
-                num_steps=num_steps,
-                state=unadjusted_initial_state,
-                rng_key=tune_key2,
-                diagonal_preconditioning=True,
-                # desired_energy_var= 1e-5
-            )
-
-            print(f"target acceptance rate {target_acceptance_rate_of_order[integrator_order(integrator_type)]}")
-            print(f"params after initial tuning are L={blackjax_unadjusted_mclmc_sampler_params.L}, step_size={blackjax_unadjusted_mclmc_sampler_params.step_size}")
-
-            def func(L, step_size): 
-                
-                r = benchmark_chains(model=model, sampler=run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=L, step_size=step_size, L_proposal_factor=L_proposal_factor), key=grid_key, n=num_steps, contract=jnp.max, batch=batch_size)
-
-                return r[0], r[3]
-
-            out = grid_search(func=func, x=blackjax_unadjusted_mclmc_sampler_params.L, y=blackjax_unadjusted_mclmc_sampler_params.step_size, delta_x=blackjax_unadjusted_mclmc_sampler_params.L-0.2, delta_y=blackjax_unadjusted_mclmc_sampler_params.step_size-0.2, size_grid=5, num_iter=5)
-            
-            results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor )] = out[2].item()
-            
-            ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
-                        model, 
-                        run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1], L_proposal_factor=L_proposal_factor),
-                        key1, 
-                        n=num_steps, 
-                        batch=num_chains, 
-                        contract=jnp.max)
-                    
-
-            results[(model.name, model.ndims, "mhmchmc:grid_rerun", jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), integrator_type, f"gridsearch", acceptance_rate.mean().item(), True, 1/L_proposal_factor )] = ess.item()
-
-
-
-                
-            print(results)
-
-
-        for preconditioning in [True]:
-        
-            
-
-            ####### run mclmc with standard tuning
-
-            contract = jnp.max
-            
             if True:
-                ess, grad_calls, params , _, step_size_over_da = benchmark_chains(
-                    model,
-                    partial(run_mclmc,integrator_type=integrator_type, preconditioning=preconditioning),
-                    key0,
-                    n=num_steps,
-                    batch=num_chains,
-                    contract=contract)
-                results[(model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1., preconditioning, 0)] = ess.item()
-                print(f'mclmc with tuning ESS {ess}')
+                ####### run adjusted_mclmc with standard tuning + grid search
+            
+
+                init_pos_key, init_key, tune_key, grid_key, bench_key = jax.random.split(key2, 5)
+                initial_position = model.sample_init(init_pos_key)
+
+                integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
+
+                init_key, tune_key, tune_key2, run_key = jax.random.split(init_key, 4)
+
+                initial_state = blackjax.mcmc.adjusted_mclmc.init(
+                    position=initial_position, logdensity_fn=model.logdensity_fn, random_generator_arg=init_key
+                )
+                
+                unadjusted_initial_state = blackjax.mcmc.mclmc.init(
+                    position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=init_key
+                )
+
+                L_proposal_factor = jnp.inf
 
 
-                ####### run adjusted_mclmc with standard tuning 
-                for target_acc_rate, L_proposal_factor in itertools.product([0.9], [jnp.inf]): # , 3., 1.25, 0.5] ):
-                    # coeffs = mclachlan_coefficients
-                    ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
-                        model, 
-                        partial(run_adjusted_mclmc, target_acc_rate=target_acc_rate, L_proposal_factor=L_proposal_factor, integrator_type=integrator_type, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, preconditioning=preconditioning), 
-                        key1, 
-                        n=num_steps, 
-                        batch=num_chains, 
-                        contract=contract)
-                    results[(model.name, model.ndims, "mhmclmc:"+str(target_acc_rate), jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 1/L_proposal_factor)] = ess.item()
-                    print(f'adjusted_mclmc with tuning ESS {ess}')
+                kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+                            integrator=integrator,
+                            integration_steps_fn = lambda k : jnp.ceil(jax.random.uniform(k) * rescale(avg_num_integration_steps)),
+                            sqrt_diag_cov=sqrt_diag_cov,
+                        )(
+                            rng_key=rng_key, 
+                            state=state, 
+                            step_size=step_size, 
+                            logdensity_fn=model.logdensity_fn,
+                            L_proposal_factor=L_proposal_factor)
+                
+                target_acc_rate = target_acceptance_rate_of_order[integrator_order(integrator_type)]
+
+                (
+                    blackjax_state_after_tuning,
+                    _,
+                    params_history,
+                    final_da
+                ) = blackjax.adjusted_mclmc_find_L_and_step_size(
+                    mclmc_kernel=kernel,
+                    num_steps=num_steps,
+                    state=initial_state,
+                    rng_key=tune_key,
+                    target=target_acc_rate,
+                    frac_tune1=0.1,
+                    frac_tune2=0.1,
+                    frac_tune3=0.1,
+                    diagonal_preconditioning=False,
+                )
+
+                unadjusted_kernel = lambda sqrt_diag_cov : blackjax.mcmc.mclmc.build_kernel(
+                    logdensity_fn=model.logdensity_fn,
+                    integrator=integrator,
+                    sqrt_diag_cov=sqrt_diag_cov,
+                )
+
+                (
+                    _,
+                    blackjax_unadjusted_mclmc_sampler_params,
+                ) = blackjax.mclmc_find_L_and_step_size(
+                    mclmc_kernel=unadjusted_kernel,
+                    num_steps=num_steps,
+                    state=unadjusted_initial_state,
+                    rng_key=tune_key2,
+                    diagonal_preconditioning=True,
+                    # desired_energy_var= 1e-5
+                )
+
+                print(f"target acceptance rate {target_acceptance_rate_of_order[integrator_order(integrator_type)]}")
+                print(f"params after initial tuning are L={blackjax_unadjusted_mclmc_sampler_params.L}, step_size={blackjax_unadjusted_mclmc_sampler_params.step_size}")
+
+                def func(L, step_size): 
                     
-                    # integrator_type = mclachlan_coefficients
-                    ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
-                        model, 
-                        partial(run_adjusted_mclmc, target_acc_rate=target_acc_rate,  L_proposal_factor=L_proposal_factor,integrator_type=integrator_type, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, preconditioning=preconditioning), 
-                        key1, 
-                        n=num_steps, 
-                        batch=num_chains, 
+                    r = benchmark_chains(model=model, sampler=run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=L, step_size=step_size, L_proposal_factor=L_proposal_factor), key=grid_key, n=num_steps, contract=jnp.max, batch=batch_size)
+
+                    return r[0], r[3]
+
+                out = grid_search(func=func, x=blackjax_unadjusted_mclmc_sampler_params.L, y=blackjax_unadjusted_mclmc_sampler_params.step_size, delta_x=blackjax_unadjusted_mclmc_sampler_params.L-0.2, delta_y=blackjax_unadjusted_mclmc_sampler_params.step_size-0.2, size_grid=2, num_iter=2)
+                
+                results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor )] = out[2].item()
+                
+                ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
+                            model, 
+                            run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1], L_proposal_factor=L_proposal_factor),
+                            key1, 
+                            n=num_steps, 
+                            batch=num_chains, 
+                            contract=jnp.max)
+                        
+
+                results[(model.name, model.ndims, "mhmchmc:grid_rerun", jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), integrator_type, f"gridsearch", acceptance_rate.mean().item(), True, 1/L_proposal_factor )] = ess.item()
+
+
+
+                    
+                print(results)
+
+
+            for preconditioning in [True]:
+            
+                
+
+                ####### run mclmc with standard tuning
+
+                contract = jnp.max
+                
+                if True:
+                    ess, grad_calls, params , _, step_size_over_da = benchmark_chains(
+                        model,
+                        partial(run_mclmc,integrator_type=integrator_type, preconditioning=preconditioning),
+                        key0,
+                        n=num_steps,
+                        batch=num_chains,
                         contract=contract)
-                    results[(model.name, model.ndims, "mhmclmc:st3:"+str(target_acc_rate), jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 1/L_proposal_factor)] = ess.item()
-                    print(f'adjusted_mclmc with tuning ESS {ess}')
+                    results[(model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1., preconditioning, 0)] = ess.item()
+                    print(f'mclmc with tuning ESS {ess}')
 
-            ####### run nuts
 
-            ess, grad_calls, _ , acceptance_rate, _ = benchmark_chains(model, partial(run_nuts,integrator_type=integrator_type, preconditioning=preconditioning),key3, n=models[model]["nuts"], batch=num_chains, contract=contract)
-            results[(model.name, model.ndims, "nuts", 0., 0., (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 0)] = ess.item()
+                    ####### run adjusted_mclmc with standard tuning 
+                    for target_acc_rate, L_proposal_factor in itertools.product([0.9], [jnp.inf]): # , 3., 1.25, 0.5] ):
+                        # coeffs = mclachlan_coefficients
+                        ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
+                            model, 
+                            partial(run_adjusted_mclmc, target_acc_rate=target_acc_rate, L_proposal_factor=L_proposal_factor, integrator_type=integrator_type, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, preconditioning=preconditioning), 
+                            key1, 
+                            n=num_steps, 
+                            batch=num_chains, 
+                            contract=contract)
+                        results[(model.name, model.ndims, "mhmclmc:"+str(target_acc_rate), jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 1/L_proposal_factor)] = ess.item()
+                        print(f'adjusted_mclmc with tuning ESS {ess}')
+                        
+                        # integrator_type = mclachlan_coefficients
+                        ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
+                            model, 
+                            partial(run_adjusted_mclmc, target_acc_rate=target_acc_rate,  L_proposal_factor=L_proposal_factor,integrator_type=integrator_type, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, preconditioning=preconditioning), 
+                            key1, 
+                            n=num_steps, 
+                            batch=num_chains, 
+                            contract=contract)
+                        results[(model.name, model.ndims, "mhmclmc:st3:"+str(target_acc_rate), jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 1/L_proposal_factor)] = ess.item()
+                        print(f'adjusted_mclmc with tuning ESS {ess}')
+
+                ####### run nuts
+
+                ess, grad_calls, _ , acceptance_rate, _ = benchmark_chains(model, partial(run_nuts,integrator_type=integrator_type, preconditioning=preconditioning),key3, n=models[model]["nuts"], batch=num_chains, contract=contract)
+                results[(model.name, model.ndims, "nuts", 0., 0., (integrator_type), "standard", acceptance_rate.mean().item(), preconditioning, 0)] = ess.item()
             
         
                 
