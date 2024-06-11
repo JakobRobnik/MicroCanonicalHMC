@@ -335,8 +335,8 @@ def benchmark_mhmchmc(batch_size):
     # coefficients = [yoshida_coefficients, mclachlan_coefficients, velocity_verlet_coefficients, omelyan_coefficients]
     # coefficients = [mclachlan_coefficients, velocity_verlet_coefficients]
     # integrators = ["mclachlan", "velocity_verlet", "omelyan", "yoshida"]
-    integrators = ["mclachlan"]
-    for model in models:
+    integrators = ["velocity_verlet"]
+    for model, integrator_type in itertools.product(models, integrators):
         results = defaultdict(tuple)
         num_chains = batch_size # 1 + batch_size//model.ndims
         print(f"NUMBER OF CHAINS for {model.name} and adjusted_mclmc is {num_chains}")
@@ -347,8 +347,8 @@ def benchmark_mhmchmc(batch_size):
 
         if True:
             ####### run adjusted_mclmc with standard tuning + grid search
-            integrator_type = "mclachlan"
             
+            integrator_type = "mclachlan"
 
             init_pos_key, init_key, tune_key, grid_key, bench_key = jax.random.split(key2, 5)
             initial_position = model.sample_init(init_pos_key)
@@ -448,7 +448,17 @@ def benchmark_mhmchmc(batch_size):
             out = grid_search(func=func, x=blackjax_unadjusted_mclmc_sampler_params.L, y=blackjax_unadjusted_mclmc_sampler_params.step_size, delta_x=blackjax_unadjusted_mclmc_sampler_params.L-0.2, delta_y=blackjax_unadjusted_mclmc_sampler_params.step_size-0.2, size_grid=5, num_iter=5)
             
             results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor )] = out[2].item()
+            
+            ess, grad_calls, params , acceptance_rate, _ = benchmark_chains(
+                        model, 
+                        run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1], L_proposal_factor=L_proposal_factor),
+                        key1, 
+                        n=num_steps, 
+                        batch=num_chains, 
+                        contract=jnp.max)
+                    
 
+            results[(model.name, model.ndims, "mhmchmc:grid_rerun", jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), integrator_type, f"gridsearch", acceptance_rate.mean().item(), True, 1/L_proposal_factor )] = ess.item()
 
 
 
@@ -456,7 +466,7 @@ def benchmark_mhmchmc(batch_size):
             print(results)
 
 
-        for preconditioning, integrator_type in itertools.product([True], integrators):
+        for preconditioning in [True]:
         
             
 
