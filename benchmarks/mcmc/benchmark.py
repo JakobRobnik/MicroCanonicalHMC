@@ -364,7 +364,8 @@ def benchmark_mhmchmc(batch_size):
 
     key0, key1, key2, key3 = jax.random.split(jax.random.PRNGKey(5), 4)
 
-    integrators = ["mclachlan", "velocity_verlet"]
+    # integrators = ["mclachlan", "velocity_verlet"]
+    integrators = ["mclachlan"]
     # for model in models:
     for model in models:
     # for model in [StandardNormal(d) for np.ceil(d).astype(int) in np.linspace(20, 1000, 5)]:
@@ -447,49 +448,56 @@ def benchmark_mhmchmc(batch_size):
                     # desired_energy_var= 1e-5
                 )
 
-                print(f"target acceptance rate {target_acceptance_rate_of_order[integrator_order(integrator_type)]}")
-                print(f"params after initial tuning are L={blackjax_adjusted_mclmc_sampler_params.L}, step_size={blackjax_adjusted_mclmc_sampler_params.step_size}")
 
-                def func(L, step_size): 
-                    
-                    r = benchmark_chains(model=model, sampler=run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov, L=L, step_size=step_size, L_proposal_factor=L_proposal_factor), key=grid_key, n=num_steps, batch=batch_size)
-
-                    return r[0], r[4]
-
-                out, edge = grid_search(func=func, x=blackjax_adjusted_mclmc_sampler_params.L, y=blackjax_adjusted_mclmc_sampler_params.step_size, delta_x=blackjax_adjusted_mclmc_sampler_params.L-0.2, delta_y=blackjax_adjusted_mclmc_sampler_params.step_size-0.2, size_grid=5, num_iter=4)
-                
-                # results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor, "n/a", "n/a", num_steps)] = out[2].item()
-                
-                ess, ess_avg, ess_corr, params , acceptance_rate, _ = benchmark_chains(
-                            model, 
-                            run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1], L_proposal_factor=L_proposal_factor),
-                            bench_key, 
-                            n=num_steps, 
-                            batch=num_chains)
+                do_grid_search_for_adjusted = False
+                if do_grid_search_for_adjusted:
+                    print(f"target acceptance rate {target_acceptance_rate_of_order[integrator_order(integrator_type)]}")
+                    print(f"params after initial tuning are L={blackjax_adjusted_mclmc_sampler_params.L}, step_size={blackjax_adjusted_mclmc_sampler_params.step_size}")
+                    def func(L, step_size): 
                         
+                        r = benchmark_chains(model=model, sampler=run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov, L=L, step_size=step_size, L_proposal_factor=L_proposal_factor), key=grid_key, n=num_steps, batch=batch_size)
 
-                results[(model.name, model.ndims, f"mhmchmc:grid_edge{edge}", jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), integrator_type, f"gridsearch", acceptance_rate.mean().item(), False, 1/L_proposal_factor, ess_avg, ess_corr, num_steps)] = ess.item()
-                
-                
-                def func_unadjusted(L, step_size): 
+                        return r[0], r[4]
+
+                    out, edge = grid_search(func=func, x=blackjax_adjusted_mclmc_sampler_params.L, y=blackjax_adjusted_mclmc_sampler_params.step_size, delta_x=blackjax_adjusted_mclmc_sampler_params.L-0.2, delta_y=blackjax_adjusted_mclmc_sampler_params.step_size-0.2, size_grid=5, num_iter=4)
                     
-                    r = benchmark_chains(model=model, sampler=run_unadjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=unadjusted_blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=L, step_size=step_size), key=unadjusted_grid_key, n=num_steps, batch=batch_size)
-
-                    return r[1], r[4]
-
-                out, edge = grid_search(func=func_unadjusted, x=blackjax_unadjusted_mclmc_sampler_params.L, y=blackjax_unadjusted_mclmc_sampler_params.step_size, delta_x=blackjax_unadjusted_mclmc_sampler_params.L-0.2, delta_y=blackjax_unadjusted_mclmc_sampler_params.step_size-0.2, size_grid=5, num_iter=4)
-                
-                # results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor, "n/a", "n/a", num_steps)] = out[2].item()
-                
-                ess, ess_avg, ess_corr, params , acceptance_rate, _ = benchmark_chains(
-                            model, 
-                            run_unadjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=unadjusted_blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1]),
-                            unadjusted_bench_key, 
-                            n=num_steps, 
-                            batch=num_chains)
+                    # results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor, "n/a", "n/a", num_steps)] = out[2].item()
+                    
+                    ess, ess_avg, ess_corr, params , acceptance_rate, _ = benchmark_chains(
+                                model, 
+                                run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1], L_proposal_factor=L_proposal_factor),
+                                bench_key, 
+                                n=num_steps, 
+                                batch=num_chains)
                         
+                
 
-                results[(model.name, model.ndims, f"mclmc:grid_edge{edge}", jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), integrator_type, f"gridsearch", acceptance_rate.mean().item(), False, 1/L_proposal_factor, ess_avg, ess_corr, num_steps)] = ess.item()
+                    results[(model.name, model.ndims, f"mhmchmc:grid_edge{edge}", jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), integrator_type, f"gridsearch", acceptance_rate.mean().item(), False, 1/L_proposal_factor, ess_avg, ess_corr, num_steps)] = ess.item()
+        
+                do_grid_search_for_unadjusted = True
+                if do_grid_search_for_unadjusted:
+                
+                    def func_unadjusted(L, step_size): 
+                        
+                        r = benchmark_chains(model=model, sampler=run_unadjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=unadjusted_blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=L, step_size=step_size), key=unadjusted_grid_key, n=num_steps, batch=batch_size)
+
+                        return r[1], r[4]
+
+                    jax.debug.print("Initial grid search params {x}", x=(blackjax_unadjusted_mclmc_sampler_params.L, blackjax_unadjusted_mclmc_sampler_params.step_size))
+
+                    out, edge = grid_search(func=func_unadjusted, x=blackjax_unadjusted_mclmc_sampler_params.L, y=blackjax_unadjusted_mclmc_sampler_params.step_size, delta_x=blackjax_unadjusted_mclmc_sampler_params.L-0.2, delta_y=blackjax_unadjusted_mclmc_sampler_params.step_size-0.2, size_grid=5, num_iter=4)
+                    
+                    # results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor, "n/a", "n/a", num_steps)] = out[2].item()
+                    
+                    ess, ess_avg, ess_corr, params , acceptance_rate, _ = benchmark_chains(
+                                model, 
+                                run_unadjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=unadjusted_blackjax_state_after_tuning, sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1]),
+                                unadjusted_bench_key, 
+                                n=num_steps, 
+                                batch=num_chains)
+                            
+
+                    results[(model.name, model.ndims, f"mclmc:grid_edge{edge}", jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), integrator_type, f"gridsearch", acceptance_rate.mean().item(), False, 1/L_proposal_factor, ess_avg, ess_corr, num_steps)] = ess.item()
 
 
 
@@ -639,25 +647,37 @@ def benchmark_omelyan(batch_size):
 def run_benchmarks_simple():
 
     # sampler = run_adjusted_mclmc
-    sampler = run_mclmc
+    # sampler = run_mclmc
+    sampler = run_unadjusted_mclmc_no_tuning
     # model = IllConditionedGaussian(100,100) 
     # model = Brownian()
-    model = StandardNormal(100)
+    model = StandardNormal(10)
     # model = Banana()
     integrator_type = "mclachlan"
-    contract = jnp.max # how we average across dimensions
+    # contract = jnp.average # how we average across dimensions
     num_steps = 1000
     num_chains = 1
     for i in range(1):
-        key1 = jax.random.PRNGKey(i)
+        key1 = jax.random.PRNGKey(i+1)
 
-        for preconditioning in [True, False]:
+        for preconditioning in [False]:
 
-            ess, grad_calls, params , acceptance_rate, step_size_over_da = benchmark_chains(model, partial(sampler, integrator_type=integrator_type, preconditioning=preconditioning,
+            
+
+            # ess, ess_avg, ess_corr, _ , acceptance_rate, _ = benchmark_chains(model, partial(sampler, integrator_type=integrator_type, preconditioning=preconditioning,
+            #                                                         # target_acc_rate=0.9
+            #           ),key1, n=num_steps, batch=num_chains)
+
+            init_key, state_key, run_key = jax.random.split(key1, 3)
+            initial_position = model.sample_init(init_key)
+            initial_state = blackjax.mcmc.mclmc.init(
+                position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
+            )
+            ess, ess_avg, ess_corr, _ , acceptance_rate, _ = benchmark_chains(model, sampler(L=0.2, step_size=5.34853, integrator_type=integrator_type,initial_state=initial_state, sqrt_diag_cov=1.,
                                                                     # target_acc_rate=0.9
-                      ),key1, n=num_steps, contract=contract, batch=num_chains)
+                      ),run_key, n=num_steps, batch=num_chains)
 
-            print(f"Effective Sample Size (ESS) of {model.name} with preconditioning set to {preconditioning} is {ess}")
+            print(f"Effective Sample Size (ESS) of {model.name} with preconditioning set to {preconditioning} is {ess_avg}")
 
 
 def grid_search(func, x, y, delta_x, delta_y, size_grid= 5, num_iter= 3):
@@ -681,8 +701,10 @@ def grid_search(func, x, y, delta_x, delta_y, size_grid= 5, num_iter= 3):
 
         # compute the func on the grid
         Z = np.linspace(z - delta_z, z + delta_z, size_grid)
+        jax.debug.print("grid {x}",x=Z)
         Results = [[func(xx, yy) for yy in Z[:, 1]] for xx in Z[:, 0]]
         Scores = [[Results[i][j][0] for j in range(size_grid)] for i in range(size_grid)]
+        jax.debug.print("scores {x}",x=(Scores))
 
         # find the best point on the grid
         ind = np.unravel_index(np.argmax(Scores, axis=None), (size_grid, size_grid))
@@ -701,6 +723,8 @@ def grid_search(func, x, y, delta_x, delta_y, size_grid= 5, num_iter= 3):
     initial_edge = False
     for iteration in range(num_iter): # iteratively shrink and shift the grid
         state, results, edge = kernel(state)
+        jax.debug.print("Optimal params on iteration: {x}",x=(state, results[0]))
+        raise Exception
         if edge and iteration==0:
             initial_edge = True
 
@@ -713,10 +737,10 @@ if __name__ == "__main__":
     # print(grid_search(func, 0., 0., 1., 2., size_grid= 5, num_iter=1))
 
 
-    # run_benchmarks_simple()
+    run_benchmarks_simple()
     # benchmark_omelyan(128)
 
-    benchmark_mhmchmc(batch_size=128)
+    # benchmark_mhmchmc(batch_size=128)
     # run_benchmarks(128)
     # run_benchmarks_step_size(128)
     # run_benchmarks(128)
