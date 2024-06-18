@@ -147,7 +147,7 @@ def run_adjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, s
 
     return s
 
-def run_unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov):
+def run_unadjusted_mclmc_no_tuning(f,initial_state, integrator_type, step_size, L, sqrt_diag_cov):
 
     def s(logdensity_fn, num_steps, initial_position, transform, key):
 
@@ -170,7 +170,26 @@ def run_unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L,
             progress_bar=True,
         )
 
-        return samples, MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),  calls_per_integrator_step(integrator_type), 0, None, jnp.array([0])
+        expectation, _, expectations = run_inference_algorithm(
+        rng_key=key,
+        initial_state=initial_state,
+        inference_algorithm=sampling_alg,
+        num_steps=num_steps,
+        return_state_history=False,
+        transform=lambda x: transform(x.position),
+        # expectation=lambda x: jnp.array([x**2, x]),
+        expectation=lambda x: x**2,
+        f = f,
+        progress_bar=True,
+        )
+
+        jax.debug.print("expectation {x}",x=(expectations, ))
+        # jax.debug.print("samples {x}",x=samples.shape)
+        # jax.debug.print("expectation 2 {x}",x=(samples**2).mean(axis=0))
+        
+
+
+        return samples, expectations, MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),  calls_per_integrator_step(integrator_type), 0, None, jnp.array([0])
 
     return s
 
@@ -187,7 +206,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     init_keys = jax.random.split(init_key, batch)
     init_pos = pvmap(model.sample_init)(init_keys) # [batch_size, dim_model]
 
-    samples, params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da = pvmap(lambda pos, key: sampler(logdensity_fn=model.logdensity_fn, num_steps=n, initial_position= pos,transform= model.transform, key=key))(init_pos, keys)
+    samples, expectations, params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da = pvmap(lambda pos, key: sampler(logdensity_fn=model.logdensity_fn, num_steps=n, initial_position= pos,transform= model.transform, key=key))(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
     try:
         print(jnp.nanmean(params.step_size,axis=0), jnp.nanmean(params.L,axis=0))
@@ -198,6 +217,10 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     # err_t = pvmap(err(model.E_x2, model.Var_x2, contract))(samples)
     err_t_avg = pvmap(full_avg)(samples)
     err_t_max = pvmap(full_max)(samples)
+
+    jax.debug.print("err_t_avg {x}",x=err_t_avg)
+    
+
 
     err_t_median_avg = jnp.median(err_t_avg, axis=0)
     esses_avg, _, _ = calculate_ess(err_t_median_avg, grad_evals_per_step=avg_grad_calls_per_traj)
@@ -655,7 +678,7 @@ def run_benchmarks_simple():
     # model = Banana()
     integrator_type = "mclachlan"
     # contract = jnp.average # how we average across dimensions
-    num_steps = 1000
+    num_steps = 100
     num_chains = 1
     for i in range(1):
         key1 = jax.random.PRNGKey(i+1)
@@ -673,7 +696,7 @@ def run_benchmarks_simple():
             initial_state = blackjax.mcmc.mclmc.init(
                 position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
             )
-            ess, ess_avg, ess_corr, _ , acceptance_rate, _ = benchmark_chains(model, sampler(L=0.2, step_size=5.34853, integrator_type=integrator_type,initial_state=initial_state, sqrt_diag_cov=1.,
+            ess, ess_avg, ess_corr, _ , acceptance_rate, _ = benchmark_chains(model, sampler(L=0.2, step_size=5.34853, integrator_type=integrator_type,initial_state=initial_state, sqrt_diag_cov=1., f  = lambda x: jnp.average(jnp.square(x - model.E_x2) / model.Var_x2),
                                                                     # target_acc_rate=0.9
                       ),run_key, n=num_steps, batch=num_chains)
 
