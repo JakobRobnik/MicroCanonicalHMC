@@ -183,7 +183,7 @@ def run_unadjusted_mclmc_no_tuning(f,initial_state, integrator_type, step_size, 
         progress_bar=True,
         )
 
-        jax.debug.print("expectation {x}",x=(expectations, ))
+        # jax.debug.print("expectation {x}",x=(expectations, ))
         # jax.debug.print("samples {x}",x=samples.shape)
         # jax.debug.print("expectation 2 {x}",x=(samples**2).mean(axis=0))
         
@@ -215,7 +215,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     full_avg = lambda x : err(model.E_x2, model.Var_x2, jnp.average)(cumulative_avg(x**2))
     full_max = lambda x : err(model.E_x2, model.Var_x2, jnp.max)(cumulative_avg(x**2))
     # err_t = pvmap(err(model.E_x2, model.Var_x2, contract))(samples)
-    err_t_avg = pvmap(full_avg)(samples)
+    err_t_avg = expectations # pvmap(full_avg)(samples)
     err_t_max = pvmap(full_max)(samples)
 
     jax.debug.print("err_t_avg {x}",x=err_t_avg)
@@ -679,7 +679,7 @@ def run_benchmarks_simple():
     integrator_type = "mclachlan"
     # contract = jnp.average # how we average across dimensions
     num_steps = 100
-    num_chains = 1
+    num_chains = 128
     for i in range(1):
         key1 = jax.random.PRNGKey(i+1)
 
