@@ -212,30 +212,13 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
         print(jnp.nanmean(params.step_size,axis=0), jnp.nanmean(params.L,axis=0))
     except: pass
     
-    full_avg = lambda x : err(model.E_x2, model.Var_x2, jnp.average)(cumulative_avg(x**2))
-    full_max = lambda x : err(model.E_x2, model.Var_x2, jnp.max)(cumulative_avg(x**2))
     # err_t = pvmap(err(model.E_x2, model.Var_x2, contract))(samples)
     err_t_avg = expectations # pvmap(full_avg)(samples)
-    err_t_max = pvmap(full_max)(samples)
-
-    jax.debug.print("err_t_avg {x}",x=err_t_avg)
-    
-
 
     err_t_median_avg = jnp.median(err_t_avg, axis=0)
     esses_avg, _, _ = calculate_ess(err_t_median_avg, grad_evals_per_step=avg_grad_calls_per_traj)
 
-    err_t_median_max = jnp.median(err_t_max, axis=0)
-    esses_max, _, _ = calculate_ess(err_t_median_max, grad_evals_per_step=avg_grad_calls_per_traj)
-
-
-    ess_corr = jax.pmap(lambda x: effective_sample_size(x[None, ...]))(samples)
-
-    # print(ess_corr.shape,"shape")
-    ess_corr = jnp.mean(ess_corr, axis=0)
-    # jax.debug.print("{x}",x=jnp.mean(1/ess_corr))
-
-    return esses_max, esses_avg.item(), jnp.mean(1/ess_corr).item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
+    return esses_avg.item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
 
 def benchmark_no_chains(model, sampler, key, n=10000, contract = jnp.average,):
 
@@ -674,7 +657,7 @@ def run_benchmarks_simple():
     sampler = run_unadjusted_mclmc_no_tuning
     # model = IllConditionedGaussian(100,100) 
     # model = Brownian()
-    model = StandardNormal(10)
+    model = StandardNormal(10000)
     # model = Banana()
     integrator_type = "mclachlan"
     # contract = jnp.average # how we average across dimensions
@@ -696,7 +679,7 @@ def run_benchmarks_simple():
             initial_state = blackjax.mcmc.mclmc.init(
                 position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
             )
-            ess, ess_avg, ess_corr, _ , acceptance_rate, _ = benchmark_chains(model, sampler(L=0.2, step_size=5.34853, integrator_type=integrator_type,initial_state=initial_state, sqrt_diag_cov=1., f  = lambda x: jnp.average(jnp.square(x - model.E_x2) / model.Var_x2),
+            ess_avg, _ , acceptance_rate, _ = benchmark_chains(model, sampler(L=0.2, step_size=5.34853, integrator_type=integrator_type,initial_state=initial_state, sqrt_diag_cov=1., f  = lambda x: jnp.average(jnp.square(x - model.E_x2) / model.Var_x2),
                                                                     # target_acc_rate=0.9
                       ),run_key, n=num_steps, batch=num_chains)
 
