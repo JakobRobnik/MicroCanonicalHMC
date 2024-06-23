@@ -28,8 +28,7 @@ import blackjax
 from benchmarks.mcmc.sampling_algorithms import calls_per_integrator_step, integrator_order, map_integrator_type_to_integrator, target_acceptance_rate_of_order, run_mclmc, run_adjusted_mclmc, run_nuts, samplers
 from benchmarks.mcmc.inference_models import Banana, Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility, models
 from blackjax.mcmc.integrators import generate_euclidean_integrator, generate_isokinetic_integrator, isokinetic_mclachlan, mclachlan_coefficients, omelyan_coefficients, velocity_verlet, velocity_verlet_coefficients, yoshida_coefficients
-from blackjax.mcmc.adjusted_mclmc import rescale
-from blackjax.util import run_inference_algorithm
+from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 
 
@@ -730,14 +729,68 @@ def grid_search(func, x, y, delta_x, delta_y, size_grid= 5, num_iter= 3):
 
     return [state[0][0], state[0][1], *results], initial_edge
 
+
+def try_new_run_inference():
+
+    init_key, state_key, run_key = jax.random.split(jax.random.PRNGKey(0),3)
+    model = StandardNormal(2)
+    initial_position = model.sample_init(init_key)
+    initial_state = blackjax.mcmc.mclmc.init(
+        position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
+    )
+    integrator_type = "mclachlan"
+    L = 1.0
+    step_size = 0.1
+    num_steps = 4
+
+    integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
+
+    sampling_alg = blackjax.mclmc(
+        model.logdensity_fn,
+        L=L,
+        step_size=step_size,
+        integrator = integrator,
+    ) 
+
+    state_transform = lambda x: x.position
+
+    _, samples = run_inference_algorithm(
+        rng_key=run_key,
+        initial_state=initial_state,
+        inference_algorithm=sampling_alg,
+        num_steps=num_steps,
+        transform=lambda state, info: state_transform(state),
+        progress_bar=True,
+    )
+
+    print("average of steps (slow way):", samples.mean(axis=0))
+
+    memory_efficient_sampling_alg, transform = store_only_expectation_values(
+        sampling_algorithm=sampling_alg,
+        state_transform=state_transform)
+    
+    initial_state = memory_efficient_sampling_alg.init(initial_state)
+        
+    final_state, trace_at_every_step = run_inference_algorithm(
+
+        rng_key=run_key,
+        initial_state=initial_state,
+        inference_algorithm=memory_efficient_sampling_alg,
+        num_steps=num_steps,
+        transform=transform,
+        progress_bar=True,
+    )
+
+    print("average of steps (fast way):",trace_at_every_step[-1])
+    
 if __name__ == "__main__":
 
-
+    try_new_run_inference()
 
     # print(grid_search(func, 0., 0., 1., 2., size_grid= 5, num_iter=1))
 
 
-    run_benchmarks_simple()
+    # run_benchmarks_simple()
     # benchmark_omelyan(128)
 
     # benchmark_mhmchmc(batch_size=128)

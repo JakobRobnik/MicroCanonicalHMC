@@ -9,7 +9,6 @@ import blackjax
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
 # from blackjax.adaptation.window_adaptation import da_adaptation
 from blackjax.mcmc.integrators import generate_euclidean_integrator, generate_isokinetic_integrator, mclachlan, yoshida, velocity_verlet, omelyan, isokinetic_mclachlan, isokinetic_velocity_verlet, isokinetic_yoshida, isokinetic_omelyan
-from blackjax.mcmc.adjusted_mclmc import rescale
 from blackjax.util import run_inference_algorithm
 import blackjax
 from blackjax.util import pytree_size
