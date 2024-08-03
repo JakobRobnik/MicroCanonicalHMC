@@ -427,3 +427,4 @@ if __name__ == '__main__':
 
     join_ground_truth()
     #stochastic_volatility_ground_truth(0)
+

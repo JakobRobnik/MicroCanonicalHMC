@@ -351,3 +351,4 @@ class Sampler:
 
         burnin_steps, x, u, l, g, key, L, eps, sigma = self.burn_in(*state) #burn-in (first stage)
         #print(eps)
+
