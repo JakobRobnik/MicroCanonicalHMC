@@ -174,4 +174,3 @@ class Sampler:
 
         return jax.lax.scan(temp_level, init= (x0, u0, l0, g0, jnp.zeros(x0.shape[0]), key0, self.L, self.eps_initial), xs= jnp.arange(1, len(temp_schedule_ext)))[1]
         
-

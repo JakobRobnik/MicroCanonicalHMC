@@ -1,12 +1,10 @@
-dist
-.benchmarks
-.pytest*
-*/__pycache__/*
+**/__pycache__/**
 *__pycache__*
+*.png
 mclmc.egg*
 *.jpg
 *.mp4
-# *.npy
+*.npy
 *.pdf
 .ipynb_checkpoints
 *.csv

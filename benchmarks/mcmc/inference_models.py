@@ -16,7 +16,8 @@ class StandardNormal():
         self.E_x2 = jnp.ones(d)
         self.Var_x2 = 2 * self.E_x2
         self.name = 'StandardNormal'
-        
+        self.hessian = jnp.eye(d)
+        self.cov = jnp.eye(d)
 
     def logdensity_fn(self, x):
         """- log p of the target distribution"""
@@ -46,8 +47,8 @@ class IllConditionedGaussian():
         if numpy_seed == None:  # diagonal
             self.E_x2 = eigs
             self.R = jnp.eye(d)
-            self.Hessian = jnp.diag(1 / eigs)
-            self.Cov = jnp.diag(eigs)
+            self.hessian = jnp.diag(1 / eigs)
+            self.cov = jnp.diag(eigs)
 
         else:  # randomly rotate
             rng = np.random.RandomState(seed=numpy_seed)
@@ -55,18 +56,18 @@ class IllConditionedGaussian():
             inv_D = jnp.diag(1 / eigs)
             R, _ = jnp.array(np.linalg.qr(rng.randn(self.ndims, self.ndims)))  # random rotation
             self.R = R
-            self.Hessian = R @ inv_D @ R.T
-            self.Cov = R @ D @ R.T
+            self.hessian = R @ inv_D @ R.T
+            self.cov = R @ D @ R.T
             self.E_x2 = jnp.diagonal(R @ D @ R.T)
 
-            #Cov_precond = jnp.diag(1 / jnp.sqrt(self.E_x2)) @ self.Cov @ jnp.diag(1 / jnp.sqrt(self.E_x2))
+            #cov_precond = jnp.diag(1 / jnp.sqrt(self.E_x2)) @ self.cov @ jnp.diag(1 / jnp.sqrt(self.E_x2))
 
-            #print(jnp.linalg.cond(Cov_precond) / jnp.linalg.cond(self.Cov))
+            #print(jnp.linalg.cond(cov_precond) / jnp.linalg.cond(self.cov))
 
         self.Var_x2 = 2 * jnp.square(self.E_x2)
 
 
-        self.logdensity_fn = lambda x: -0.5 * x.T @ self.Hessian @ x
+        self.logdensity_fn = lambda x: -0.5 * x.T @ self.hessian @ x
         self.transform = lambda x: x
         
 
