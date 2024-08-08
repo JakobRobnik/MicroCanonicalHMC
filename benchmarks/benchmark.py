@@ -139,7 +139,7 @@ def run_adjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, s
         initial_state=initial_state,
         inference_algorithm=alg,
         num_steps=num_steps, 
-        transform=lambda x: transform(x.position), 
+        transform=lambda state, info: transform(state.position),  
         progress_bar=True)
 
         return out, MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov), num_steps_per_traj * calls_per_integrator_step(integrator_type), info.acceptance_rate.mean(), None, jnp.array([0])
@@ -160,12 +160,12 @@ def run_unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L,
         integrator = integrator,
         )
 
-        _, samples, info = run_inference_algorithm(
+        final_sample, samples = run_inference_algorithm(
             rng_key=key,
             initial_state=initial_state,
             inference_algorithm=sampling_alg,
             num_steps=num_steps,
-            transform=lambda x: transform(x.position),
+            transform=lambda state, info: transform(state.position),
             progress_bar=True,
         )
 
@@ -186,7 +186,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     init_keys = jax.random.split(init_key, batch)
     init_pos = pvmap(model.sample_init)(init_keys) # [batch_size, dim_model]
 
-    samples, params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da = pvmap(lambda pos, key: sampler(logdensity_fn=model.logdensity_fn, num_steps=n, initial_position= pos,transform= model.transform, key=key))(init_pos, keys)
+    samples, params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da = pvmap(lambda pos, key: sampler(logdensity_fn=model.logdensity_fn, num_steps=n, initial_position= pos,transform=  model.transform, key=key))(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
     try:
         print(jnp.nanmean(params.step_size,axis=0), jnp.nanmean(params.L,axis=0))
@@ -781,7 +781,7 @@ def try_new_run_inference():
         progress_bar=True,
     )
 
-    print("average of steps (fast way):",trace_at_every_step[-1])
+    print("average of steps (fast way):",trace_at_every_step[0][-1])
     
 if __name__ == "__main__":
 

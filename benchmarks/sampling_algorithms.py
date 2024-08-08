@@ -145,7 +145,7 @@ def run_nuts(
         initial_state=state,
         inference_algorithm=nuts,
         num_steps=num_steps,
-        transform=lambda x: transform(x.position),
+        transform=lambda state,info: transform(state.position),
         progress_bar=True
     )
 
@@ -204,7 +204,7 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
     #     inference_algorithm=sampling_alg,
     #     num_steps=num_steps,
     #     return_state_history=False,
-    #     transform=lambda x: transform(x.position),
+    #     transform=lambda state,info: transform(state.position),
     #     # expectation=lambda x: jnp.array([x**2, x]),
     #     expectation=lambda x: x**2,
     #     progress_bar=True,
@@ -222,7 +222,7 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
         initial_state=blackjax_state_after_tuning,
         inference_algorithm=sampling_alg,
         num_steps=num_steps,
-        transform=lambda x: transform(x.position),
+        transform=lambda state,info: transform(state.position),
         progress_bar=True,
     )
     
@@ -312,7 +312,7 @@ def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_positi
         initial_state=blackjax_state_after_tuning,
         inference_algorithm=alg,
         num_steps=num_steps, 
-        transform=lambda x: transform(x.position), 
+        transform=lambda state,info: transform(state.position), 
         progress_bar=True)
     
 
