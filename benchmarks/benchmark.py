@@ -23,10 +23,11 @@ num_cores = jax.local_device_count()
 import itertools
 
 import numpy as np
+from blackjax.mcmc.adjusted_mclmc import rescale
 
 import blackjax
-from benchmarks.mcmc.sampling_algorithms import calls_per_integrator_step, integrator_order, map_integrator_type_to_integrator, target_acceptance_rate_of_order, run_mclmc, run_adjusted_mclmc, run_nuts, samplers
-from benchmarks.mcmc.inference_models import Banana, Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility, models
+from benchmarks.sampling_algorithms import calls_per_integrator_step, integrator_order, map_integrator_type_to_integrator, target_acceptance_rate_of_order, run_mclmc, run_adjusted_mclmc, run_nuts, samplers
+from benchmarks.inference_models import Banana, Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility, models
 from blackjax.mcmc.integrators import generate_euclidean_integrator, generate_isokinetic_integrator, isokinetic_mclachlan, mclachlan_coefficients, omelyan_coefficients, velocity_verlet, velocity_verlet_coefficients, yoshida_coefficients
 from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
@@ -134,15 +135,15 @@ def run_adjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, s
         L_proposal_factor=L_proposal_factor
         )
 
-        _, out, info = run_inference_algorithm(
+        states, (history, info) = run_inference_algorithm(
         rng_key=key,
         initial_state=initial_state,
         inference_algorithm=alg,
         num_steps=num_steps, 
-        transform=lambda state, info: transform(state.position),  
+        transform=lambda state, info: (transform(state.position), info),  
         progress_bar=True)
 
-        return out, MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov), num_steps_per_traj * calls_per_integrator_step(integrator_type), info.acceptance_rate.mean(), None, jnp.array([0])
+        return history, MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov), num_steps_per_traj * calls_per_integrator_step(integrator_type), info.acceptance_rate.mean(), None, jnp.array([0])
 
     return s
 
@@ -380,7 +381,6 @@ def benchmark_mhmchmc(batch_size):
             if True:
                 ####### run adjusted_mclmc with standard tuning + grid search
             
-
                 init_pos_key, init_key, tune_key, grid_key, bench_key, unadjusted_grid_key, unadjusted_bench_key = jax.random.split(key2, 7)
                 initial_position = model.sample_init(init_pos_key)
 
@@ -448,7 +448,7 @@ def benchmark_mhmchmc(batch_size):
                 )
 
 
-                do_grid_search_for_adjusted = False
+                do_grid_search_for_adjusted = True
                 if do_grid_search_for_adjusted:
                     print(f"target acceptance rate {target_acceptance_rate_of_order[integrator_order(integrator_type)]}")
                     print(f"params after initial tuning are L={blackjax_adjusted_mclmc_sampler_params.L}, step_size={blackjax_adjusted_mclmc_sampler_params.step_size}")
@@ -473,7 +473,7 @@ def benchmark_mhmchmc(batch_size):
 
                     results[(model.name, model.ndims, f"mhmchmc:grid_edge{edge}", jnp.nanmean(params.L).item(), jnp.nanmean(params.step_size).item(), integrator_type, f"gridsearch", acceptance_rate.mean().item(), False, 1/L_proposal_factor, ess_avg, ess_corr, num_steps)] = ess.item()
         
-                do_grid_search_for_unadjusted = True
+                do_grid_search_for_unadjusted = False
                 if do_grid_search_for_unadjusted:
                 
                     def func_unadjusted(L, step_size): 
@@ -723,7 +723,6 @@ def grid_search(func, x, y, delta_x, delta_y, size_grid= 5, num_iter= 3):
     for iteration in range(num_iter): # iteratively shrink and shift the grid
         state, results, edge = kernel(state)
         jax.debug.print("Optimal params on iteration: {x}",x=(state, results[0]))
-        raise Exception
         if edge and iteration==0:
             initial_edge = True
 
@@ -785,15 +784,15 @@ def try_new_run_inference():
     
 if __name__ == "__main__":
 
-    try_new_run_inference()
-
-    # print(grid_search(func, 0., 0., 1., 2., size_grid= 5, num_iter=1))
-
 
     # run_benchmarks_simple()
+    benchmark_mhmchmc(batch_size=128)
     # benchmark_omelyan(128)
 
-    # benchmark_mhmchmc(batch_size=128)
+
+    # try_new_run_inference()
+
+    # print(grid_search(func, 0., 0., 1., 2., size_grid= 5, num_iter=1))
     # run_benchmarks(128)
     # run_benchmarks_step_size(128)
     # run_benchmarks(128)

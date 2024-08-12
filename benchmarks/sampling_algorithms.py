@@ -16,6 +16,7 @@ from blackjax.adaptation.step_size import (
     DualAveragingAdaptationState,
     dual_averaging_adaptation,
 )
+from blackjax.mcmc.adjusted_mclmc import rescale
 
 # __all__ = ["samplers"]
 
@@ -140,12 +141,12 @@ def run_nuts(
 
     nuts = blackjax.nuts(logdensity_fn=logdensity_fn, step_size=params['step_size'], inverse_mass_matrix= params['inverse_mass_matrix'], integrator=integrator)
 
-    final_state, state_history, info_history = run_inference_algorithm(
+    _, (state_history, info_history) = run_inference_algorithm(
         rng_key=rng_key,
         initial_state=state,
         inference_algorithm=nuts,
         num_steps=num_steps,
-        transform=lambda state,info: transform(state.position),
+        transform=lambda state,info: (transform(state.position), info),
         progress_bar=True
     )
 
@@ -217,7 +218,7 @@ def run_mclmc(integrator_type, logdensity_fn, num_steps, initial_position, trans
     # var = expectations[:, 0] - ex[:, 1]**2
 
 
-    _, samples, _ = run_inference_algorithm(
+    _, samples = run_inference_algorithm(
         rng_key=run_key,
         initial_state=blackjax_state_after_tuning,
         inference_algorithm=sampling_alg,
@@ -307,12 +308,12 @@ def run_adjusted_mclmc(integrator_type, logdensity_fn, num_steps, initial_positi
     )
 
 
-    _, out, info = run_inference_algorithm(
+    _, (out, info) = run_inference_algorithm(
         rng_key=run_key,
         initial_state=blackjax_state_after_tuning,
         inference_algorithm=alg,
         num_steps=num_steps, 
-        transform=lambda state,info: transform(state.position), 
+        transform=lambda state,info: (transform(state.position), info), 
         progress_bar=True)
     
 
