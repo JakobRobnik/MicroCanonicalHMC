@@ -27,12 +27,35 @@ from blackjax.mcmc.adjusted_mclmc import rescale
 
 import blackjax
 from benchmarks.sampling_algorithms import calls_per_integrator_step, integrator_order, map_integrator_type_to_integrator, target_acceptance_rate_of_order, run_mclmc, run_adjusted_mclmc, run_nuts, samplers
-from benchmarks.inference_models import Banana, Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility, models
+from benchmarks.inference_models import Banana, Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility
 from blackjax.mcmc.integrators import generate_euclidean_integrator, generate_isokinetic_integrator, isokinetic_mclachlan, mclachlan_coefficients, omelyan_coefficients, velocity_verlet, velocity_verlet_coefficients, yoshida_coefficients
 from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 
+models = {
 
+    ## Rosenbrock(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}, # no Ex2
+    # Cauchy(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000}, 
+    # Brownian() : {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 4000},
+    StandardNormal(2) : {'mclmc': 1000, 'adjusted_mclmc' : 1000, 'nuts': 1000}, 
+    # StandardNormal(50) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800}, 
+    # StandardNormal(100) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800}, 
+    # StandardNormal(500) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800}, 
+    # StandardNormal(1000) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800}, 
+    # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000}, 
+    # Funnel() : {'mclmc': 20000, 'adjusted_mclmc' : 80000, 'nuts': 40000},
+
+
+    # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000},
+    # IllConditionedGaussian(100, 100):   {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
+    # GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
+    # ItemResponseTheory(): {'mclmc': 20000, 'adjusted_mclmc' : 40000, 'nuts': 20000},
+    # StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}
+    }
+
+# models = {'Brownian Motion': (Brownian(), {'mclmc': 50000, 'adjusted_mclmc' : 40000, 'nuts': 1000}),
+#         #   'Item Response Theory': (ItemResponseTheory(), {'mclmc': 50000, 'adjusted_mclmc' : 50000, 'nuts': 1000})
+#           }
 
 
 def get_num_latents(target):

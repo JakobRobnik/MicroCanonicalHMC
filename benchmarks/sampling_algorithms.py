@@ -4,7 +4,6 @@ from typing import Callable, Union
 from chex import PRNGKey
 import jax
 import jax.numpy as jnp
-from benchmarks import mcmc
 import blackjax
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
 # from blackjax.adaptation.window_adaptation import da_adaptation
