@@ -8,7 +8,6 @@ import os
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 
 
-
 def init(key):
     phi = jax.random.uniform(key) * 2 * jnp.pi
     return jnp.array([jnp.cos(phi), jnp.sin(phi)])
@@ -19,6 +18,7 @@ def sequential_kernel(x, key):
     phi = jnp.atan2(x[1], x[0])
     eps = jax.random.normal(key) * 0.1
     return jnp.array([jnp.cos(phi + eps), jnp.cos(phi + eps)])
+
 
 mesh = jax.sharding.Mesh(jax.devices(), 'chains')
 p = PartitionSpec('chains')
@@ -43,5 +43,3 @@ init_state= jnp.tile(jnp.array([0., 1.]), (num_chains, 1))
 final_state, info = jax.lax.scan(step, init= init_state, xs = jax.random.split(key, num_samples))
 print(final_state.shape)
 
-
-    

@@ -4,12 +4,15 @@ import jax.numpy as jnp
 import os
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 
+from jax.sharding import PartitionSpec
+from jax.experimental.shard_map import shard_map
+p = PartitionSpec('chains')
+mesh = jax.sharding.Mesh(jax.devices(), 'chains')
+
 from blackjax.adaptation.ensemble_mclmc import algorithm as emclmc
-from blackjax.adaptation.ensemble_umclmc import Parallelization
 from benchmarks.inference_models import *
 
-num_cores = jax.local_device_count()
-print(num_cores, jax.lib.xla_bridge.get_backend().platform)
+print(len(jax.devices()), jax.lib.xla_bridge.get_backend().platform)
 
 
 def plot_trace(info1, info2, model, mclachlan):
@@ -106,20 +109,24 @@ def run(model, num_steps, num_chains, key):
     
     mclachlan = True
     key_sampling, key_init = jax.random.split(key)
-    parallelization = Parallelization(pmap_chains= num_cores, vmap_chains= num_chains // num_cores)
-    initial_position = parallelization.pvmap(model.sample_init)(jax.random.split(key_init, num_chains).reshape(parallelization.shape))
-    transform = parallelization.pvmap(model.transform)
+    
+    sample_init = shard_map(jax.vmap(model.sample_init), mesh=mesh, in_specs=p, out_specs=p)
+    transform = shard_map(jax.vmap(model.transform), mesh=mesh, in_specs= p, out_specs=p)
+
+    initial_position = sample_init(jax.random.split(key_init, num_chains))
     
     def observables(x):
         f = jnp.average(jnp.square(transform(x)), axis = 0)
         bsq = jnp.square(f - model.E_x2) / model.Var_x2
         return jnp.array([jnp.max(bsq), jnp.average(bsq)])
     
-    info1, info2 = emclmc(model.logdensity_fn, num_steps, parallelization, 
+    info1, info2 = emclmc(model.logdensity_fn, num_steps, 
                           initial_position, key_sampling,
                           num_steps_per_sample= 3,
                           mclachlan= mclachlan, 
-                          observables= observables)
+                          observables= observables, 
+                          mesh= mesh
+                          )
     
     plot_trace(info1, info2, model, mclachlan)
     
@@ -134,8 +141,8 @@ def mainn():
                 [ItemResponseTheory(), 1000],
                 [StochasticVolatility(), 2000]]
 
-    chains = 512
-
+    chains = 256
+    
     key = jax.random.key(42)
     
     for i in [0,]:
