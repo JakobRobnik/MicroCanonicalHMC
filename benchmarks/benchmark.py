@@ -1,3 +1,4 @@
+
 import sys
 sys.path.append('./')
 
@@ -13,6 +14,8 @@ import jax
 import jax.numpy as jnp
 import pandas as pd
 import scipy
+from jax.flatten_util import ravel_pytree
+
 
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
 
@@ -26,7 +29,9 @@ import numpy as np
 from blackjax.mcmc.adjusted_mclmc import rescale
 
 import blackjax
-from benchmarks.sampling_algorithms import calls_per_integrator_step, integrator_order, map_integrator_type_to_integrator, target_acceptance_rate_of_order, run_mclmc, run_adjusted_mclmc, run_nuts, samplers
+from benchmarks.sampling_algorithms import calls_per_integrator_step, integrator_order, map_integrator_type_to_integrator, run_adjusted_mclmc, run_nuts, target_acceptance_rate_of_order, run_mclmc
+
+# run_adjusted_mclmc, run_nuts, samplers
 from benchmarks.inference_models import Banana, Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility
 from blackjax.mcmc.integrators import generate_euclidean_integrator, generate_isokinetic_integrator, isokinetic_mclachlan, mclachlan_coefficients, omelyan_coefficients, velocity_verlet, velocity_verlet_coefficients, yoshida_coefficients
 from blackjax.util import run_inference_algorithm, store_only_expectation_values
@@ -36,8 +41,8 @@ models = {
 
     ## Rosenbrock(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}, # no Ex2
     # Cauchy(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000}, 
-    # Brownian() : {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 4000},
-    StandardNormal(2) : {'mclmc': 1000, 'adjusted_mclmc' : 1000, 'nuts': 1000}, 
+    Brownian() : {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 4000},
+    # StandardNormal(2) : {'mclmc': 1000, 'adjusted_mclmc' : 1000, 'nuts': 1000}, 
     # StandardNormal(50) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800}, 
     # StandardNormal(100) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800}, 
     # StandardNormal(500) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800}, 
@@ -142,7 +147,7 @@ def gridsearch_tune(key, iterations, grid_size, model, sampler, batch, num_steps
     return center_L, center_step_size, converged
 
 
-def run_adjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov, L_proposal_factor):
+def run_adjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov, L_proposal_factor=jnp.inf):
 
     def s(logdensity_fn, num_steps, initial_position, transform, key):
 
@@ -229,10 +234,20 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     esses_max, _, _ = calculate_ess(err_t_median_max, grad_evals_per_step=avg_grad_calls_per_traj)
 
 
-    ess_corr = jax.pmap(lambda x: effective_sample_size(x[None, ...]))(samples)
+    ess_corr = jax.pmap(lambda x: effective_sample_size((jax.vmap(lambda x: ravel_pytree(x)[0])(x))[None, ...]))(samples)
 
     # print(ess_corr.shape,"shape")
-    ess_corr = jnp.mean(ess_corr, axis=0)
+    # ess_corr = jnp.mean(ess_corr, axis=0)
+
+    # ess_corr = effective_sample_size(samples)
+    print("ess/n\n\n\n\n\n")
+    print(jnp.mean(ess_corr)/n)
+    print("ess/n\n\n\n\n\n")
+    
+
+    # flat_samples = jax.vmap(lambda x: ravel_pytree(x)[0])(samples)
+    #     ess = effective_sample_size(flat_samples[None, ...])
+    #     jax.debug.print("{x} INV ESS CORR",x=jnp.mean(1/ess))
     # jax.debug.print("{x}",x=jnp.mean(1/ess_corr))
 
     return esses_max, esses_avg.item(), jnp.mean(1/ess_corr).item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
@@ -400,8 +415,8 @@ def benchmark_mhmchmc(batch_size):
             print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {num_steps}")
 
 
-
-            if True:
+            grid = True
+            if grid:
                 ####### run adjusted_mclmc with standard tuning + grid search
             
                 init_pos_key, init_key, tune_key, grid_key, bench_key, unadjusted_grid_key, unadjusted_bench_key = jax.random.split(key2, 7)
@@ -485,6 +500,7 @@ def benchmark_mhmchmc(batch_size):
                     
                     # results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor, "n/a", "n/a", num_steps)] = out[2].item()
                     
+                    print("BENCHMARK after finding optimal params with grid \n\n\n")
                     ess, ess_avg, ess_corr, params , acceptance_rate, _ = benchmark_chains(
                                 model, 
                                 run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=blackjax_state_after_tuning, sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1], L_proposal_factor=L_proposal_factor),
@@ -589,7 +605,7 @@ def benchmark_omelyan(batch_size):
     results = defaultdict(tuple)
     for variables in itertools.product(
         # ["adjusted_mclmc", "nuts", "mclmc", ], 
-        [StandardNormal(d) for d in np.ceil(np.logspace(np.log10(10), np.log10(1000), 4)).astype(int)],
+        [StandardNormal(d) for d in np.ceil(np.logspace(np.log10(1e1), np.log10(1e2), 2)).astype(int)],
         # [StandardNormal(d) for d in np.ceil(np.logspace(np.log10(10), np.log10(10000), 5)).astype(int)],
         # models,
         # [velocity_verlet_coefficients, mclachlan_coefficients, yoshida_coefficients, omelyan_coefficients], 
@@ -630,14 +646,14 @@ def benchmark_omelyan(batch_size):
             state,
             blackjax_adjusted_mclmc_sampler_params,
             _, _
-        ) = blackjax.adaptation.mclmc_adaptation.adjusted_mclmc_find_L_and_step_size(
+        ) = blackjax.adjusted_mclmc_find_L_and_step_size(
             mclmc_kernel=kernel,
             num_steps=num_steps,
             state=initial_state,
             rng_key=tune_key,
             target=target_acceptance_rate_of_order[integrator_order(integrator_type)],
-            frac_tune1=0.1,
-            frac_tune2=0.1,
+            # frac_tune1=0.1,
+            # frac_tune2=0.1,
             # frac_tune3=0.1,
             diagonal_preconditioning=False
         )
@@ -649,21 +665,43 @@ def benchmark_omelyan(batch_size):
 
         # results[((model.name, model.ndims), sampler, (coefficients), "without grid search")] = (ess, grad_calls) 
 
-        L, step_size, converged = gridsearch_tune(grid_key, iterations=10, contract=jnp.average, grid_size=5, model=model, sampler=partial(run_adjusted_mclmc_no_tuning, integrator_type=integrator_type, initial_state=state, sqrt_diag_cov=1.), batch=num_chains, num_steps=num_steps, center_L=blackjax_adjusted_mclmc_sampler_params.L, center_step_size=blackjax_adjusted_mclmc_sampler_params.step_size)
-        print(f"params after grid tuning are L={L}, step_size={step_size}")
+        # L, step_size, converged = gridsearch_tune(grid_key, iterations=10, contract=jnp.average, grid_size=5, model=model, sampler=partial(run_adjusted_mclmc_no_tuning, integrator_type=integrator_type, initial_state=state, sqrt_diag_cov=1.), batch=num_chains, num_steps=num_steps, center_L=blackjax_adjusted_mclmc_sampler_params.L, center_step_size=blackjax_adjusted_mclmc_sampler_params.step_size)
+        # print(f"params after grid tuning are L={L}, step_size={step_size}")
+
+        def func(L, step_size): 
+                        
+            r = benchmark_chains(model=model, sampler=run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=state, sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov, L=L, step_size=step_size, L_proposal_factor=jnp.inf), key=grid_key, n=num_steps, batch=batch_size)
+
+            return r[0], r[4]
+
+        out, edge = grid_search(func=func, x=blackjax_adjusted_mclmc_sampler_params.L, y=blackjax_adjusted_mclmc_sampler_params.step_size, delta_x=blackjax_adjusted_mclmc_sampler_params.L-0.2, delta_y=blackjax_adjusted_mclmc_sampler_params.step_size-0.2, size_grid=3, num_iter=1)
+        
+        # results[(model.name, model.ndims, "mhmchmc:grid_new", out[0].item(), out[1].item(), integrator_type, f"gridsearch", out[3].item(), True, 1/L_proposal_factor, "n/a", "n/a", num_steps)] = out[2].item()
+        
+        print("BENCHMARK after finding optimal params with grid \n\n\n")
+        ess, ess_avg, ess_corr, params , acceptance_rate, _ = benchmark_chains(
+                    model, 
+                    run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, initial_state=state, sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov, L=out[0], step_size=out[1], L_proposal_factor=jnp.inf),
+                    bench_key, 
+                    n=num_steps, 
+                    batch=num_chains)
 
 
-        ess, grad_calls, _ , _, _ = benchmark_chains(model, run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, L=L, step_size=step_size, sqrt_diag_cov=1., initial_state=state),bench_key, n=num_steps, batch=num_chains, contract=jnp.average)
+        # ess, grad_calls, _ , _, _ = benchmark_chains(model, run_adjusted_mclmc_no_tuning(integrator_type=integrator_type, L=L, step_size=step_size, sqrt_diag_cov=1., initial_state=state),bench_key, n=num_steps, batch=num_chains, contract=jnp.average)
 
-        print(f"grads to low bias: {grad_calls}")
+        # print(f"grads to low bias: {grad_calls}")
 
-        results[(model.name, model.ndims, "mclmc", (integrator_type), converged, L.item(), step_size.item())] = ess.item()
+        results[(model.name, model.ndims, "mclmc", (integrator_type), edge, out[0].item(), out[1].item())] = ess.item()
 
-    df = pd.Series(results).reset_index()
-    df.columns = ["model", "dims", "sampler", "integrator", "convergence", "L", "step_size", "ESS"] 
-    # df.result = df.result.apply(lambda x: x[0].item())
-    # df.model = df.model.apply(lambda x: x[1])
-    df.to_csv("omelyan.csv", index=False)
+    save = True
+    if save:
+
+
+        df = pd.Series(results).reset_index()
+        df.columns = ["model", "dims", "sampler", "integrator", "convergence", "L", "step_size", "ESS"] 
+        # df.result = df.result.apply(lambda x: x[0].item())
+        # df.model = df.model.apply(lambda x: x[1])
+        df.to_csv("omelyan.csv", index=False)
 
 
 def run_benchmarks_simple():
@@ -805,12 +843,57 @@ def try_new_run_inference():
 
     print("average of steps (fast way):",trace_at_every_step[0][-1])
     
+def test_thinning():
+
+    # print("FOOO")
+
+    init_key, state_key, run_key = jax.random.split(jax.random.PRNGKey(0),3)
+    model = StandardNormal(2)
+    initial_position = model.sample_init(init_key)
+    initial_state = blackjax.mcmc.mclmc.init(
+        position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
+    )
+    integrator_type = "mclachlan"
+    L = 1.0
+    step_size = 0.1
+    num_steps = 1000
+
+    integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
+
+    sampling_alg = blackjax.mclmc(
+        model.logdensity_fn,
+        L=L,
+        step_size=step_size,
+        integrator = integrator,
+    ) 
+
+    sampling_alg = thinning_kernel(sampling_alg, thinning_factor=10)
+
+    state_transform = lambda x: x.position
+
+    _, samples = run_inference_algorithm(
+        rng_key=run_key,
+        initial_state=initial_state,
+        inference_algorithm=sampling_alg,
+        num_steps=num_steps,
+        transform=lambda state, info: (state_transform(state)),
+        progress_bar=True,
+    )
+
+    print(jnp.var(samples, axis=0))
+    # print(samples)
+
+
+
 if __name__ == "__main__":
 
+    # test_thinning()
 
     # run_benchmarks_simple()
-    benchmark_mhmchmc(batch_size=128)
-    # benchmark_omelyan(128)
+    
+    # benchmark_mhmchmc(batch_size=128)
+
+    benchmark_omelyan(1)
 
 
     # try_new_run_inference()

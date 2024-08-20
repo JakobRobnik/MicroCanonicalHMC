@@ -490,10 +490,10 @@ class Brownian():
         self.ndims = self.num_data + 2
 
         self.E_x2, self.Var_x2 = np.load(dirr + '/ground_truth/'+self.name+'/moments.npy')[:2]
-        cov_data = np.load(dirr + '/ground_truth/'+self.name+'/cov.npz')
-        self.E_x = jnp.array(cov_data['x_avg'])
-        self.cov = jnp.array(cov_data['cov'])
-        self.inv_cov = jnp.linalg.inv(self.cov)
+        # cov_data = np.load(dirr + '/ground_truth/'+self.name+'/cov.npz')
+        # self.E_x = jnp.array(cov_data['x_avg'])
+        # self.cov = jnp.array(cov_data['cov'])
+        # self.inv_cov = jnp.linalg.inv(self.cov)
         
         self.data = jnp.array([0.21592641, 0.118771404, -0.07945447, 0.037677474, -0.27885845, -0.1484156, -0.3250906, -0.22957903,
                                -0.44110894, -0.09830782, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.8786016, -0.83736074,
