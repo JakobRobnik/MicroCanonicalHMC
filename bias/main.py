@@ -27,7 +27,7 @@ class Shift():
         self.inv_cov = target.inv_cov
         self.logdensity_fn = lambda x: target.logdensity_fn(x + target.E_x)
         self.sample_init = lambda key: target.sample_init(key) - target.E_x
-
+        self.transform = target.transform
 
 
 def mclmc(key, step_size, model, L):
@@ -65,19 +65,24 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
     alg, initial_state = sampling_alg(init_key, step_size, model, L)
     
     def frobenious(cov):
+        """directly convert the covariance matrix expectation values to the bias scalar (to save memory)"""
         residual = jnp.eye(model.ndims) - model.inv_cov @ cov
         return jnp.average(jnp.diag(residual @ residual))
+    
+    def xixj(state):
+        """expectation values to compute: E[x_i x_j]"""
+        x = model.transform(state.position)
+        return jnp.outer(x, x)
     
     # transform the kernel to save memory
     memory_efficient_sampling_alg, transform = store_only_expectation_values(
         sampling_algorithm= alg,
-        state_transform= lambda state: jnp.outer(state.position, state.position), # expectation values to compute: E[x_i x_j] and E[energy change], E[energy change^2] 
-        exp_vals_transform= frobenious, # directly convert the covariance matrix expectation values to the bias scalar (to save memory)
+        state_transform= xixj,
+        exp_vals_transform= frobenious,
         burn_in = burn_in_steps if mclmc else (burn_in_steps // L)
     )
     
     thinned_memory_efficient_sampling_alg = thinning(memory_efficient_sampling_alg, num_thinning)
-    
     
     initial_state = thinned_memory_efficient_sampling_alg.init(initial_state)
     
@@ -92,7 +97,7 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
         transform=transform,
         progress_bar=False,
     )[1]
-    print(info.energy_change.shape)
+
     eevpd = jnp.std(info.energy_change)**2 / model.ndims
     return b, eevpd
 
@@ -100,13 +105,14 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
 def sample(m, sampling_alg, L):
     key = jax.random.PRNGKey(42)
     num_eps, num_chains = 32, 4
-    num_thinning = 100
-    
+    num_thinning = 1000
     keys = jax.random.split(key, num_chains)
     step_size = jnp.logspace(*np.log10(m.stepsize_bounds), num_eps)
-    _sample(m.model, sampling_alg.alg, 10**4, m.burn_in, num_thinning, step_size[0], key, L, sampling_alg.name == 'mclmc')
-    # b, eevpd = jax.pmap(lambda stepsize: jax.pmap(lambda k: _sample(m.model, sampling_alg.alg, m.num_steps, m.burn_in, num_thinning, stepsize, k, L, sampling_alg.name == 'mclmc'))(keys))(step_size)
-    # np.savez('data/bias/'+ sampling_alg.name + str(L) + '_'+ m.model.name + '.npz', stepsize= step_size, bias= b[:, :, ::thinning], eevpd= eevpd)
+    _sample(m.model, sampling_alg.alg, 10**5, m.burn_in, 10, 0.3, key, L, sampling_alg.name == 'mclmc')
+    # b, eevpd = jax.pmap(lambda stepsize: jax.pmap(
+    #     lambda k: _sample(m.model, sampling_alg.alg, m.num_steps, m.burn_in, num_thinning, stepsize, k, L, sampling_alg.name == 'mclmc'
+    #             ))(keys))(step_size)
+    # np.savez('bias/data/'+ m.model.name + '/' + sampling_alg.name + str(L) + '.npz', stepsize= step_size, bias= b, eevpd= eevpd)
 
 
 SamplingAlg = namedtuple('Algorithm', ['alg', 'name'])
@@ -118,11 +124,10 @@ models = [Model(StandardNormal(d=100), num_steps, [2.5, 20.], 0), # [2.5, 14.]
           Model(IllConditionedGaussian(d= 100, condition_number= 1000.), num_steps, [0.4, 7.], num_burnin),
           Model(Shift(Rosenbrock()), num_steps, [0.1, 1.5], num_burnin), #[0.1, 0.6]
           Model(Shift(Brownian()), num_steps, [0.06, 1.], num_burnin),
-          Model(Shift(GermanCredit()), num_steps, [0.03, 0.4], num_burnin)]
+          Model(Shift(GermanCredit()), num_steps, [0.05, 0.4], num_burnin)]
 
 
 if __name__ == '__main__':
     ialg, imodel, L = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
     sample(models[imodel], sampling_algs[ialg], L)
-        
     
