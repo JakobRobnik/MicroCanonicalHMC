@@ -177,28 +177,50 @@ def run_adjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, s
 
 def run_unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov):
 
-    def s(logdensity_fn, num_steps, initial_position, transform, key):
+    def s(model, num_steps, initial_position, key):
 
         integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
 
         sampling_alg = blackjax.mclmc(
-        logdensity_fn,
+        model.logdensity_fn,
         L=L,
         step_size=step_size,
         sqrt_diag_cov=sqrt_diag_cov,
         integrator = integrator,
         )
 
-        final_sample, samples = run_inference_algorithm(
+        # final_sample, samples = run_inference_algorithm(
+        #     rng_key=key,
+        #     initial_state=initial_state,
+        #     inference_algorithm=sampling_alg,
+        #     num_steps=num_steps,
+        #     transform=lambda state, info: model.transform(state.position),
+        #     progress_bar=True,
+        # )
+
+        state_transform = lambda state: jnp.array([model.transform(state.position)**2])
+        memory_efficient_sampling_alg, transform = store_only_expectation_values(
+        sampling_algorithm=sampling_alg,
+        state_transform=state_transform,
+        incremental_value_transform=lambda x: jnp.array([jnp.average(jnp.square(x - model.E_x2) / model.Var_x2), jnp.max(jnp.square(x - model.E_x2) / model.Var_x2)])
+        # incremental_value_transform=lambda x: jnp.average(jnp.square(x - model.E_x2) / model.Var_x2)
+        )
+    
+        new_initial_state = memory_efficient_sampling_alg.init(initial_state)
+            
+        _, trace_at_every_step = run_inference_algorithm(
+
             rng_key=key,
-            initial_state=initial_state,
-            inference_algorithm=sampling_alg,
+            initial_state=new_initial_state,
+            inference_algorithm=memory_efficient_sampling_alg,
             num_steps=num_steps,
-            transform=lambda state, info: transform(state.position),
+            transform=transform,
             progress_bar=True,
         )
 
-        return samples, MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),  calls_per_integrator_step(integrator_type), 0, None, jnp.array([0])
+        print("average of steps (fast way):")
+
+        return MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),  calls_per_integrator_step(integrator_type), 0, None, jnp.array([0]), trace_at_every_step[0]
 
     return s
 
@@ -215,34 +237,41 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     init_keys = jax.random.split(init_key, batch)
     init_pos = pvmap(model.sample_init)(init_keys) # [batch_size, dim_model]
 
-    samples, params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da = pvmap(lambda pos, key: sampler(logdensity_fn=model.logdensity_fn, num_steps=n, initial_position= pos,transform=  model.transform, key=key))(init_pos, keys)
+    params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da, expectation = pvmap(lambda pos, key: sampler(model, num_steps=n, initial_position= pos, key=key))(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
     try:
         print(jnp.nanmean(params.step_size,axis=0), jnp.nanmean(params.L,axis=0))
     except: pass
-    
-    full_avg = lambda x : err(model.E_x2, model.Var_x2, jnp.average)(cumulative_avg(x**2))
-    full_max = lambda x : err(model.E_x2, model.Var_x2, jnp.max)(cumulative_avg(x**2))
-    # err_t = pvmap(err(model.E_x2, model.Var_x2, contract))(samples)
-    err_t_avg = pvmap(full_avg)(samples)
-    err_t_max = pvmap(full_max)(samples)
 
-    err_t_median_avg = jnp.median(err_t_avg, axis=0)
+    # jax.vmap(lambda f: contract(jnp.square(f - f_true) / var_f))
+    # raise Exception
+    
+    # full_avg = lambda x : err(model.E_x2, model.Var_x2, jnp.average)(cumulative_avg(x**2))
+    # full_max = lambda x : err(model.E_x2, model.Var_x2, jnp.max)(cumulative_avg(x**2))
+    # err_t = pvmap(err(model.E_x2, model.Var_x2, contract))(samples)
+    # err_t_avg = pvmap(full_avg)(samples)
+    # err_t_max = pvmap(full_max)(samples)
+    # jax.debug.print("expectation {x} ", x=expectation[0][:4])
+    # jax.debug.print("full avg {x} ", x=err_t_avg[0][:4])
+    # print(expectation.shape, "expectation shape")
+    # print(err_t_avg.shape, "err_t_avg shape")
+    print(expectation.shape, "expectation shape")
+    err_t_median_avg = jnp.median(expectation[:,:, 0], axis=0)
     esses_avg, _, _ = calculate_ess(err_t_median_avg, grad_evals_per_step=avg_grad_calls_per_traj)
 
-    err_t_median_max = jnp.median(err_t_max, axis=0)
+    err_t_median_max = jnp.median(expectation[:,:,1], axis=0)
     esses_max, _, _ = calculate_ess(err_t_median_max, grad_evals_per_step=avg_grad_calls_per_traj)
 
 
-    ess_corr = jax.pmap(lambda x: effective_sample_size((jax.vmap(lambda x: ravel_pytree(x)[0])(x))[None, ...]))(samples)
+    # ess_corr = jax.pmap(lambda x: effective_sample_size((jax.vmap(lambda x: ravel_pytree(x)[0])(x))[None, ...]))(samples)
 
     # print(ess_corr.shape,"shape")
     # ess_corr = jnp.mean(ess_corr, axis=0)
 
     # ess_corr = effective_sample_size(samples)
-    print("ess/n\n\n\n\n\n")
-    print(jnp.mean(ess_corr)/n)
-    print("ess/n\n\n\n\n\n")
+    # print("ess/n\n\n\n\n\n")
+    # print(jnp.mean(ess_corr)/n)
+    # print("ess/n\n\n\n\n\n")
     
 
     # flat_samples = jax.vmap(lambda x: ravel_pytree(x)[0])(samples)
@@ -250,7 +279,8 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     #     jax.debug.print("{x} INV ESS CORR",x=jnp.mean(1/ess))
     # jax.debug.print("{x}",x=jnp.mean(1/ess_corr))
 
-    return esses_max, esses_avg.item(), jnp.mean(1/ess_corr).item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
+    # return esses_max, esses_avg.item(), jnp.mean(1/ess_corr).item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
+    return esses_max, esses_avg.item(), None, params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
 
 def benchmark_no_chains(model, sampler, key, n=10000, contract = jnp.average,):
 
@@ -716,7 +746,7 @@ def run_benchmarks_simple():
     integrator_type = "mclachlan"
     # contract = jnp.average # how we average across dimensions
     num_steps = 1000
-    num_chains = 1
+    num_chains = 2
     for i in range(1):
         key1 = jax.random.PRNGKey(i+1)
 
@@ -889,11 +919,11 @@ if __name__ == "__main__":
 
     # test_thinning()
 
-    # run_benchmarks_simple()
+    run_benchmarks_simple()
     
     # benchmark_mhmchmc(batch_size=128)
 
-    benchmark_omelyan(1)
+    # benchmark_omelyan(1)
 
 
     # try_new_run_inference()
