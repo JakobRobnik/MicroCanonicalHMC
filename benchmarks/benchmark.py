@@ -29,7 +29,7 @@ import numpy as np
 from blackjax.mcmc.adjusted_mclmc import rescale
 
 import blackjax
-from benchmarks.sampling_algorithms import calls_per_integrator_step, integrator_order, map_integrator_type_to_integrator, run_adjusted_mclmc, run_nuts, target_acceptance_rate_of_order, run_mclmc
+from benchmarks.sampling_algorithms import calls_per_integrator_step, integrator_order, map_integrator_type_to_integrator, run_adjusted_mclmc, run_nuts, run_unadjusted_mclmc_no_tuning, target_acceptance_rate_of_order, run_mclmc
 
 # run_adjusted_mclmc, run_nuts, samplers
 from benchmarks.inference_models import Banana, Brownian, Funnel, GermanCredit, IllConditionedGaussian, ItemResponseTheory, MixedLogit, StandardNormal, StochasticVolatility
@@ -147,82 +147,9 @@ def gridsearch_tune(key, iterations, grid_size, model, sampler, batch, num_steps
     return center_L, center_step_size, converged
 
 
-def run_adjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov, L_proposal_factor=jnp.inf):
 
-    def s(logdensity_fn, num_steps, initial_position, transform, key):
 
-        integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
 
-        num_steps_per_traj = L/step_size
-        alg = blackjax.adjusted_mclmc(
-        logdensity_fn=logdensity_fn,
-        step_size=step_size,
-        integration_steps_fn = lambda k : jnp.ceil(jax.random.uniform(k) * rescale(num_steps_per_traj)) ,
-        integrator=integrator,
-        sqrt_diag_cov=sqrt_diag_cov,
-        L_proposal_factor=L_proposal_factor
-        )
-
-        states, (history, info) = run_inference_algorithm(
-        rng_key=key,
-        initial_state=initial_state,
-        inference_algorithm=alg,
-        num_steps=num_steps, 
-        transform=lambda state, info: (transform(state.position), info),  
-        progress_bar=True)
-
-        return history, MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov), num_steps_per_traj * calls_per_integrator_step(integrator_type), info.acceptance_rate.mean(), None, jnp.array([0])
-
-    return s
-
-def run_unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov):
-
-    def s(model, num_steps, initial_position, key):
-
-        integrator = map_integrator_type_to_integrator['mclmc'][integrator_type]
-
-        sampling_alg = blackjax.mclmc(
-        model.logdensity_fn,
-        L=L,
-        step_size=step_size,
-        sqrt_diag_cov=sqrt_diag_cov,
-        integrator = integrator,
-        )
-
-        # final_sample, samples = run_inference_algorithm(
-        #     rng_key=key,
-        #     initial_state=initial_state,
-        #     inference_algorithm=sampling_alg,
-        #     num_steps=num_steps,
-        #     transform=lambda state, info: model.transform(state.position),
-        #     progress_bar=True,
-        # )
-
-        state_transform = lambda state: jnp.array([model.transform(state.position)**2])
-        memory_efficient_sampling_alg, transform = store_only_expectation_values(
-        sampling_algorithm=sampling_alg,
-        state_transform=state_transform,
-        incremental_value_transform=lambda x: jnp.array([jnp.average(jnp.square(x - model.E_x2) / model.Var_x2), jnp.max(jnp.square(x - model.E_x2) / model.Var_x2)])
-        # incremental_value_transform=lambda x: jnp.average(jnp.square(x - model.E_x2) / model.Var_x2)
-        )
-    
-        new_initial_state = memory_efficient_sampling_alg.init(initial_state)
-            
-        _, trace_at_every_step = run_inference_algorithm(
-
-            rng_key=key,
-            initial_state=new_initial_state,
-            inference_algorithm=memory_efficient_sampling_alg,
-            num_steps=num_steps,
-            transform=transform,
-            progress_bar=True,
-        )
-
-        print("average of steps (fast way):")
-
-        return MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),  calls_per_integrator_step(integrator_type), 0, None, jnp.array([0]), trace_at_every_step[0]
-
-    return s
 
 def benchmark_chains(model, sampler, key, n=10000, batch=None):
 
@@ -237,7 +164,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     init_keys = jax.random.split(init_key, batch)
     init_pos = pvmap(model.sample_init)(init_keys) # [batch_size, dim_model]
 
-    params, grad_calls_per_traj, acceptance_rate, step_size_over_da, final_da, expectation = pvmap(lambda pos, key: sampler(model, num_steps=n, initial_position= pos, key=key))(init_pos, keys)
+    params, grad_calls_per_traj, acceptance_rate, expectation = pvmap(lambda pos, key: sampler(model=model, num_steps=n, initial_position= pos, key=key))(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
     try:
         print(jnp.nanmean(params.step_size,axis=0), jnp.nanmean(params.L,axis=0))
@@ -280,7 +207,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     # jax.debug.print("{x}",x=jnp.mean(1/ess_corr))
 
     # return esses_max, esses_avg.item(), jnp.mean(1/ess_corr).item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
-    return esses_max, esses_avg.item(), None, params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
+    return esses_max, esses_avg.item(), None, params, jnp.mean(acceptance_rate, axis=0)
 
 def benchmark_no_chains(model, sampler, key, n=10000, contract = jnp.average,):
 
@@ -914,12 +841,72 @@ def test_thinning():
     # print(samples)
 
 
+# this function simply runs all of the samplers and some of the models, to make sure that everything is working
+def test_benchmarking():
+    
+    model = StandardNormal(10)
+    integrator_type = "mclachlan"
+    num_steps = 1000
+    num_chains = 2
+    key1 = jax.random.PRNGKey(1)    
+
+    init_key, state_key, run_key = jax.random.split(key1, 3)
+    initial_position = model.sample_init(init_key)
+    initial_state = blackjax.mcmc.mclmc.init(
+        position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
+    )
+    
+    sampler = run_nuts
+    ess, ess_avg, ess_corr, _ , acceptance_rate = benchmark_chains(model, sampler(integrator_type='velocity_verlet', preconditioning=False),key1, n=num_steps, batch=num_chains)
+    print(f"Effective Sample Size (ESS) of {model.name} with preconditioning set to {False} is {ess_avg}")
+
+
+    sampler = run_unadjusted_mclmc_no_tuning
+    ess, ess_avg, ess_corr, _ , acceptance_rate = benchmark_chains(
+        model, 
+        sampler(L=0.2, step_size=5.34853, integrator_type=integrator_type,initial_state=initial_state, sqrt_diag_cov=1.),
+        run_key, 
+        n=num_steps, 
+        batch=num_chains)
+
+    print(f"Effective Sample Size (ESS) of {model.name} with preconditioning set to {False} is {ess_avg}")
+
+
+
+    sampler = run_mclmc
+    ess, ess_avg, ess_corr, _ , acceptance_rate = benchmark_chains(model, sampler(integrator_type=integrator_type, preconditioning=False),key1, n=num_steps, batch=num_chains)
+    print(f"Effective Sample Size (ESS) of {model.name} with preconditioning set to {False} is {ess_avg}")
+
+    sampler = run_unadjusted_mclmc_no_tuning
+    ess, ess_avg, ess_corr, _ , acceptance_rate = benchmark_chains(model, sampler(integrator_type=integrator_type, L=0.2, step_size=5.34853, sqrt_diag_cov=1., initial_state=initial_state),key1, n=num_steps, batch=num_chains)
+    print(f"Effective Sample Size (ESS) of {model.name} with preconditioning set to {False} is {ess_avg}")
+
+    sampler = run_adjusted_mclmc
+    ess, ess_avg, ess_corr, _ , acceptance_rate = benchmark_chains(model, sampler(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0),key1, n=num_steps, batch=num_chains)
+    print(f"Effective Sample Size (ESS) of {model.name} with preconditioning set to {False} is {ess_avg}")
+
+
+
+
+
+
+
+
+
+        
+    
 
 if __name__ == "__main__":
 
+    # todo:
+        # grid search test
+        # uniform samplers: partial or not? ideally not
+
+    test_benchmarking()
+
     # test_thinning()
 
-    run_benchmarks_simple()
+    # run_benchmarks_simple()
     
     # benchmark_mhmchmc(batch_size=128)
 
