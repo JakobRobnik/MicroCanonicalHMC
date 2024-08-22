@@ -9,6 +9,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import jax
+# jax.config.update("jax_debug_nans", True)
+
+
 import jax.numpy as jnp
 from jax import jit
 import numpy
@@ -18,6 +21,7 @@ from datetime import date
 from blackjax.util import run_inference_algorithm
 from jax import jit, checkpoint, custom_vjp
 from functools import partial
+
 
 rng_key = jax.random.key(int(date.today().strftime("%Y%m%d")))
 
@@ -250,9 +254,15 @@ def run_mclmc(logdensity_fn, num_steps, initial_position, key, transform):
 sample_key, rng_key = jax.random.split(jax.random.PRNGKey(0))
 samples = run_mclmc(
     logdensity_fn=logLike_MCHMC,
-    num_steps=100,
+    num_steps=300,
     initial_position=initial_position,
     key=sample_key,
     transform=lambda state, info: state.position,
 )
+
+
 # samples.mean()
+
+# def f(x, y):
+#   return x / y
+# jax.jit(f)(0., 0.)  # ==> raises FloatingPointError exception!
