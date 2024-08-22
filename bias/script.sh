@@ -13,5 +13,13 @@
 cd ..
 source ../black.sh
 
-python3 -m bias.main 0 3 1
-
+for k in 0 1
+do
+    for j in 2 3 4
+    do
+        for i in {1..9}
+        do
+            python3 -m bias.main $k $j $i
+        done
+    done
+done

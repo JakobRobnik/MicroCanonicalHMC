@@ -28,6 +28,7 @@ class StandardNormal():
         self.name = 'StandardNormal'
         self.ndims = d
         
+        self.E_x = jnp.zeros(d)
         self.E_x2 = jnp.ones(d)
         self.Var_x2 = 2 * self.E_x2
         self.inv_cov = jnp.eye(d)
@@ -76,7 +77,8 @@ class IllConditionedGaussian():
             #cov_precond = jnp.diag(1 / jnp.sqrt(self.E_x2)) @ self.cov @ jnp.diag(1 / jnp.sqrt(self.E_x2))
 
             #print(jnp.linalg.cond(cov_precond) / jnp.linalg.cond(self.cov))
-
+        
+        self.E_x = jnp.zeros(d)
         self.Var_x2 = 2 * jnp.square(self.E_x2)
 
 

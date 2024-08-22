@@ -18,18 +18,6 @@ from benchmarks.inference_models import *
 
 
 
-class Shift():
-    """Shit the target to zero mean."""
-    def __init__(self, target):
-        self.ndims = target.ndims
-        self.name = target.name
-        self.cov = target.cov
-        self.inv_cov = target.inv_cov
-        self.logdensity_fn = lambda x: target.logdensity_fn(x + target.E_x)
-        self.sample_init = lambda key: target.sample_init(key) - target.E_x
-        self.transform = target.transform
-
-
 def mclmc(key, step_size, model, L):
     init_key, state_key = jax.random.split(key)
     
@@ -58,7 +46,7 @@ def hmc(key, mclmc_step_size, model, L):
     return hmc, initial_state
 
 
-def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_size, key, L, mclmc):
+def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_size, key, L):
     
     init_key, run_key = jax.random.split(key)
     
@@ -71,7 +59,7 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
     
     def xixj(state):
         """expectation values to compute: E[x_i x_j]"""
-        x = model.transform(state.position)
+        x = model.transform(state.position) - model.E_x
         return jnp.outer(x, x)
     
     # transform the kernel to save memory
@@ -79,21 +67,19 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
         sampling_algorithm= alg,
         state_transform= xixj,
         exp_vals_transform= frobenious,
-        burn_in = burn_in_steps if mclmc else (burn_in_steps // L)
+        burn_in = burn_in_steps
     )
     
     thinned_memory_efficient_sampling_alg = thinning(memory_efficient_sampling_alg, num_thinning)
     
     initial_state = thinned_memory_efficient_sampling_alg.init(initial_state)
     
-    nsteps = num_steps if mclmc else (num_steps // L)
-
     # run the algorithm
     b, info = run_inference_algorithm(
         rng_key=run_key,
         initial_state=initial_state,
         inference_algorithm=thinned_memory_efficient_sampling_alg,
-        num_steps=nsteps,
+        num_steps=num_steps,
         transform=transform,
         progress_bar=False,
     )[1]
@@ -103,28 +89,35 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
 
 
 def sample(m, sampling_alg, L):
+    
     key = jax.random.PRNGKey(42)
     num_eps, num_chains = 32, 4
     num_thinning = 1000
+    
+    mclmc= sampling_alg.name == 'mclmc'
+    burn_in_steps = m.burn_in_steps if mclmc else (m.burn_in_steps // L)
+    num_steps = (m.num_steps//num_thinning) if mclmc else (m.num_steps // (num_thinning * L))
+    
     keys = jax.random.split(key, num_chains)
     step_size = jnp.logspace(*np.log10(m.stepsize_bounds), num_eps)
-    _sample(m.model, sampling_alg.alg, 10**5, m.burn_in, 10, 0.3, key, L, sampling_alg.name == 'mclmc')
-    # b, eevpd = jax.pmap(lambda stepsize: jax.pmap(
-    #     lambda k: _sample(m.model, sampling_alg.alg, m.num_steps, m.burn_in, num_thinning, stepsize, k, L, sampling_alg.name == 'mclmc'
-    #             ))(keys))(step_size)
-    # np.savez('bias/data/'+ m.model.name + '/' + sampling_alg.name + str(L) + '.npz', stepsize= step_size, bias= b, eevpd= eevpd)
+    #_sample(m.model, sampling_alg.alg, 10**5, m.burn_in, 10, 0.3, key, L, sampling_alg.name == 'mclmc')
+    
+    b, eevpd = jax.pmap(lambda stepsize: jax.pmap(
+        lambda k: _sample(m.model, sampling_alg.alg, num_steps, burn_in_steps, num_thinning, stepsize, k, L
+                ))(keys))(step_size)
+    np.savez('bias/data/'+ m.model.name + '/' + sampling_alg.name + str(L) + '.npz', stepsize= step_size, bias= b, eevpd= eevpd)
 
 
 SamplingAlg = namedtuple('Algorithm', ['alg', 'name'])
 sampling_algs = [SamplingAlg(mclmc, 'mclmc'), SamplingAlg(hmc, 'hmc')]
 
-Model = namedtuple('Model', ['model', 'num_steps', 'stepsize_bounds', 'burn_in'])
-num_steps, num_burnin = 10**7, 10**4
+Model = namedtuple('Model', ['model', 'num_steps', 'stepsize_bounds', 'burn_in_steps'])
+num_steps, num_burnin = 10**6, 10**4
 models = [Model(StandardNormal(d=100), num_steps, [2.5, 20.], 0), # [2.5, 14.]
           Model(IllConditionedGaussian(d= 100, condition_number= 1000.), num_steps, [0.4, 7.], num_burnin),
-          Model(Shift(Rosenbrock()), num_steps, [0.1, 1.5], num_burnin), #[0.1, 0.6]
-          Model(Shift(Brownian()), num_steps, [0.06, 1.], num_burnin),
-          Model(Shift(GermanCredit()), num_steps, [0.05, 0.4], num_burnin)]
+          Model(Rosenbrock(), num_steps, [0.1, 1.5], num_burnin), #[0.1, 0.6]
+          Model(Brownian(), num_steps, [0.06, 1.], num_burnin),
+          Model(GermanCredit(), num_steps, [0.05, 0.4], num_burnin)]
 
 
 if __name__ == '__main__':
