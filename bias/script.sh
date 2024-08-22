@@ -3,8 +3,8 @@
 #SBATCH -N 1
 #SBATCH -C cpu
 #SBATCH -q regular
-#SBATCH -J biasMCLMC
-#SBATCH -t 00:15:00
+#SBATCH -J bias
+#SBATCH -t 01:00:00
 #SBATCH --mail-type=end,fail
 #SBATCH --mail-user=jakob_robnik@berkeley.edu
 
@@ -13,13 +13,13 @@
 cd ..
 source ../black.sh
 
-for k in 0 1
+for sampler in 0 1
 do
-    for j in 2 3 4
+    for target in 2 3 4
     do
-        for i in {1..9}
+        for L in {1..9}
         do
-            python3 -m bias.main $k $j $i
+            python3 -m bias.main $sampler $target $L
         done
     done
 done
