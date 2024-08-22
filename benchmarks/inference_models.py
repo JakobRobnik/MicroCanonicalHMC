@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 import os
 #import numpyro.distributions as dist
-dirr = os.path.dirname(os.path.realpath(__file__))
+dirr = os.path.dirname(os.path.realpath(__file__)) + '/'
 
 
 # Each target has attributes:
@@ -28,6 +28,7 @@ class StandardNormal():
         self.name = 'StandardNormal'
         self.ndims = d
         
+        self.E_x = jnp.zeros(d)
         self.E_x2 = jnp.ones(d)
         self.Var_x2 = 2 * self.E_x2
         self.inv_cov = jnp.eye(d)
@@ -76,7 +77,8 @@ class IllConditionedGaussian():
             #cov_precond = jnp.diag(1 / jnp.sqrt(self.E_x2)) @ self.cov @ jnp.diag(1 / jnp.sqrt(self.E_x2))
 
             #print(jnp.linalg.cond(cov_precond) / jnp.linalg.cond(self.cov))
-
+        
+        self.E_x = jnp.zeros(d)
         self.Var_x2 = 2 * jnp.square(self.E_x2)
 
 
@@ -489,11 +491,11 @@ class Brownian():
         self.num_data = 30
         self.ndims = self.num_data + 2
 
-        self.E_x2, self.Var_x2 = np.load(dirr + '/ground_truth/'+self.name+'/moments.npy')[:2]
-        # cov_data = np.load(dirr + '/ground_truth/'+self.name+'/cov.npz')
-        # self.E_x = jnp.array(cov_data['x_avg'])
-        # self.cov = jnp.array(cov_data['cov'])
-        # self.inv_cov = jnp.linalg.inv(self.cov)
+        self.E_x2, self.Var_x2 = np.load(dirr + 'ground_truth/'+self.name+'/moments.npy')
+        cov_data = np.load(dirr + 'ground_truth/'+self.name+'/cov.npz')
+        self.E_x = jnp.array(cov_data['x_avg'])
+        self.cov = jnp.array(cov_data['cov'])
+        self.inv_cov = jnp.linalg.inv(self.cov)
         
         self.data = jnp.array([0.21592641, 0.118771404, -0.07945447, 0.037677474, -0.27885845, -0.1484156, -0.3250906, -0.22957903,
                                -0.44110894, -0.09830782, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.8786016, -0.83736074,
@@ -568,12 +570,11 @@ class GermanCredit:
         self.ndims = 51 #global scale + 25 local scales + 25 weights
         
 
-        self.labels = jnp.load(dirr + '/data/gc_labels.npy')
-        self.features = jnp.load(dirr + '/data/gc_features.npy')
+        self.labels = jnp.load(dirr + 'data/gc_labels.npy')
+        self.features = jnp.load(dirr + 'data/gc_features.npy')
 
-        truth = jnp.load(dirr+'/ground_truth/'+self.name+'/moments.npy')
-        self.E_x2, self.Var_x2 = truth[0], truth[1]
-        cov_data = np.load(dirr + '/ground_truth/'+self.name+'/cov.npz')
+        self.E_x2, self.Var_x2 = jnp.load(dirr + 'ground_truth/'+self.name+'/moments.npy')
+        cov_data = np.load(dirr + 'ground_truth/'+self.name+'/cov.npz')
         self.E_x = jnp.array(cov_data['x_avg'])
         self.cov = jnp.array(cov_data['cov'])
         self.inv_cov = jnp.linalg.inv(self.cov)
@@ -617,10 +618,10 @@ class ItemResponseTheory:
         self.students = 400
         self.questions = 100
 
-        self.mask = jnp.load(dirr + '/data/irt_mask.npy')
-        self.labels = jnp.load(dirr + '/data/irt_labels.npy')
+        self.mask = jnp.load(dirr + 'data/irt_mask.npy')
+        self.labels = jnp.load(dirr + 'data/irt_labels.npy')
 
-        self.E_x2, self.Var_x2 = jnp.load(dirr+'/ground_truth/'+self.name+'/moments.npy')[:2]
+        self.E_x2, self.Var_x2 = jnp.load(dirr+'ground_truth/'+self.name+'/moments.npy')
 
         self.transform = lambda x: x
 
@@ -660,8 +661,8 @@ class StochasticVolatility():
         
         self.typical_sigma, self.typical_nu = 0.02, 10.0 # := 1 / lambda
 
-        self.SP500_returns = jnp.load(dirr + '/data/SP500.npy')        
-        self.E_x2, self.Var_x2 = jnp.load(dirr + '/ground_truth/'+self.name+'/moments_0.npy')[:2]
+        self.SP500_returns = jnp.load(dirr + 'data/SP500.npy')        
+        self.E_x2, self.Var_x2 = jnp.load(dirr + 'ground_truth/'+self.name+'/moments.npy')
         
 
 
