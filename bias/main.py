@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import os
 jax.config.update('jax_platform_name', 'cpu')
-os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=' + str(128)
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
@@ -92,7 +92,7 @@ def sample(m, sampling_alg, L):
     
     key = jax.random.PRNGKey(42)
     num_eps, num_chains = 32, 4
-    num_thinning = 1000
+    num_thinning = num_steps//10000 # all samples are used for computing expectation values, but bias is saved only every 'num_thinning' steps
     
     mclmc= sampling_alg.name == 'mclmc'
     burn_in_steps = m.burn_in_steps if mclmc else (m.burn_in_steps // L)
@@ -112,7 +112,7 @@ SamplingAlg = namedtuple('Algorithm', ['alg', 'name'])
 sampling_algs = [SamplingAlg(mclmc, 'mclmc'), SamplingAlg(hmc, 'hmc')]
 
 Model = namedtuple('Model', ['model', 'num_steps', 'stepsize_bounds', 'burn_in_steps'])
-num_steps, num_burnin = 10**6, 10**4
+num_steps, num_burnin = 10**8, 10**4
 models = [Model(StandardNormal(d=100), num_steps, [2.5, 20.], 0), # [2.5, 14.]
           Model(IllConditionedGaussian(d= 100, condition_number= 1000.), num_steps, [0.4, 7.], num_burnin),
           Model(Rosenbrock(), num_steps, [0.1, 1.5], num_burnin), #[0.1, 0.6]

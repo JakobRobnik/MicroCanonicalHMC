@@ -15,23 +15,35 @@ mesh = jax.sharding.Mesh(jax.devices(), 'i')
 params = jnp.linspace(1., 3., num_cores) # we want to evaluate func(params)
 
 
-def func(param):
+# def func(param):
+#     """just some function that takes some time"""
+    
+#     size = 100 # detemines how costly func is
+    
+#     # generate a random symmetric matrix
+#     key1, key2 = jax.random.split(jax.random.key(0))
+#     D = jnp.diag(jax.random.normal(key1, (size, ))) # eigenvalues
+#     R, _ = jnp.array(jnp.linalg.qr(jax.random.normal(key2, (size, size))))  #rotation
+#     M = R @ D @ R.T
+    
+#     # compute its eigenvalues
+#     eigvals, _ = jnp.linalg.eigh(M)
+    
+#     return jnp.power(jnp.sum(eigvals), param)
+
+def func(param0):
     """just some function that takes some time"""
     
-    size = 100 # detemines how costly func is
+    size = 1000000 # detemines how costly func is
     
-    # generate a random symmetric matrix
-    key1, key2 = jax.random.split(jax.random.key(0))
-    D = jnp.diag(jax.random.normal(key1, (size, ))) # eigenvalues
-    R, _ = jnp.array(jnp.linalg.qr(jax.random.normal(key2, (size, size))))  #rotation
-    M = R @ D @ R.T
+    def step(param, _):
+        x = jax.random.normal(jax.random.key(0), (size, ))
+        psd = jnp.arange(1, 2 + size//2) + param
+        conv = jnp.fft.irfft(jnp.fft.rfft(x) / psd)
+        return jnp.max(conv), None
     
-    # compute its eigenvalues
-    eigvals, _ = jnp.linalg.eigh(M)
     
-    return jnp.power(jnp.sum(eigvals), param)
-
-
+    return jax.lax.scan(step, init= param0, xs= None, length= 30)
 
 from time import time
 
@@ -46,5 +58,5 @@ def timeit(f):
 
 timeit(jax.vmap(func)) # few seconds
 timeit(jax.pmap(func)) # a minute
-timeit(shard_map(jax.vmap(func), mesh= mesh, in_specs= p, out_specs= p)) # a minute
+#timeit(shard_map(jax.vmap(func), mesh= mesh, in_specs= p, out_specs= p)) # a minute
 
