@@ -217,36 +217,95 @@ def run_adjusted_mclmc_no_tuning(
 
     return s
 
+def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, frac_tune3=0.1):
+
+    tune_key, init_key = jax.random.split(rng_key, 2)
+
+    initial_state = blackjax.mcmc.mclmc.init(
+            position=initial_position,
+            logdensity_fn=logdensity_fn,
+            rng_key=init_key,
+        )
+
+    kernel = lambda sqrt_diag_cov: blackjax.mcmc.mclmc.build_kernel(
+        logdensity_fn=logdensity_fn,
+        integrator=map_integrator_type_to_integrator["mclmc"][integrator_type],
+        sqrt_diag_cov=sqrt_diag_cov,
+    )
+
+    return blackjax.mclmc_find_L_and_step_size(
+        mclmc_kernel=kernel,
+        num_steps=num_steps,
+        state=initial_state,
+        rng_key=tune_key,
+        diagonal_preconditioning=diagonal_preconditioning,
+        frac_tune3=frac_tune3,
+    )
+
+def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, target_acc_rate, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, L_proposal_factor=jnp.inf):
+
+    integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
+
+    init_key, tune_key = jax.random.split(rng_key, 2)
+
+    initial_state = blackjax.mcmc.adjusted_mclmc.init(
+        position=initial_position,
+        logdensity_fn=logdensity_fn,
+        random_generator_arg=init_key,
+    )
+
+
+
+    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+        integrator=integrator,
+        integration_steps_fn=lambda k: jnp.ceil(
+            jax.random.uniform(k) * rescale(avg_num_integration_steps)
+        ),
+        sqrt_diag_cov=sqrt_diag_cov,
+    )(
+        rng_key=rng_key,
+        state=state,
+        step_size=step_size,
+        logdensity_fn=logdensity_fn,
+        L_proposal_factor=L_proposal_factor,
+    )
+
+    # target_acc_rate = target_acceptance_rate_of_order[
+    #     integrator_order(integrator_type)
+    # ]
+
+    (
+        blackjax_state_after_tuning,
+        blackjax_adjusted_mclmc_sampler_params,
+        params_history,
+        final_da,
+    ) = blackjax.adjusted_mclmc_find_L_and_step_size(
+        mclmc_kernel=kernel,
+        num_steps=num_steps,
+        state=initial_state,
+        rng_key=tune_key,
+        target=target_acc_rate,
+        frac_tune1=frac_tune1,
+        frac_tune2=frac_tune2,
+        frac_tune3=frac_tune3,
+        diagonal_preconditioning=diagonal_preconditioning,
+    )
+
+    return blackjax_state_after_tuning, blackjax_adjusted_mclmc_sampler_params
+
 
 def run_unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1):
 
     def s(model, num_steps, initial_position, key):
 
-        init_key, tune_key, run_key = jax.random.split(key, 3)
+        tune_key, run_key = jax.random.split(key, 2)
 
-        initial_state = blackjax.mcmc.mclmc.init(
-            position=initial_position,
-            logdensity_fn=model.logdensity_fn,
-            rng_key=init_key,
-        )
-
-        kernel = lambda sqrt_diag_cov: blackjax.mcmc.mclmc.build_kernel(
-            logdensity_fn=model.logdensity_fn,
-            integrator=map_integrator_type_to_integrator["mclmc"][integrator_type],
-            sqrt_diag_cov=sqrt_diag_cov,
-        )
+        
 
         (
             blackjax_state_after_tuning,
             blackjax_mclmc_sampler_params,
-        ) = blackjax.mclmc_find_L_and_step_size(
-            mclmc_kernel=kernel,
-            num_steps=num_steps,
-            state=initial_state,
-            rng_key=tune_key,
-            diagonal_preconditioning=preconditioning,
-            frac_tune3=frac_tune3,
-        )
+        ) = unadjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, frac_tune3)
 
         return run_unadjusted_mclmc_no_tuning(
             blackjax_state_after_tuning,
@@ -271,25 +330,8 @@ def run_adjusted_mclmc(
 
     def s(model, num_steps, initial_position, key):
 
-        init_key, tune_key, run_key = jax.random.split(key, 3)
+        tune_key, run_key = jax.random.split(key, 2)
 
-        initial_state = blackjax.mcmc.adjusted_mclmc.init(
-            position=initial_position,
-            logdensity_fn=model.logdensity_fn,
-            random_generator_arg=init_key,
-        )
-
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
-            integrator=map_integrator_type_to_integrator["mclmc"][integrator_type],
-            integration_steps_fn=lambda k: jnp.ceil(jax.random.uniform(k) * rescale(avg_num_integration_steps)),
-            sqrt_diag_cov=sqrt_diag_cov,
-        )(
-            rng_key=rng_key,
-            state=state,
-            step_size=step_size,
-            logdensity_fn=model.logdensity_fn,
-            L_proposal_factor=L_proposal_factor,
-        )
 
         if target_acc_rate is None:
             new_target_acc_rate = target_acceptance_rate_of_order[
@@ -298,31 +340,17 @@ def run_adjusted_mclmc(
         else:
             new_target_acc_rate = target_acc_rate
 
+
         (
             blackjax_state_after_tuning,
-            blackjax_mclmc_sampler_params,
-            params_history,
-            final_da,
-        ) = blackjax.adjusted_mclmc_find_L_and_step_size(
-            mclmc_kernel=kernel,
-            num_steps=num_steps,
-            state=initial_state,
-            rng_key=tune_key,
-            target=new_target_acc_rate,
-            frac_tune1=frac_tune1,
-            frac_tune2=frac_tune2,
-            frac_tune3=frac_tune3,
-            diagonal_preconditioning=preconditioning,
-        )
+            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, new_target_acc_rate, frac_tune1, frac_tune2, frac_tune3, L_proposal_factor)
 
-        step_size = blackjax_mclmc_sampler_params.step_size
-        L = blackjax_mclmc_sampler_params.L
 
         return run_adjusted_mclmc_no_tuning(
             blackjax_state_after_tuning,
             integrator_type,
-            step_size,
-            L,
+            blackjax_mclmc_sampler_params.step_size,
+            blackjax_mclmc_sampler_params.L,
             blackjax_mclmc_sampler_params.sqrt_diag_cov,
             L_proposal_factor,
         )(model, num_steps, initial_position, run_key)
