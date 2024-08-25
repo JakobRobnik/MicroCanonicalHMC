@@ -279,7 +279,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     init_keys = jax.random.split(init_key, batch)
     init_pos = pvmap(model.sample_init)(init_keys)  # [batch_size, dim_model]
 
-    params, grad_calls_per_traj, acceptance_rate, expectation = pvmap(
+    params, grad_calls_per_traj, acceptance_rate, expectation, ess_corr = pvmap(
         lambda pos, key: sampler(
             model=model, num_steps=n, initial_position=pos, key=key
         )
@@ -295,6 +295,11 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     esses_max, _, _ = calculate_ess(
         err_t_median_max, grad_evals_per_step=avg_grad_calls_per_traj
     )
+
+    if not jnp.isinf(jnp.mean(ess_corr)):
+
+        jax.debug.print("{x} ESS CORR", x=ess_corr.mean())
+        
 
     # ess_corr = jax.pmap(lambda x: effective_sample_size((jax.vmap(lambda x: ravel_pytree(x)[0])(x))[None, ...]))(samples)
 
@@ -891,7 +896,7 @@ def test_benchmarking():
         random_generator_arg=state_key,
     )
 
-    if False:
+    if True:
         ess, ess_avg, ess_corr, _, acceptance_rate = benchmark_chains(
             model,
             run_nuts(integrator_type="velocity_verlet", preconditioning=False),
@@ -912,6 +917,7 @@ def test_benchmarking():
                 integrator_type='velocity_verlet',
                 initial_state=unadjusted_initial_state,
                 sqrt_diag_cov=1.0,
+                return_ess_corr=True
             ),
             run_key,
             n=num_steps,
