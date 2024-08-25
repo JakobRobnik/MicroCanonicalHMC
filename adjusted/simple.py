@@ -216,7 +216,7 @@ def run_mclmc(logdensity_fn, num_steps, initial_position, key, transform):
         state=initial_state,
         rng_key=tune_key,
         # frac_tune2=0.0,
-        frac_tune3=0.0,
+        # frac_tune3=0.0,
         diagonal_preconditioning=False,
     )
     # jax.debug.print("{x} state after tuning", x=(blackjax_state_after_tuning))

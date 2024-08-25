@@ -242,7 +242,7 @@ def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,
         frac_tune3=frac_tune3,
     )
 
-def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, target_acc_rate, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, L_proposal_factor=jnp.inf):
+def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, target_acc_rate, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, L_proposal_factor=jnp.inf, params=None):
 
     integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
 
@@ -289,6 +289,7 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, i
         frac_tune2=frac_tune2,
         frac_tune3=frac_tune3,
         diagonal_preconditioning=diagonal_preconditioning,
+        params=params,
     )
 
     return blackjax_state_after_tuning, blackjax_adjusted_mclmc_sampler_params
@@ -326,6 +327,7 @@ def run_adjusted_mclmc(
     frac_tune3=0.1,
     L_proposal_factor=jnp.inf,
     target_acc_rate=None,
+    params=None,
 ):
 
     def s(model, num_steps, initial_position, key):
@@ -343,7 +345,7 @@ def run_adjusted_mclmc(
 
         (
             blackjax_state_after_tuning,
-            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, new_target_acc_rate, frac_tune1, frac_tune2, frac_tune3, L_proposal_factor)
+            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, new_target_acc_rate, frac_tune1, frac_tune2, frac_tune3, L_proposal_factor, params=params)
 
 
         return run_adjusted_mclmc_no_tuning(

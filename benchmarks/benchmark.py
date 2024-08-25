@@ -71,8 +71,8 @@ from blackjax.util import run_inference_algorithm, store_only_expectation_values
 models = {
     ## Rosenbrock(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}, # no Ex2
     # Cauchy(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
-    Brownian(): {"mclmc": 20000, "adjusted_mclmc": 20000, "nuts": 4000},
-    # StandardNormal(2) : {'mclmc': 1000, 'adjusted_mclmc' : 1000, 'nuts': 1000},
+    # Brownian(): {"mclmc": 20000, "adjusted_mclmc": 20000, "nuts": 4000},
+    StandardNormal(10) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
     # StandardNormal(50) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800},
     # StandardNormal(100) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800},
     # StandardNormal(500) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800},
@@ -285,24 +285,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
         )
     )(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
-    # try:
-    #     print(jnp.nanmean(params.step_size, axis=0), jnp.nanmean(params.L, axis=0))
-    # except:
-    #     pass
 
-    # jax.vmap(lambda f: contract(jnp.square(f - f_true) / var_f))
-    # raise Exception
-
-    # full_avg = lambda x : err(model.E_x2, model.Var_x2, jnp.average)(cumulative_avg(x**2))
-    # full_max = lambda x : err(model.E_x2, model.Var_x2, jnp.max)(cumulative_avg(x**2))
-    # err_t = pvmap(err(model.E_x2, model.Var_x2, contract))(samples)
-    # err_t_avg = pvmap(full_avg)(samples)
-    # err_t_max = pvmap(full_max)(samples)
-    # jax.debug.print("expectation {x} ", x=expectation[0][:4])
-    # jax.debug.print("full avg {x} ", x=err_t_avg[0][:4])
-    # print(expectation.shape, "expectation shape")
-    # print(err_t_avg.shape, "err_t_avg shape")
-    # print(expectation.shape, "expectation shape")
     err_t_median_avg = jnp.median(expectation[:, :, 0], axis=0)
     esses_avg, _, _ = calculate_ess(
         err_t_median_avg, grad_evals_per_step=avg_grad_calls_per_traj
@@ -366,22 +349,8 @@ def benchmark_no_chains(
 
     err_t = (err(model.E_x2, model.Var_x2, contract))(ex2_empirical)
 
-    # outs = [calculate_ess(b, grad_evals_per_step=avg_grad_calls_per_traj) for b in err_t]
-    # # print(outs[:10])
-    # esses = [i[0].item() for i in outs if not math.isnan(i[0].item())]
-    # grad_calls = [i[1].item() for i in outs if not math.isnan(i[1].item())]
-    # return(mean(esses), mean(grad_calls))
-    # print(final_da.mean(), "final da")
-
     err_t_median = err_t  # jnp.median(err_t, axis=0)
-    # import matplotlib.pyplot as plt
-    # plt.plot(np.arange(1, 1+ len(err_t_median))* 2, err_t_median, color= 'teal', lw = 3)
-    # plt.xlabel('gradient evaluations')
-    # plt.ylabel('average second moment error')
-    # plt.xscale('log')
-    # plt.yscale('log')
-    # plt.savefig('brownian.png')
-    # plt.close()
+
     esses, grad_calls, _ = calculate_ess(
         err_t_median, grad_evals_per_step=avg_grad_calls_per_traj
     )
@@ -469,12 +438,12 @@ def benchmark_mhmchmc(batch_size):
 
                     out, edge = grid_search(
                         func=func,
-                        # x=blackjax_adjusted_mclmc_sampler_params.L,
-                        # y=blackjax_adjusted_mclmc_sampler_params.step_size,
-                        x=3.316967,
-                        y=0.390205,
-                        delta_x=blackjax_adjusted_mclmc_sampler_params.L - 0.2,
-                        delta_y=blackjax_adjusted_mclmc_sampler_params.step_size - 0.2,
+                        x=blackjax_adjusted_mclmc_sampler_params.L*2,
+                        y=blackjax_adjusted_mclmc_sampler_params.step_size*2,
+                        # x=3.316967,
+                        # y=0.390205,
+                        delta_x=blackjax_adjusted_mclmc_sampler_params.L*2 - 0.2,
+                        delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*2 - 0.2,
                         size_grid=6,
                         num_iter=4,
                     )
@@ -603,9 +572,9 @@ def benchmark_mhmchmc(batch_size):
                         ] = ess.item()
                         print(f"adjusted_mclmc with tuning ESS {ess}")
 
-                ####### run nuts
 
                 
+                ####### run nuts
                 ess, ess_avg, ess_corr, params, acceptance_rate = benchmark_chains(
                     model,
                     run_nuts(integrator_type="velocity_verlet", preconditioning=False),
@@ -909,7 +878,7 @@ def test_benchmarking():
     integrator_type = "mclachlan"
     num_steps = 2000
     num_chains = 128
-    key1 = jax.random.PRNGKey(1)
+    key1 = jax.random.PRNGKey(2)
 
     init_key, state_key, run_key = jax.random.split(key1, 3)
     initial_position = model.sample_init(init_key)
@@ -978,24 +947,30 @@ def test_benchmarking():
         print(f"Effective Sample Size (ESS) of untuned adjusted mclmc with preconditioning set to {False} is {ess_avg}")
 
     if True:
-        ess, ess_avg, ess_corr, params, acceptance_rate = benchmark_chains(
-            model,
-            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0, target_acc_rate=0.9),
-            key1,
-            n=num_steps,
-            batch=num_chains,
-        )
-        print(f"Effective Sample Size (ESS) of tuned adjusted mclmc with preconditioning set to {False} is {ess_avg}")
+        # ess, ess_avg, ess_corr, params, acceptance_rate = benchmark_chains(
+        #     model,
+        #     run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0, target_acc_rate=0.9),
+        #     key1,
+        #     n=num_steps,
+        #     batch=num_chains,
+        # )
+        # print(f"Effective Sample Size (ESS) of tuned adjusted mclmc with preconditioning set to {False} is {ess_avg, ess, params.L.mean(), params.step_size.mean()}")
         
         
         ess, ess_avg, ess_corr, params, acceptance_rate = benchmark_chains(
             model,
-            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.1, target_acc_rate=0.9),
+            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.1, target_acc_rate=0.9, 
+                               
+            #                    params = MCLMCAdaptationState(
+            # L=jnp.sqrt(model.ndims), step_size=jnp.sqrt(model.ndims) * 0.2, sqrt_diag_cov=1.),
+            
+            ),
+        
             key1,
             n=num_steps,
             batch=num_chains,
         )
-        print(f"Effective Sample Size (ESS) of tuned adjusted mclmc (stage 3) with preconditioning set to {False} is {ess_avg}")
+        print(f"Effective Sample Size (ESS) of tuned adjusted mclmc (stage 3) with preconditioning set to {False} is {ess_avg, ess, params.L.mean(), params.step_size.mean()}")
 
     ## grid search
         
@@ -1049,7 +1024,6 @@ if __name__ == "__main__":
 
     # test_thinning()
 
-    # run_benchmarks_simple()
 
 
     # benchmark_omelyan(1)
