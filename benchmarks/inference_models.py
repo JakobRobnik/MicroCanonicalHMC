@@ -609,7 +609,8 @@ class ItemResponseTheory:
         self.mask = jnp.load(dirr + 'data/irt_mask.npy')
         self.labels = jnp.load(dirr + 'data/irt_labels.npy')
 
-        self.E_x, self.Ex2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
+        E_x2, Var_x2 = jnp.load(dirr + 'ground_truth/' + self.name + '/moments.npy')
+        #self.E_x, self.Ex2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
         
         self.transform = lambda x: x
 
