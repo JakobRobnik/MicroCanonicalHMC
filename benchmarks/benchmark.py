@@ -642,7 +642,7 @@ def benchmark_omelyan(batch_size):
         # ["adjusted_mclmc", "nuts", "mclmc", ],
         [
             StandardNormal(d)
-            for d in np.ceil(np.logspace(np.log10(1e1), np.log10(1e2), 2)).astype(int)
+            for d in np.ceil(np.logspace(np.log10(1e1), np.log10(1e4), 10)).astype(int)
         ],
         # [StandardNormal(d) for d in np.ceil(np.logspace(np.log10(10), np.log10(10000), 5)).astype(int)],
         # models,
@@ -740,7 +740,7 @@ def benchmark_omelyan(batch_size):
                 out[0].item(),
                 out[1].item(),
             )
-        ] = ess_avg.item()
+        ] = ess_avg
 
     save = True
     if save:
