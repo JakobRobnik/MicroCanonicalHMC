@@ -1017,7 +1017,7 @@ if __name__ == "__main__":
 
 
 
-    benchmark_omelyan(1)
+    benchmark_omelyan(128)
 
     # try_new_run_inference()
 
