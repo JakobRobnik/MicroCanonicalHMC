@@ -20,7 +20,6 @@ dirr = os.path.dirname(os.path.realpath(__file__)) + '/'
 
 
 
-
 class StandardNormal():
     """Standard Normal distribution in d dimensions"""
 
@@ -372,48 +371,46 @@ class Funnel():
 
 class Funnel_with_Data():
 
-    def __init__(self, d, sigma, minibatch_size, key):
+    def __init__(self, d= 101, sigma= 1.):
 
-        self.name = 'Funnel_with_Data'
+        self.name = 'FunnelWithData'
         self.ndims = d
         
         self.sigma_theta= 3.0
         self.theta_true = 0.0
         self.sigma_data = sigma
         
-
         self.data = self.simulate_data()
-
-        self.batch = minibatch_size
+        
+        self.transform = lambda x: x
+        
+        self.E_x, self.cov, self.inv_cov = load_cov(self.name, cov_only= True)
+        
 
     def simulate_data(self):
 
         norm = jax.random.normal(jax.random.PRNGKey(123), shape = (2*(self.ndims-1), ))
         z_true = norm[:self.ndims-1] * jnp.exp(self.theta_true * 0.5)
-        self.data = z_true + norm[self.ndims-1:] * self.sigma_data
+        return z_true + norm[self.ndims-1:] * self.sigma_data
 
 
-    def logdensity_fn(self, x, subset):
-        """ x = [z_0, z_1, ... z_{d-1}, theta] """
-        theta = x[-1]
-        z = x[:- 1][subset]
+    def logdensity_fn(self, x):
+        """ x = [theta, z_0, z_1, ... z_{d-1}] """
+        theta = x[0]
+        z = x[1:]
 
         prior_theta = jnp.square(theta / self.sigma_theta)
-        prior_z = jnp.sum(subset) * theta + jnp.exp(-theta) * jnp.sum(jnp.square(z*subset))
-        likelihood = jnp.sum(jnp.square((z - self.data)*subset / self.sigma_data))
+        prior_z = (self.ndims-1) * theta + jnp.exp(-theta) * jnp.sum(jnp.square(z))
+        likelihood = jnp.sum(jnp.square((z - self.data) / self.sigma_data))
 
         return -0.5 * (prior_theta + prior_z + likelihood)
 
-
-    def transform(self, x):
-        """gaussianization"""
-        return x
 
     def sample_init(self, key):
         key1, key2 = jax.random.split(key)
         theta = jax.random.normal(key1) * self.sigma_theta
         z = jax.random.normal(key2, shape = (self.ndims-1, )) * jnp.exp(theta * 0.5)
-        return jnp.concatenate((z, theta))
+        return jnp.insert(z, 0, theta)
 
 
 
@@ -491,11 +488,7 @@ class Brownian():
         self.num_data = 30
         self.ndims = self.num_data + 2
 
-        self.E_x2, self.Var_x2 = np.load(dirr + 'ground_truth/'+self.name+'/moments.npy')
-        cov_data = np.load(dirr + 'ground_truth/'+self.name+'/cov.npz')
-        self.E_x = jnp.array(cov_data['x_avg'])
-        self.cov = jnp.array(cov_data['cov'])
-        self.inv_cov = jnp.linalg.inv(self.cov)
+        self.E_x, self.Ex2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
         
         self.data = jnp.array([0.21592641, 0.118771404, -0.07945447, 0.037677474, -0.27885845, -0.1484156, -0.3250906, -0.22957903,
                                -0.44110894, -0.09830782, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.8786016, -0.83736074,
@@ -573,13 +566,9 @@ class GermanCredit:
         self.labels = jnp.load(dirr + 'data/gc_labels.npy')
         self.features = jnp.load(dirr + 'data/gc_features.npy')
 
-        self.E_x2, self.Var_x2 = jnp.load(dirr + 'ground_truth/'+self.name+'/moments.npy')
-        cov_data = np.load(dirr + 'ground_truth/'+self.name+'/cov.npz')
-        self.E_x = jnp.array(cov_data['x_avg'])
-        self.cov = jnp.array(cov_data['cov'])
-        self.inv_cov = jnp.linalg.inv(self.cov)
-
-
+        self.E_x, self.Ex2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
+        
+        
     def transform(self, x):
         return jnp.concatenate((jnp.exp(x[:26]), x[26:]))
 
@@ -608,22 +597,23 @@ class GermanCredit:
 
 
 class ItemResponseTheory:
-    """ Taken from inference gym."""
+    """ Taken from the inference gym."""
 
     def __init__(self):
         
         self.name = 'ItemResponseTheory'
         self.ndims = 501
         
-        self.students = 400
-        self.questions = 100
+        self.students, self.questions = 400, 100
 
         self.mask = jnp.load(dirr + 'data/irt_mask.npy')
         self.labels = jnp.load(dirr + 'data/irt_labels.npy')
 
-        self.E_x2, self.Var_x2 = jnp.load(dirr+'ground_truth/'+self.name+'/moments.npy')
-
+        E_x2, Var_x2 = jnp.load(dirr + 'ground_truth/' + self.name + '/moments.npy')
+        #self.E_x, self.Ex2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
+        
         self.transform = lambda x: x
+
 
     def logdensity_fn(self, x):
 
@@ -879,3 +869,19 @@ def construct_block_diagonal(a11, a22, a12, num):
     return np.block([[np.eye(num) * a11, np.eye(num) * a12],
                      [np.eye(num) * a12, np.eye(num) * a22]])
 
+
+
+def load_cov(name, cov_only= False):
+    
+    cov_data = np.load(dirr + 'ground_truth/' + name + '/cov.npz')
+    E_x = jnp.array(cov_data['x_avg'])
+    cov = jnp.array(cov_data['cov'])
+    inv_cov = jnp.linalg.inv(cov)
+
+    if cov_only:
+        return E_x, cov, inv_cov 
+    else:       
+        E_x2, Var_x2 = jnp.load(dirr + 'ground_truth/' + name + '/moments.npy')
+        return E_x, E_x2, Var_x2, cov, inv_cov
+    
+    
