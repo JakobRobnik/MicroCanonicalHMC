@@ -226,6 +226,9 @@ def run_adjusted_mclmc_no_tuning(
             num_steps=num_steps,
             transform=lambda state, _: (model.transform(state.position)),
             progress_bar=True)[1])[None, ...]))/num_steps)
+        
+        # jax.debug.print("acceptance rate direct {x}", x=info.acceptance_rate.mean())
+        # jax.debug.print("acceptance rate indirect {x}", x=info.is_accepted.mean())
 
         return (
             MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),
@@ -418,6 +421,8 @@ def run_nuts(integrator_type, preconditioning, return_ess_corr=False):
             num_steps=num_steps,
             transform=lambda state, _: (model.transform(state.position)),
             progress_bar=True)[1])[None, ...]))/num_steps)
+        
+        
 
         return (
             params,
