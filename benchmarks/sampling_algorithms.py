@@ -227,6 +227,7 @@ def run_adjusted_mclmc_no_tuning(
             transform=lambda state, _: (model.transform(state.position)),
             progress_bar=True)[1])[None, ...]))/num_steps)
         
+        # jax.debug.print("acceptance rate {x}", x=info.acceptance_rate)
         # jax.debug.print("acceptance rate direct {x}", x=info.acceptance_rate.mean())
         # jax.debug.print("acceptance rate indirect {x}", x=info.is_accepted.mean())
 
