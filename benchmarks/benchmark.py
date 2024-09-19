@@ -20,7 +20,7 @@ from jax.flatten_util import ravel_pytree
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
 from blackjax.adaptation.adjusted_mclmc_adaptation import adjusted_mclmc_make_L_step_size_adaptation
 
-os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(128)
+os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(4)
 num_cores = jax.local_device_count()
 # print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
@@ -581,14 +581,14 @@ def benchmark_omelyan(batch_size):
     results = defaultdict(tuple)
     for variables in itertools.product(
         # ["adjusted_mclmc", "nuts", "mclmc", ],
-        # [
-        #     StandardNormal(d)
-        #     for d in np.ceil(np.logspace(np.log10(1e1), np.log10(1e4), 10)).astype(int)
-        # ],
         [
-            StandardNormal(10)
-            
+            StandardNormal(d)
+            for d in np.ceil(np.logspace(np.log10(1e1), np.log10(1e6), 20)).astype(int)
         ],
+        # [
+        #     StandardNormal(10)
+            
+        # ],
         # [StandardNormal(d) for d in np.ceil(np.logspace(np.log10(10), np.log10(10000), 5)).astype(int)],
         # models,
         # [velocity_verlet_coefficients, mclachlan_coefficients, yoshida_coefficients, omelyan_coefficients],
@@ -645,8 +645,8 @@ def benchmark_omelyan(batch_size):
 
         out, edge = grid_search(
             func=func,
-            x=blackjax_adjusted_mclmc_sampler_params.L,
-            y=blackjax_adjusted_mclmc_sampler_params.step_size,
+            x=blackjax_adjusted_mclmc_sampler_params.L*2,
+            y=blackjax_adjusted_mclmc_sampler_params.step_size*2,
             delta_x=blackjax_adjusted_mclmc_sampler_params.L*2 - 0.2,
             delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*2 - 0.2,
             grid_size=6,
@@ -689,7 +689,7 @@ def benchmark_omelyan(batch_size):
             )
         ] = ess_avg
 
-        raise Exception
+        # raise Exception
 
     save = True
     if save:
@@ -1145,7 +1145,7 @@ def test_da_functionality():
     # model = Brownian()
     num_steps = 10000
     num_chains = 128
-    key = jax.random.PRNGKey(1)
+    key = jax.random.PRNGKey(20)
     
     params = MCLMCAdaptationState(
         L=jnp.sqrt(model.ndims)*5, step_size=jnp.sqrt(model.ndims), sqrt_diag_cov=1.0,
@@ -1263,7 +1263,7 @@ if __name__ == "__main__":
 
 
 
-    benchmark_omelyan(128)
+    benchmark_omelyan(4)
 
     # try_new_run_inference()
 
