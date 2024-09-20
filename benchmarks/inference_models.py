@@ -30,8 +30,8 @@ class StandardNormal():
         self.E_x = jnp.zeros(d)
         self.E_x2 = jnp.ones(d)
         self.Var_x2 = 2 * self.E_x2
-        self.inv_cov = jnp.eye(d)
-        self.cov = jnp.eye(d)
+        # self.inv_cov = jnp.eye(d)
+        # self.cov = jnp.eye(d)
         
         self.transform = lambda x: x
         
@@ -488,7 +488,7 @@ class Brownian():
         self.num_data = 30
         self.ndims = self.num_data + 2
 
-        self.E_x, self.Ex2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
+        self.E_x, self.E_x2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
         
         self.data = jnp.array([0.21592641, 0.118771404, -0.07945447, 0.037677474, -0.27885845, -0.1484156, -0.3250906, -0.22957903,
                                -0.44110894, -0.09830782, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.8786016, -0.83736074,
@@ -566,7 +566,7 @@ class GermanCredit:
         self.labels = jnp.load(dirr + 'data/gc_labels.npy')
         self.features = jnp.load(dirr + 'data/gc_features.npy')
 
-        self.E_x, self.Ex2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
+        self.E_x, self.Ex_2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
         
         
     def transform(self, x):
@@ -610,7 +610,7 @@ class ItemResponseTheory:
         self.labels = jnp.load(dirr + 'data/irt_labels.npy')
 
         E_x2, Var_x2 = jnp.load(dirr + 'ground_truth/' + self.name + '/moments.npy')
-        #self.E_x, self.Ex2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
+        #self.E_x, self.Ex_2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
         
         self.transform = lambda x: x
 
