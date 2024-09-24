@@ -96,6 +96,8 @@ def da_adaptation(
             info.acceptance_rate,
         )
 
+        # jax.debug.print("acceptance rate {x}", x=info.acceptance_rate)
+
         return (
             (new_adaptation_state, new_kernel_state),
             (True),
@@ -226,6 +228,14 @@ def run_adjusted_mclmc_no_tuning(
             num_steps=num_steps,
             transform=lambda state, _: (model.transform(state.position)),
             progress_bar=True)[1])[None, ...]))/num_steps)
+        
+        # ess_corr = lambda: jnp.mean(effective_sample_size(jax.vmap(lambda x: ravel_pytree(x)[0])(run_inference_algorithm(
+        #     rng_key=slow_key,
+        #     initial_state=initial_state,
+        #     inference_algorithm=alg,
+        #     num_steps=num_steps,
+        #     transform=lambda state, _: (model.transform(state.position)),
+        #     progress_bar=True)[1])[None, ...]))/num_steps
         
         # jax.debug.print("acceptance rate {x}", x=info.acceptance_rate)
         # jax.debug.print("acceptance rate direct {x}", x=info.acceptance_rate.mean())
@@ -395,6 +405,7 @@ def run_nuts(integrator_type, preconditioning, return_ess_corr=False):
                 integrator=integrator,
                 logdensity_fn=model.logdensity_fn,
                 num_steps=2000,
+                target_acceptance_rate=0.8,
             )
 
         else:
