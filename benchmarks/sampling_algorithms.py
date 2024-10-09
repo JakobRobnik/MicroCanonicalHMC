@@ -153,7 +153,7 @@ def with_only_statistics(model, alg, initial_state, key, num_steps):
         inference_algorithm=memory_efficient_sampling_alg,
         num_steps=num_steps,
         transform=transform,
-        progress_bar=True,
+        progress_bar=False,
     )[1]
 
 
@@ -227,7 +227,7 @@ def run_adjusted_mclmc_no_tuning(
             inference_algorithm=alg,
             num_steps=num_steps,
             transform=lambda state, _: (model.transform(state.position)),
-            progress_bar=True)[1])[None, ...]))/num_steps)
+            progress_bar=False)[1])[None, ...]))/num_steps)
         
         # ess_corr = lambda: jnp.mean(effective_sample_size(jax.vmap(lambda x: ravel_pytree(x)[0])(run_inference_algorithm(
         #     rng_key=slow_key,
