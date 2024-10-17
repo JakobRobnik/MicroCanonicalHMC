@@ -2,7 +2,10 @@
 
 This repository exists to benchmark and develop applications and extensions of the Microcanonical Hamiltonian Monte Carlo algorithm.
 
-For details of the algorithm, and an open-source implementation, please refer to https://microcanonical-monte-carlo.netlify.app/.
+For an open-source implementation, please refer to 
+https://blackjax-devs.github.io/sampling-book/algorithms/mclmc.html
+for the details of the algorithm 
+https://microcanonical-monte-carlo.netlify.app/.
 
-
+If you encounter any issues do not hesitate to contact us at jakob_robnik@berkeley.edu.
 
