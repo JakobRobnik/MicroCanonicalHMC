@@ -142,6 +142,8 @@ def with_only_statistics(model, alg, initial_state, key, num_steps):
         incremental_value_transform=lambda x: jnp.array(
             [
                 jnp.average(jnp.square(x - model.E_x2) / model.Var_x2),
+                # jnp.sqrt(jnp.average(jnp.square(x - model.E_x2) / model.Var_x2)),
+                # jnp.sqrt(jnp.average(jnp.square(x - model.E_x2) / (model.Var_x2))),
                 jnp.max(jnp.square(x - model.E_x2) / model.Var_x2),
             ]
         ),

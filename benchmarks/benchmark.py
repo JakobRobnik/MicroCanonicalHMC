@@ -15,8 +15,6 @@ import jax.numpy as jnp
 import pandas as pd
 import scipy
 from jax.flatten_util import ravel_pytree
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
 from blackjax.adaptation.adjusted_mclmc_adaptation import adjusted_mclmc_make_L_step_size_adaptation
@@ -448,7 +446,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                             False,
                             1 / L_proposal_factor,
                             ess_avg,
-                            ess_corr,
+                            ess_corr.mean().item(),
                             num_steps,
                         )
                     ] = ess
@@ -476,7 +474,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                     
                     results[
                         (
-                            model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr, num_steps,
+                            model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), num_steps,
                         )
                     ] = ess
                     print(f"unadjusted mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
@@ -508,7 +506,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                                 preconditioning,
                                 1 / L_proposal_factor,
                                 ess_avg,
-                                ess_corr,
+                                ess_corr.mean().item(),
                                 num_steps,
                             )
                         ] = ess
@@ -536,7 +534,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                                 preconditioning,
                                 1 / L_proposal_factor,
                                 ess_avg,
-                                ess_corr,
+                                ess_corr.mean().item(),
                                 num_steps,
                             )
                         ] = ess
@@ -567,7 +565,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                         preconditioning,
                         0,
                         ess_avg,
-                        ess_corr,
+                        ess_corr.mean().item(),
                         num_steps,
                     )
                 ] = ess
@@ -1283,7 +1281,7 @@ if __name__ == "__main__":
     # for i in range(1,10):
     # benchmark_adjusted_mclmc(batch_size=128, key_index=20)
 
-    benchmark_ill_conditioned(batch_size=128)
+    # benchmark_ill_conditioned(batch_size=128)
 
     # test_thinning()
 
