@@ -52,6 +52,7 @@ from benchmarks.inference_models import (
     IllConditionedGaussian,
     ItemResponseTheory,
     MixedLogit,
+    Rosenbrock,
     StandardNormal,
     StochasticVolatility,
 )
@@ -69,21 +70,15 @@ from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 
 models = {
-    ## Rosenbrock(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}, # no Ex2
-    # Cauchy(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
-    # Brownian(): {"mclmc": 5000, "adjusted_mclmc": 5000, "nuts": 5000},
     StandardNormal(10) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
-    # StandardNormal(50) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800},
-    # StandardNormal(100) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800},
-    # StandardNormal(500) : {'mclmc': 5000, 'adjusted_mclmc' : 5000, 'nuts': 5000},
-    # StandardNormal(1000) : {'mclmc': 800, 'adjusted_mclmc' : 800, 'nuts': 800},
-    # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000},
-    # Funnel() : {'mclmc': 20000, 'adjusted_mclmc' : 80000, 'nuts': 40000},
-    # Banana() : {'mclmc': 10000, 'adjusted_mclmc' : 10000, 'nuts': 10000},
-    # IllConditionedGaussian(100, 100):   {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
-    # GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
-    # ItemResponseTheory(): {'mclmc': 20000, 'adjusted_mclmc' : 40000, 'nuts': 20000},
-    # StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000}
+    StandardNormal(50) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
+    StandardNormal(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
+    StandardNormal(500) : {'mclmc': 4000, 'adjusted_mclmc' : 4000, 'nuts': 4000},
+    StandardNormal(1000) : {'mclmc': 4000, 'adjusted_mclmc' : 4000, 'nuts': 4000},
+    Brownian(): {"mclmc": 10000, "adjusted_mclmc": 10000, "nuts": 10000},
+    GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 80000, 'nuts': 80000},
+    ItemResponseTheory(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
+    Rosenbrock(): {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
 }
 
 def get_num_latents(target):
@@ -281,7 +276,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
             num_steps = models[model]["adjusted_mclmc"]
             print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {num_steps}")
 
-            grid = False
+            grid = True
             if grid:
                 ####### run adjusted_mclmc with standard tuning + grid search
 
@@ -352,7 +347,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                         # y=0.390205,
                         delta_x=blackjax_adjusted_mclmc_sampler_params.L*2 - 0.2,
                         delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*2 - 0.2,
-                        grid_size=7,
+                        grid_size=6,
                         num_iter=3,
                     )
 
@@ -822,7 +817,7 @@ def test_benchmarking():
     num_chains = 128
     key1 = jax.random.PRNGKey(2)
 
-    init_key, state_key, run_key = jax.random.split(key1, 3)
+    init_key, state_key, tune_key, run_key = jax.random.split(key1, 4)
     initial_position = model.sample_init(init_key)
     unadjusted_initial_state = blackjax.mcmc.mclmc.init(
         position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
@@ -833,10 +828,26 @@ def test_benchmarking():
         random_generator_arg=state_key,
     )
 
+
+
+    (
+        blackjax_state_after_tuning,
+        blackjax_adjusted_mclmc_sampler_params,
+    ) = adjusted_mclmc_tuning(
+        initial_position=initial_position,
+        num_steps=num_steps,
+        rng_key=tune_key,
+        logdensity_fn=model.logdensity_fn,
+        integrator_type=integrator_type,
+        frac_tune3=0.0,
+        target_acc_rate=0.9,
+        diagonal_preconditioning=False,
+    )
+
     ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
         model,
         run_nuts(integrator_type="velocity_verlet", preconditioning=False),
-        key1,
+        run_key,
         n=num_steps,
         batch=num_chains,
     )
@@ -868,7 +879,7 @@ def test_benchmarking():
         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
             model,
             run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False),
-            key1,
+            run_key,
             n=num_steps,
             batch=num_chains,
         )
@@ -885,7 +896,7 @@ def test_benchmarking():
                     # step_size=4.61,
                     # L=4.670475,
                     sqrt_diag_cov=1.0,
-                    initial_state=adjusted_initial_state,
+                    initial_state=blackjax_state_after_tuning,
                     return_ess_corr=False
                 ),
                 jax.random.PRNGKey(i),
@@ -901,7 +912,7 @@ def test_benchmarking():
         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
             model,
             run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=0.85),
-            key1,
+            run_key,
             n=num_steps,
             batch=num_chains,
         )
@@ -928,7 +939,7 @@ def test_benchmarking():
         
     if False:
 
-        grid_key, bench_key, tune_key, init_key = jax.random.split(key1, 4)
+        grid_key, bench_key, tune_key, init_key = jax.random.split(run_key, 4)
 
         initial_position = model.sample_init(init_key)
 
@@ -1286,10 +1297,10 @@ if __name__ == "__main__":
 
     # test_da_functionality()
 
-    test_benchmarking()
+    # test_benchmarking()
     # benchmark_ill_conditioned(batch_size=2)
     # for i in range(1,10):
-    # benchmark_adjusted_mclmc(batch_size=128, key_index=20)
+    benchmark_adjusted_mclmc(batch_size=128, key_index=20)
 
     # benchmark_ill_conditioned(batch_size=128)
 
