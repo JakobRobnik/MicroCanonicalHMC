@@ -477,7 +477,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                     
                     results[
                         (
-                            model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), 1/(1/ess_corr).mean().item(), num_steps, False
+                            model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), num_steps, False
                         )
                     ] = ess
                     print(f"unadjusted mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
@@ -510,7 +510,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                                 1 / L_proposal_factor,
                                 ess_avg,
                                 ess_corr.mean().item(),
-                                ess_corr.min().item(), 1/(1/ess_corr).mean().item(),
+                                ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
                                 num_steps,
                                 False
                             )
@@ -539,7 +539,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                                 1 / L_proposal_factor,
                                 ess_avg,
                                 ess_corr.mean().item(),
-                                ess_corr.min().item(), 1/(1/ess_corr).mean().item(),
+                                ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
                                 num_steps,
                                 True
                             )
@@ -570,7 +570,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                                 1 / L_proposal_factor,
                                 ess_avg,
                                 ess_corr.mean().item(),
-                                ess_corr.min().item(), 1/(1/ess_corr).mean().item(),
+                                ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
                                 num_steps,
                                 False
                             )
@@ -603,7 +603,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                         0,
                         ess_avg,
                         ess_corr.mean().item(),
-                        ess_corr.min().item(), 1/(1/ess_corr).mean().item(),
+                        ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
                         num_steps,
                         None
                     )
