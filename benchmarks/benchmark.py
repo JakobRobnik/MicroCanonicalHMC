@@ -70,16 +70,21 @@ from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 
 models = {
-    StandardNormal(10) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
-    StandardNormal(50) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
-    StandardNormal(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
-    StandardNormal(500) : {'mclmc': 4000, 'adjusted_mclmc' : 4000, 'nuts': 4000},
-    StandardNormal(1000) : {'mclmc': 4000, 'adjusted_mclmc' : 4000, 'nuts': 4000},
-    Brownian(): {"mclmc": 10000, "adjusted_mclmc": 10000, "nuts": 10000},
-    GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 80000, 'nuts': 80000},
-    ItemResponseTheory(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
-    Rosenbrock(): {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
+    IllConditionedGaussian(100, k): {'mclmc': 20000, 'adjusted_mclmc': 20000, 'nuts': 10000}
+    for k in np.ceil(np.logspace(1, 5, num=10)).astype(int)
 }
+
+# models = {
+#     StandardNormal(10) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
+#     StandardNormal(50) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
+#     StandardNormal(100) : {'mclmc': 2000, 'adjusted_mclmc' : 2000, 'nuts': 2000},
+#     StandardNormal(500) : {'mclmc': 4000, 'adjusted_mclmc' : 4000, 'nuts': 4000},
+#     StandardNormal(1000) : {'mclmc': 4000, 'adjusted_mclmc' : 4000, 'nuts': 4000},
+#     Brownian(): {"mclmc": 10000, "adjusted_mclmc": 10000, "nuts": 10000},
+#     GermanCredit(): {'mclmc': 80000, 'adjusted_mclmc' : 80000, 'nuts': 80000},
+#     ItemResponseTheory(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
+#     Rosenbrock(): {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
+# }
 
 def get_num_latents(target):
     return target.ndims
@@ -264,6 +269,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
 def benchmark_adjusted_mclmc(batch_size, key_index=1):
 
     key0, key1 = jax.random.split(jax.random.PRNGKey(key_index), 2)
+
 
     integrators = ["mclachlan"]
     for model in models:
@@ -460,7 +466,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                     
                     ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
                         model,
-                        run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False),
+                        run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning),
                         unadjusted_with_tuning_key,
                         n=num_steps,
                         batch=num_chains,
@@ -481,7 +487,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                         # coeffs = mclachlan_coefficients
                         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
                             model,
-                            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
+                            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
                             target_acc_rate=target_acc_rate, return_ess_corr=True),
                             adjusted_with_tuning_key,
                             n=num_steps,
@@ -510,7 +516,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                         # integrator_type = mclachlan_coefficients
                         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
                             model,
-                            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.1, L_proposal_factor=L_proposal_factor,
+                            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.1, L_proposal_factor=L_proposal_factor,
                             target_acc_rate=target_acc_rate,return_ess_corr=True),
                             adjusted_with_tuning_key_stage3,
                             n=num_steps,
@@ -540,7 +546,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                 ####### run nuts
                 ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
                     model,
-                    run_nuts(integrator_type="velocity_verlet", preconditioning=False),
+                    run_nuts(integrator_type="velocity_verlet", preconditioning=preconditioning),
                     nuts_key_with_tuning,
                     n=num_steps,
                     batch=num_chains,
@@ -811,10 +817,14 @@ def test_thinning():
 def test_benchmarking():
 
     # model = StandardNormal(1000)
-    model = Brownian()
+    model = IllConditionedGaussian(10, 100)
+    # model = Brownian()
     integrator_type = "mclachlan"
     num_steps = 5000
     num_chains = 128
+
+    preconditioning = False
+
     key1 = jax.random.PRNGKey(2)
 
     init_key, state_key, tune_key, run_key = jax.random.split(key1, 4)
@@ -841,17 +851,17 @@ def test_benchmarking():
         integrator_type=integrator_type,
         frac_tune3=0.0,
         target_acc_rate=0.9,
-        diagonal_preconditioning=False,
+        diagonal_preconditioning=preconditioning,
     )
 
-    ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
-        model,
-        run_nuts(integrator_type="velocity_verlet", preconditioning=False),
-        run_key,
-        n=num_steps,
-        batch=num_chains,
-    )
-    print(f"Effective Sample Size (ESS) of NUTS with preconditioning set to {False} is avg {ess_avg} and max {ess}")
+    # ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
+    #     model,
+    #     run_nuts(integrator_type="velocity_verlet", preconditioning=preconditioning),
+    #     run_key,
+    #     n=num_steps,
+    #     batch=num_chains,
+    # )
+    # print(f"Effective Sample Size (ESS) of NUTS with preconditioning set to {preconditioning} is avg {ess_avg} and max {ess}")
 
     if True:
         # print(f"acc rate is {acceptance_rate}")
@@ -863,7 +873,7 @@ def test_benchmarking():
         #         # L=0.2,
         #         # step_size=5.34853,
         #         step_size=3.56,
-        #         L=2.642,
+        #         L=1.888073,
         #         integrator_type='velocity_verlet',
         #         initial_state=unadjusted_initial_state,
         #         sqrt_diag_cov=1.0,
@@ -876,64 +886,64 @@ def test_benchmarking():
 
         # print(f"Effective Sample Size (ESS) of untuned unadjusted mclmc with preconditioning set to {False} is {ess_avg}")
 
-        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
-            model,
-            run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False),
-            run_key,
-            n=num_steps,
-            batch=num_chains,
-        )
-        print(f"Effective Sample Size (ESS) of tuned unadjusted mclmc with preconditioning set to {False} is avg {ess_avg} and max{ess}")
+        # ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
+        #     model,
+        #     run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning),
+        #     run_key,
+        #     n=num_steps,
+        #     batch=num_chains,
+        # )
+        # print(f"Effective Sample Size (ESS) of tuned unadjusted mclmc with preconditioning set to {preconditioning} is avg {ess_avg} and max{ess}")
 
-        for i in range(20):
 
-            ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
-                model,
-                run_adjusted_mclmc_no_tuning(
-                    integrator_type=integrator_type,
-                    step_size=0.33592814207077026,
-                    L=1.858194351196289,
-                    # step_size=4.61,
-                    # L=4.670475,
-                    sqrt_diag_cov=1.0,
-                    initial_state=blackjax_state_after_tuning,
-                    return_ess_corr=False
-                ),
-                jax.random.PRNGKey(i),
-                n=num_steps,
-                batch=num_chains,
-            )
 
-            print(f'"ess {ess}')
+        # ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
+        #     model,
+        #     run_adjusted_mclmc_no_tuning(
+        #         integrator_type=integrator_type,
+        #         step_size=0.400800,
+        #         L=1.888073,
+        #         # step_size=4.61,
+        #         # L=4.670475,
+        #         sqrt_diag_cov=1.0,
+        #         initial_state=blackjax_state_after_tuning,
+        #         return_ess_corr=False
+        #     ),
+        #     run_key,
+        #     n=num_steps,
+        #     batch=num_chains,
+        # )
+        # print(f"Effective Sample Size (ESS) of untuned adjusted mclmc with preconditioning set to {False} is avg {ess_avg} and max {ess} with acc rate of {acceptance_rate}")
 
-        print(f"Effective Sample Size (ESS) of untuned adjusted mclmc with preconditioning set to {False} is avg {ess_avg} and max {ess} with acc rate of {acceptance_rate}")
+
 
    
         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
             model,
-            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=0.85),
+            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=0.9, return_ess_corr=True, max=False),
             run_key,
             n=num_steps,
             batch=num_chains,
         )
-        print(f"Effective Sample Size (ESS) of tuned adjusted mclmc with preconditioning set to {False} is avg {ess_avg} and max {ess}, with L {params.L.mean()} and stepsize {params.step_size.mean()}")
+        print(f"Effective Sample Size (ESS) of tuned adjusted mclmc with preconditioning set to {preconditioning} is avg {ess_avg} and max {ess}, with L {params.L.mean()} and stepsize {params.step_size.mean()}")
         print(f"acc rate is {acceptance_rate}")
         
         
         # ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
         #     model,
-        #     run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.1, target_acc_rate=0.9, 
-                               
-        #     #                    params = MCLMCAdaptationState(
-        #     # L=jnp.sqrt(model.ndims), step_size=jnp.sqrt(model.ndims) * 0.2, sqrt_diag_cov=1.),
-            
-        #     ),
-        
-        #     key1,
+        #     run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.5, target_acc_rate=0.9, return_ess_corr=True),
+        #     run_key,
         #     n=num_steps,
         #     batch=num_chains,
         # )
-        # print(f"Effective Sample Size (ESS) of tuned adjusted mclmc (stage 3) with preconditioning set to {False} is {ess_avg, ess, params.L.mean(), params.step_size.mean(), acceptance_rate.mean()}")
+        # print(f"Effective Sample Size (ESS) of tuned adjusted mclmc (stage 3) with preconditioning set to {preconditioning} is avg {ess_avg} and max {ess}, with L {params.L.mean()} and stepsize {params.step_size.mean()}")
+        print(f"acc rate is {acceptance_rate}")
+        print(f"ess corr is {ess_corr.min()}")
+        print(f"optimal L is {np.sqrt(np.sum(model.E_x2))}")
+        # print(f"L/esscorr is {params.L.mean()/ess_corr.mean()}")
+        # print(f'prefactor is {(ess_corr.mean())}')
+        
+        
 
     ## grid search
         
@@ -1097,7 +1107,7 @@ def grid_search_only_L(model, num_steps, num_chains, target_acc_rate, integrator
 
     return Lgrid[iopt], STEP_SIZE[iopt], ESS[iopt], ESS_AVG[iopt], ESS_CORR_MAX[iopt], ESS_CORR_AVG[iopt], RATE[iopt]
 
-def benchmark_ill_conditioned(batch_size=1,key_index=1):
+def benchmark_ill_conditioned(batch_size=1,key_index=2):
 
     # How about we test these things numerically? Pick say d = 100 and determine the optimal L with grid search for a range of Ill Conditioned Gaussians (say kappa \in np.logspace(0, 5) ). But do this at fixed acceptance rate, not optimal stepsize (use dual averaging), say at a \in  {0.1, 0.3, 0.6, 0.9}. For each (L-optimal) chain also determine tauint. We can then plot these relations.
 
@@ -1110,9 +1120,10 @@ def benchmark_ill_conditioned(batch_size=1,key_index=1):
     tune_key, init_pos_key, grid_key = jax.random.split(jax.random.PRNGKey(key_index), 3)
 
     # for acc_rate in [0.1, 0.3, 0.6, 0.9]:
-    for acc_rate in np.linspace(0.1, 0.9, 20):
+    # for acc_rate in np.linspace(0.1, 0.9, 20):
+    for acc_rate in [0.8]:
         # for kappa in np.logspace(0, 5, 5):
-        for kappa in [1000]:
+        for kappa in np.ceil(np.logspace(np.log10(10), np.log10(100000), 10)).astype(int):
             model = IllConditionedGaussian(ndims, kappa)
             # model = Brownian()
             # model = StandardNormal(ndims)
@@ -1129,8 +1140,8 @@ def benchmark_ill_conditioned(batch_size=1,key_index=1):
                 rng_key=tune_key,
                 logdensity_fn=model.logdensity_fn,
                 integrator_type=integrator_type,
-                frac_tune3=0.0,
                 frac_tune2=0.1,
+                frac_tune3=0.0,
                 target_acc_rate=acc_rate,
                 diagonal_preconditioning=False,
             )
@@ -1297,10 +1308,10 @@ if __name__ == "__main__":
 
     # test_da_functionality()
 
-    # test_benchmarking()
-    # benchmark_ill_conditioned(batch_size=2)
+    test_benchmarking()
+    # benchmark_ill_conditioned(batch_size=10)
     # for i in range(1,10):
-    benchmark_adjusted_mclmc(batch_size=128, key_index=20)
+    # benchmark_adjusted_mclmc(batch_size=128, key_index=20)
 
     # benchmark_ill_conditioned(batch_size=128)
 

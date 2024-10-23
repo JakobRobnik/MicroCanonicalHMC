@@ -52,9 +52,9 @@ class IllConditionedGaussian():
         """numpy_seed is used to generate a random rotation for the covariance matrix.
             If None, the covariance matrix is diagonal."""
 
-        self.name = 'IllConditionedGaussian'
         self.ndims = d
         self.condition_number = condition_number
+        self.name = f'IllConditionedGaussian{condition_number}'
         eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
         
         if numpy_seed == None:  # diagonal
@@ -610,6 +610,7 @@ class ItemResponseTheory:
         self.labels = jnp.load(dirr + 'data/irt_labels.npy')
 
         E_x2, Var_x2 = jnp.load(dirr + 'ground_truth/' + self.name + '/moments.npy')
+        self.E_x2, self.Var_x2 = E_x2, Var_x2
         #self.E_x, self.E_x2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
         
         self.transform = lambda x: x
