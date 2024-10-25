@@ -268,7 +268,7 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
 
 def benchmark_adjusted_mclmc(batch_size, key_index=1):
 
-    key0, key1 = jax.random.split(jax.random.PRNGKey(key_index), 2)
+    keys_for_not_grid, keys_for_grid = jax.random.split(jax.random.PRNGKey(key_index), 2)
 
 
     integrators = ["mclachlan"]
@@ -293,7 +293,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                     bench_key,
                     unadjusted_grid_key,
                     unadjusted_bench_key,
-                ) = jax.random.split(key1, 6)
+                ) = jax.random.split(keys_for_grid, 6)
 
 
 
@@ -463,7 +463,9 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
             ####### run mclmc with standard tuning
             for preconditioning in [False, True]:
 
-                unadjusted_with_tuning_key, adjusted_with_tuning_key, adjusted_with_tuning_key_stage3, nuts_key_with_tuning = jax.random.split(key0, 4)
+                keys_for_not_grid = jax.random.split(keys_for_not_grid, 1)[0]
+
+                unadjusted_with_tuning_key, adjusted_with_tuning_key, adjusted_with_tuning_key_stage3, nuts_key_with_tuning = jax.random.split(keys_for_not_grid, 4)
 
 
                 if True:
@@ -489,6 +491,9 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                         [0.9], [jnp.inf], [True, False], [1,2,3]
                     ):  # , 3., 1.25, 0.5] ):
                         # coeffs = mclachlan_coefficients
+
+                        adjusted_with_tuning_key = jax.random.split(adjusted_with_tuning_key, 1)[0]
+
                         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
                             model,
                             run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
@@ -832,11 +837,11 @@ def test_thinning():
 def test_benchmarking():
 
     # model = StandardNormal(1000)
-    model = IllConditionedGaussian(100, 12916)
-    # model = Brownian()
+    # model = IllConditionedGaussian(100, 12916)
+    model = Brownian()
     integrator_type = "mclachlan"
     num_steps = 20000
-    num_chains = 12
+    num_chains = 128
 
     preconditioning = False
 
@@ -935,7 +940,7 @@ def test_benchmarking():
    
         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
             model,
-            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, target_acc_rate=0.9, return_ess_corr=True, max=False, num_windows=2),
+            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune1=0.2, frac_tune2=0.2, frac_tune3=0.0, target_acc_rate=0.9, return_ess_corr=True, max=True, num_windows=3),
             run_key,
             n=num_steps,
             batch=num_chains,
@@ -951,11 +956,11 @@ def test_benchmarking():
         #     batch=num_chains,
         # )
         # print(f"Effective Sample Size (ESS) of tuned adjusted mclmc (stage 3) with preconditioning set to {preconditioning} is avg {ess_avg} and max {ess}, with L {params.L.mean()} and stepsize {params.step_size.mean()}")
-        print(f"acc rate is {acceptance_rate}")
-        print(f"ess corr is {ess_corr.min()}")
-        print(f"stage 2 L (max=False) is {params.L.mean()}")
-        print(f"optimal L avg is {np.sqrt(np.mean(model.E_x2)*model.ndims)}")
-        print(f"optimal L max is {np.sqrt(np.max(model.E_x2)*model.ndims)}")
+        # print(f"acc rate is {acceptance_rate}")
+        # print(f"ess corr is {ess_corr.min()}")
+        # print(f"stage 2 L (max=False) is {params.L.mean()}")
+        # print(f"optimal L avg is {np.sqrt(np.mean(model.E_x2)*model.ndims)}")
+        # print(f"optimal L max is {np.sqrt(np.max(model.E_x2)*model.ndims)}")
         # print(f"L/esscorr is {params.L.mean()/ess_corr.mean()}")
         # print(f'prefactor is {(ess_corr.mean())}')
         
