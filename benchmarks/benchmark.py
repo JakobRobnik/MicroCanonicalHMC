@@ -282,7 +282,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
             num_steps = models[model]["adjusted_mclmc"]
             print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {num_steps}")
 
-            grid = True
+            grid = False
             if grid:
                 ####### run adjusted_mclmc with standard tuning + grid search
 
@@ -461,7 +461,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
             
             
             ####### run mclmc with standard tuning
-            for preconditioning in [False, True]:
+            for preconditioning in [False]:
 
                 keys_for_not_grid = jax.random.split(keys_for_not_grid, 1)[0]
 
@@ -488,7 +488,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
 
                     ####### run adjusted_mclmc with standard tuning
                     for target_acc_rate, L_proposal_factor, max, num_windows in itertools.product(
-                        [0.9], [jnp.inf], [True, False], [1,2,3]
+                        [0.9], [jnp.inf], [True, False], [1,2]
                     ):  # , 3., 1.25, 0.5] ):
                         # coeffs = mclachlan_coefficients
 
@@ -1329,10 +1329,10 @@ if __name__ == "__main__":
 
     # test_da_functionality()
 
-    test_benchmarking()
+    # test_benchmarking()
     # benchmark_ill_conditioned(batch_size=10)
     # for i in range(1,10):
-    # benchmark_adjusted_mclmc(batch_size=10, key_index=20)
+    benchmark_adjusted_mclmc(batch_size=128, key_index=20)
 
     # benchmark_ill_conditioned(batch_size=128)
 
