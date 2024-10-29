@@ -494,7 +494,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                             ess_corr.min().item(),
                             (1/(1/ess_corr).mean()).item(),
                             num_steps,
-                            True,
+                            False,
                             1
                         )
                     ] = ess
@@ -517,7 +517,6 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                                 sqrt_diag_cov=blackjax_unadjusted_mclmc_sampler_params.sqrt_diag_cov,
                                 L=L,
                                 step_size=step_size,
-                                L_proposal_factor=L_proposal_factor,
                             ),
                             key=unadjusted_grid_key,
                             n=num_steps,
@@ -563,7 +562,7 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                         (
                             model.name,
                             model.ndims,
-                            f"mchmc:grid_edge{edge}",
+                            f"mclmc:grid_edge{edge}",
                             jnp.nanmean(params.L).item(),
                             jnp.nanmean(params.step_size).item(),
                             integrator_type,
@@ -606,10 +605,26 @@ def benchmark_adjusted_mclmc(batch_size, key_index=1):
                     
                     results[
                         (
-                            model.name, model.ndims, "mclmc", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), num_steps, False, 1
+                            model.name, model.ndims, "mclmc:st3", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), num_steps, False, 1
                         )
                     ] = ess
                     print(f"unadjusted mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
+                    
+                    ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
+                        model,
+                        run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.0),
+                        unadjusted_with_tuning_key,
+                        n=num_steps,
+                        batch=num_chains,
+                    )
+
+                    
+                    results[
+                        (
+                            model.name, model.ndims, "mclmc:st2", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), num_steps, False, 1
+                        )
+                    ] = ess
+                    print(f"unadjusted stage 2 mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
 
                     ####### run adjusted_mclmc with standard tuning
                     for target_acc_rate, L_proposal_factor, max, num_windows in itertools.product(
@@ -998,6 +1013,55 @@ def test_benchmarking():
         target_acc_rate=0.9,
         diagonal_preconditioning=preconditioning,
     )
+
+    L_proposal_factor = jnp.inf
+
+    bayesian_optimization = True
+    if bayesian_optimization:
+
+        import bayex
+
+        # def f(L, stepsize):
+        #     return L-stepsize
+        
+        def f(L, step_size):
+
+                        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
+                            model=model,
+                            sampler=run_adjusted_mclmc_no_tuning(
+                                integrator_type=integrator_type,
+                                initial_state=blackjax_state_after_tuning,
+                                sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov,
+                                L=L,
+                                step_size=step_size,
+                                L_proposal_factor=L_proposal_factor,
+                            ),
+                            key=jax.random.PRNGKey(42),
+                            n=num_steps,
+                            batch=1,
+                        )
+                        return ess
+
+        domain = {'L': bayex.domain.Real(0.0, 2.0), 'stepsize': bayex.domain.Real(0.0, 2.0)}
+        optimizer = bayex.Optimizer(
+                domain=domain, 
+                maximize=True, acq='PI')
+
+        # Define some prior evaluations to initialise the GP.
+        params = {'L': [0.0, 0.5, 1.0], 'stepsize': [0.0, 0.5, 1.0]}
+        ys = [f(x,1) for x in params['L']]
+        opt_state = optimizer.init(ys, params)
+
+        # Sample new points using Jax PRNG approach.
+        ori_key = jax.random.key(42)
+        for step in range(20):
+            key = jax.random.fold_in(ori_key, step)
+            new_params = optimizer.sample(key, opt_state)
+            y_new = f(**new_params)
+            opt_state = optimizer.fit(opt_state, y_new, new_params)
+        
+        print(opt_state.best_params)
+        raise Exception
 
     # ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
     #     model,
@@ -1454,10 +1518,10 @@ if __name__ == "__main__":
 
     # test_da_functionality()
 
-    # test_benchmarking()
+    test_benchmarking()
     # benchmark_ill_conditioned(batch_size=10)
     # for i in range(1,10):
-    benchmark_adjusted_mclmc(batch_size=2, key_index=20)
+    # benchmark_adjusted_mclmc(batch_size=2, key_index=20)
 
     # benchmark_ill_conditioned(batch_size=128)
 
