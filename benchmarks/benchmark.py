@@ -976,18 +976,18 @@ def test_thinning():
 # this function simply runs all of the samplers and some of the models, to make sure that everything is working
 def test_benchmarking():
 
-    # model = StandardNormal(1000)
+    # model = StandardNormal(10)
     # model = IllConditionedGaussian(100, 12916)
     model = Brownian()
     integrator_type = "mclachlan"
-    num_steps = 20000
-    num_chains = 128
+    num_steps = 100000
+    num_chains = 50
 
     preconditioning = False
 
     key1 = jax.random.PRNGKey(2)
 
-    init_key, state_key, tune_key, run_key = jax.random.split(key1, 4)
+    init_key, state_key, tune_key, run_key, initial_key = jax.random.split(key1, 5)
     initial_position = model.sample_init(init_key)
     unadjusted_initial_state = blackjax.mcmc.mclmc.init(
         position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
@@ -1016,7 +1016,7 @@ def test_benchmarking():
 
     L_proposal_factor = jnp.inf
 
-    bayesian_optimization = True
+    bayesian_optimization = False
     if bayesian_optimization:
 
         import bayex
@@ -1024,7 +1024,8 @@ def test_benchmarking():
         # def f(L, stepsize):
         #     return L-stepsize
         
-        def f(L, step_size):
+        def make_f(key):
+            def f(L, stepsize):
 
                         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg = benchmark_chains(
                             model=model,
@@ -1033,35 +1034,42 @@ def test_benchmarking():
                                 initial_state=blackjax_state_after_tuning,
                                 sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov,
                                 L=L,
-                                step_size=step_size,
+                                step_size=stepsize,
                                 L_proposal_factor=L_proposal_factor,
                             ),
-                            key=jax.random.PRNGKey(42),
+                            key=key,
                             n=num_steps,
-                            batch=1,
+                            batch=num_chains,
                         )
+                        jax.debug.print("{x} ESS", x=ess)
+                        jax.debug.print("{x} L stepsize", x=(L, stepsize))
                         return ess
+            return f 
 
-        domain = {'L': bayex.domain.Real(0.0, 2.0), 'stepsize': bayex.domain.Real(0.0, 2.0)}
+        # domain = {'L': bayex.domain.Real(0.1, 4.0), 'stepsize': bayex.domain.Real(0.1, 0.7)}
+        domain = {'L': bayex.domain.Real(0.1, 2*blackjax_adjusted_mclmc_sampler_params.L.item()), 'stepsize': bayex.domain.Real(0.1, 2*blackjax_adjusted_mclmc_sampler_params.step_size.item())}
         optimizer = bayex.Optimizer(
                 domain=domain, 
                 maximize=True, acq='PI')
 
         # Define some prior evaluations to initialise the GP.
-        params = {'L': [0.0, 0.5, 1.0], 'stepsize': [0.0, 0.5, 1.0]}
-        ys = [f(x,1) for x in params['L']]
+        # params = {'L': [1.944672], 'stepsize': [0.353445]}
+        params = {'L': [blackjax_adjusted_mclmc_sampler_params.L], 'stepsize': [blackjax_adjusted_mclmc_sampler_params.step_size]}
+        ys = [make_f(initial_key)(x,y) for x in params['L'] for y in params['stepsize']]
         opt_state = optimizer.init(ys, params)
+
 
         # Sample new points using Jax PRNG approach.
         ori_key = jax.random.key(42)
-        for step in range(20):
+        for step in range(50):
+            print(step)
             key = jax.random.fold_in(ori_key, step)
-            new_params = optimizer.sample(key, opt_state)
-            y_new = f(**new_params)
+            key1, key2 = jax.random.split(key)
+            new_params = optimizer.sample(key1, opt_state)
+            y_new = make_f(key2)(**new_params)
             opt_state = optimizer.fit(opt_state, y_new, new_params)
         
         print(opt_state.best_params)
-        raise Exception
 
     # ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
     #     model,
@@ -1106,24 +1114,27 @@ def test_benchmarking():
 
 
 
-        # ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
-        #     model,
-        #     run_adjusted_mclmc_no_tuning(
-        #         integrator_type=integrator_type,
-        #         step_size=0.400800,
-        #         L=1.888073,
-        #         # step_size=4.61,
-        #         # L=4.670475,
-        #         sqrt_diag_cov=1.0,
-        #         initial_state=blackjax_state_after_tuning,
-        #         return_ess_corr=False
-        #     ),
-        #     run_key,
-        #     n=num_steps,
-        #     batch=num_chains,
-        # )
-        # print(f"Effective Sample Size (ESS) of untuned adjusted mclmc with preconditioning set to {False} is avg {ess_avg} and max {ess} with acc rate of {acceptance_rate}")
+        ess, ess_avg, ess_corr, _, acceptance_rate, grads_to_low_avg = benchmark_chains(
+            model,
+            run_adjusted_mclmc_no_tuning(
+                integrator_type=integrator_type,
+                # step_size=opt_state.best_params['stepsize'],
+                # L=opt_state.best_params['L'],
+                L=1.5206657648086548,
+                step_size=0.41058143973350525,
+                # step_size=4.61,
+                # L=4.670475,
+                sqrt_diag_cov=1.0,
+                initial_state=blackjax_state_after_tuning,
+                return_ess_corr=True
+            ),
+            run_key,
+            n=num_steps,
+            batch=num_chains,
+        )
+        print(f"Effective Sample Size (ESS) of untuned adjusted mclmc with preconditioning set to {False} is avg {ess_avg} and max {ess} with acc rate of {acceptance_rate} and ess_corr_avg {ess_corr.mean().item()} and ess_corr_min {ess_corr.min().item()}")
 
+        raise Exception
 
 
    
