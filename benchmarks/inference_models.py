@@ -27,7 +27,7 @@ class Gaussian():
     """Gaussian distribution. It has zero mean and is therefore completely specified by the covariance matrix. """
 
 
-    def __init__(self, ndims, condition_number= 1., eigenvalues= 'log', numpy_seed=None, initialization= 'wide'):
+    def __init__(self, ndims, condition_number= 1, eigenvalues= 'log', numpy_seed=None, initialization= 'wide'):
         """Args:
             
             ndims: dimensionality
@@ -112,7 +112,7 @@ class Gaussian():
 class Banana():
     """Banana target fromm the Inference Gym"""
 
-    def __init__(self, prior = 'map'):
+    def __init__(self, initialization= 'wide'):
         self.name = 'Banana'
         self.ndims = 2
         self.curvature = 0.03
@@ -121,14 +121,14 @@ class Banana():
         self.E_x2 = jnp.array([100.0, 19.0]) #the first is analytic the second is by drawing 10^8 samples from the generative model. Relative accuracy is around 10^-5.
         self.Var_x2 = jnp.array([20000.0, 4600.898])
 
-        if prior == 'map':
+        if initialization == 'map':
             self.sample_init = lambda key: jnp.array([0, -100.0 * self.curvature])
-        elif prior == 'posterior':
+        elif initialization == 'posterior':
             self.sample_init = lambda key: self.posterior_draw(key)
-        elif prior == 'prior':
+        elif initialization == 'wide':
             self.sample_init = lambda key: jax.random.normal(key, shape=(self.ndims,)) * jnp.array([10.0, 5.0]) * 2
         else:
-            raise ValueError('prior = '+prior +' is not defined.')
+            raise ValueError('initialization = '+initialization +' is not a valid option.')
 
     def logdensity_fn(self, x):
         mu2 = self.curvature * (x[0] ** 2 - 100)

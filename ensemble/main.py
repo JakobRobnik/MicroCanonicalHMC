@@ -104,8 +104,8 @@ def plot_trace(info1, info2, model, mclachlan):
 
 def mainn():
 
-    targets = [[Banana(prior = 'prior'), 100, 100],
-                [IllConditionedGaussianGamma(prior = 'prior'), 500, 500],
+    targets = [[Banana(), 100, 100],
+                [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 500, 500],
                 [GermanCredit(), 500, 500],
                 [Brownian(), 500, 500],
                 [ItemResponseTheory(), 500, 500],
