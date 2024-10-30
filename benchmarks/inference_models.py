@@ -20,64 +20,75 @@ dirr = os.path.dirname(os.path.realpath(__file__)) + '/'
 
 
 
-class StandardNormal():
-    """Standard Normal distribution in d dimensions"""
+rng_inference_gym_icg = 10 & (2 ** 32 - 1)
+            
 
-    def __init__(self, d):
-        self.name = 'StandardNormal'
-        self.ndims = d
-        
-        self.E_x = jnp.zeros(d)
-        self.E_x2 = jnp.ones(d)
-        self.Var_x2 = 2 * self.E_x2
-        # self.inv_cov = jnp.eye(d)
-        # self.cov = jnp.eye(d)
-        
-        self.transform = lambda x: x
-        
-        
-    def logdensity_fn(self, x):
-        return -0.5 * jnp.sum(jnp.square(x), axis= -1)
-
-    def sample_init(self, key):
-        return jax.random.normal(key, shape = (self.ndims, ))
+class Gaussian():
+    """Gaussian distribution. It has zero mean and is therefore completely specified by the covariance matrix. """
 
 
+    def __init__(self, ndims, condition_number= 1, eigenvalues= 'log', numpy_seed=None, initialization= 'wide'):
+        """Args:
+            
+            ndims: dimensionality
+            
+            condition_number: ratio of the largest to smallest eigenvalue of the covariance matrix.
+            
+            eigenvalues: determines the eigenvalues of the covariance matrix. Can be one of the:
+                                'linear': equally spaced eigenvalues
+                                'log': equally spaced in log
+                                'Gamma': randomly drawn from the Gamma distribution. 'condition_number' is ignored in this case.
+                                'outliers': ndims - K eigenvalues are 1, K eigenvalues are equal to the condition_number. K = 2.
+            
+            numpy_seed: By default covariance matrix is diagonal. You can randomly rotate it by passing this argument. Seed is used to generate a random rotation for the covariance matrix.
+            
+            initialization: Which strategy to use to initialize chains. Can be one of the
+                                'mode': start from the mode of the distribution (x=0).
+                                'posterior': start already in the target distribution.
+                                'wide': start from the isotropic Gaussian with the scale set by the largest eigenvalue of the target's covariance matrix.
+        """
 
-class IllConditionedGaussian():
-    """Gaussian distribution. Covariance matrix has eigenvalues equally spaced in log-space, going from 1/condition_bnumber^1/2 to condition_number^1/2."""
-
-
-    def __init__(self, d, condition_number, numpy_seed=None, prior= 'prior'):
-        """numpy_seed is used to generate a random rotation for the covariance matrix.
-            If None, the covariance matrix is diagonal."""
-
-        self.ndims = d
+        self.name = 'Gaussian_' + eigenvalues + '_' + str(condition_number)
+        self.ndims = ndims
         self.condition_number = condition_number
-        self.name = f'IllConditionedGaussian{condition_number}'
-        eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), d)
         
-        if numpy_seed == None:  # diagonal
+        if numpy_seed != None:
+            rng = np.random.RandomState(seed=numpy_seed)
+
+        # fix the eigenvalues
+        if eigenvalues == 'linear':
+            eigs = jnp.linspace(1./condition_number, 1, ndims)
+        elif eigenvalues == 'log':
+            eigs = jnp.logspace(-0.5 * jnp.log10(condition_number), 0.5 * jnp.log10(condition_number), ndims)
+        elif eigenvalues == 'Gamma':
+            eigs = 1./np.sort(rng.gamma(shape=0.5, scale=1., size=ndims)) #eigenvalues of the Hessian
+            eigs /= jnp.average(eigs)
+        elif eigenvalues == 'outliers':
+            num_outliers = 2
+            eigs = jnp.concatenate((jnp.ones(num_outliers) * condition_number, jnp.ones(ndims-num_outliers)))
+        else:
+            raise ValueError('eigenvalues = '+ str(eigenvalues) + ' is not a valid option.')
+        
+        
+        if numpy_seed == None:  # diagonal covariance matrix
             self.E_x2 = eigs
-            self.R = jnp.eye(d)
+            self.R = jnp.eye(ndims)
             self.inv_cov = jnp.diag(1 / eigs)
             self.cov = jnp.diag(eigs)
 
         else:  # randomly rotate
-            rng = np.random.RandomState(seed=numpy_seed)
             D = jnp.diag(eigs)
             inv_D = jnp.diag(1 / eigs)
-            R, _ = jnp.array(np.linalg.qr(rng.randn(self.ndims, self.ndims)))  # random rotation
+            R, _ = jnp.array(np.linalg.qr(rng.randn(ndims, ndims)))  # random rotation
             self.R = R
             self.inv_cov = R @ inv_D @ R.T
             self.cov = R @ D @ R.T
             self.E_x2 = jnp.diagonal(R @ D @ R.T)
 
             #cov_precond = jnp.diag(1 / jnp.sqrt(self.E_x2)) @ self.cov @ jnp.diag(1 / jnp.sqrt(self.E_x2))
-
             #print(jnp.linalg.cond(cov_precond) / jnp.linalg.cond(self.cov))
         
-        self.E_x = jnp.zeros(d)
+        self.E_x = jnp.zeros(ndims)
         self.Var_x2 = 2 * jnp.square(self.E_x2)
 
 
@@ -85,92 +96,23 @@ class IllConditionedGaussian():
         self.transform = lambda x: x
         
 
-        if prior == 'map':
-            self.sample_init = lambda key: jnp.zeros(self.ndims)
+        if initialization == 'map':
+            self.sample_init = lambda key: jnp.zeros(ndims)
 
-        elif prior == 'posterior':
-            self.sample_init = lambda key: self.R @ (jax.random.normal(key, shape=(self.ndims,)) * jnp.sqrt(eigs))
+        elif initialization == 'posterior':
+            self.sample_init = lambda key: self.R @ (jax.random.normal(key, shape=(ndims,)) * jnp.sqrt(eigs))
 
-        else: # N(0, sigma_true_max)
-            self.sample_init = lambda key: jax.random.normal(key, shape=(self.ndims,)) * jnp.max(jnp.sqrt(eigs))
-
-
-
-class IllConditionedESH():
-    """ICG from the ESH paper."""
-
-    def __init__(self):
-        self.name = 'IllConditionedESH'
-        self.ndims = 50
-        self.variance = jnp.linspace(0.01, 1, self.ndims)
-
-        self.transform = lambda x: x
-        
-        
-    def logdensity_fn(self, x):
-        """- log p of the target distribution"""
-        return -0.5 * jnp.sum(jnp.square(x) / self.variance, axis= -1)
-
-
-    def draw(self, key):
-        return jax.random.normal(key, shape = (self.ndims, )) * jnp.sqrt(self.variance)
-
-    def sample_init(self, key):
-        return jax.random.normal(key, shape = (self.ndims, ))
-
-
-
-
-class IllConditionedGaussianGamma():
-    """Inference gym's Ill conditioned Gaussian"""
-
-    def __init__(self, prior = 'prior'):
-        
-        self.name = 'IllConditionedGaussianGamma'
-        self.ndims = 100
-
-        # define the Hessian
-        rng = np.random.RandomState(seed=10 & (2 ** 32 - 1))
-        eigs = np.sort(rng.gamma(shape=0.5, scale=1., size=self.ndims)) #eigenvalues of the Hessian
-        eigs *= jnp.average(1.0/eigs)
-        self.entropy = 0.5 * self.ndims
-        self.maxmin = (1./jnp.sqrt(eigs[0]), 1./jnp.sqrt(eigs[-1])) 
-        R, _ = np.linalg.qr(rng.randn(self.ndims, self.ndims)) #random rotation
-        self.map_to_worst = (R.T)[[0, -1], :]
-        self.Hessian = R @ np.diag(eigs) @ R.T
-
-        # analytic ground truth moments
-        self.E_x2 = jnp.diagonal(R @ np.diag(1.0/eigs) @ R.T)
-        self.Var_x2 = 2 * jnp.square(self.E_x2)
-
-        # norm = jnp.diag(1/jnp.sqrt(self.E_x2))
-        # Sigma = R @ np.diag(1/eigs) @ R.T
-        # reduced = norm @ Sigma @ norm
-        # print(np.linalg.cond(reduced), np.linalg.cond(Sigma))
-        
-        self.transform = lambda x: x
-
-        if prior == 'map':
-            self.sample_init = lambda key: jnp.zeros(self.ndims)
-
-        elif prior == 'posterior':
-            self.sample_init = lambda key: R @ (jax.random.normal(key, shape=(self.ndims,)) / jnp.sqrt(eigs))
-
-        else: # N(0, sigma_true_max)
-            self.sample_init = lambda key: jax.random.normal(key, shape=(self.ndims,)) * jnp.max(1.0/jnp.sqrt(eigs))
+        elif initialization == 'wide': # N(0, sigma_true_max)
+            self.sample_init = lambda key: jax.random.normal(key, shape=(ndims,)) * jnp.max(jnp.sqrt(eigs))
+        else:
+            raise ValueError('initialization = '+ str(initialization) + ' is not a valid option.')
             
-    def logdensity_fn(self, x):
-        """- log p of the target distribution"""
-        return -0.5 * x.T @ self.Hessian @ x
-
-    
-    
 
 
 class Banana():
     """Banana target fromm the Inference Gym"""
 
-    def __init__(self, prior = 'map'):
+    def __init__(self, initialization= 'wide'):
         self.name = 'Banana'
         self.ndims = 2
         self.curvature = 0.03
@@ -179,14 +121,14 @@ class Banana():
         self.E_x2 = jnp.array([100.0, 19.0]) #the first is analytic the second is by drawing 10^8 samples from the generative model. Relative accuracy is around 10^-5.
         self.Var_x2 = jnp.array([20000.0, 4600.898])
 
-        if prior == 'map':
+        if initialization == 'map':
             self.sample_init = lambda key: jnp.array([0, -100.0 * self.curvature])
-        elif prior == 'posterior':
+        elif initialization == 'posterior':
             self.sample_init = lambda key: self.posterior_draw(key)
-        elif prior == 'prior':
+        elif initialization == 'wide':
             self.sample_init = lambda key: jax.random.normal(key, shape=(self.ndims,)) * jnp.array([10.0, 5.0]) * 2
         else:
-            raise ValueError('prior = '+prior +' is not defined.')
+            raise ValueError('initialization = '+initialization +' is not a valid option.')
 
     def logdensity_fn(self, x):
         mu2 = self.curvature * (x[0] ** 2 - 100)

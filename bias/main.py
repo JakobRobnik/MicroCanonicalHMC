@@ -116,8 +116,8 @@ sampling_algs = [SamplingAlg(mclmc, 'mclmc'), SamplingAlg(hmc, 'hmc')]
 
 Model = namedtuple('Model', ['model', 'stepsize_bounds', 'burn_in_steps'])
 num_burnin = 10**4
-models = [Model(StandardNormal(d=100), [2.5, 20.], 0), # [2.5, 14.]
-          Model(IllConditionedGaussian(d= 100, condition_number= 1000.), [0.4, 7.], num_burnin),
+models = [Model(Gaussian(ndims= 100), [2.5, 20.], 0), # [2.5, 14.]
+          Model(Gaussian(ndims= 100, condition_number= 1000), [0.4, 7.], num_burnin),
           Model(Rosenbrock(), [0.1, 1.5], num_burnin), #[0.1, 0.6]
           Model(Brownian(), [0.06, 1.], num_burnin),
           Model(GermanCredit(), [0.05, 0.4], num_burnin),
