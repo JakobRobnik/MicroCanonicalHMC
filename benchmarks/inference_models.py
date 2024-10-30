@@ -508,7 +508,7 @@ class GermanCredit:
         self.labels = jnp.load(dirr + 'data/gc_labels.npy')
         self.features = jnp.load(dirr + 'data/gc_features.npy')
 
-        self.E_x, self.Ex_2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
+        self.E_x, self.E_x2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
         
         
     def transform(self, x):
@@ -552,7 +552,8 @@ class ItemResponseTheory:
         self.labels = jnp.load(dirr + 'data/irt_labels.npy')
 
         E_x2, Var_x2 = jnp.load(dirr + 'ground_truth/' + self.name + '/moments.npy')
-        #self.E_x, self.Ex_2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
+        self.E_x2, self.Var_x2 = E_x2, Var_x2
+        #self.E_x, self.E_x2, self.Var_x2, self.cov, self.inv_cov = load_cov(self.name)
         
         self.transform = lambda x: x
 
