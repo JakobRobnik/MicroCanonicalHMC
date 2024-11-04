@@ -42,9 +42,9 @@ def plot_trace(info1, info2, model, mclachlan):
 
     # equipartition
     plt.plot(steps1, info1['equi_diag'], color = 'tab:olive', label = 'diagonal equipartition')
-    #plt.plot(steps1, info1['equi_full'], color = 'tab:green', label = 'full rank equipartition')
+    plt.plot(steps1, info1['equi_full'], color = 'tab:green', label = 'full rank equipartition')
     plt.plot(steps2, info2['equi_diag'], color = 'tab:olive', alpha= 0.15)
-    #plt.plot(steps2, info2['equi_full'], color = 'tab:green', alpha= 0.15)
+    plt.plot(steps2, info2['equi_full'], color = 'tab:green', alpha= 0.15)
     
     plt.plot([0, ntotal], jnp.ones(2) * 1e-2, '-', color = 'black')
     plt.legend()
@@ -71,7 +71,7 @@ def plot_trace(info1, info2, model, mclachlan):
     end_stage1(1.)
     
     ax = plt.gca().twinx()  # instantiate a second axes that shares the same x-axis
-    ax.plot(steps2, info2['acc prob'], '.', color='teal')
+    ax.plot(steps2, info2['acc_prob'], '.', color='teal')
     ax.plot(steps2, 0.7 * np.ones(steps2.shape), '-', alpha= 0.5, color='black')    
     ax.set_ylabel('acceptance probability')
     ax.tick_params(axis='y')
@@ -97,7 +97,7 @@ def plot_trace(info1, info2, model, mclachlan):
     
     
     plt.tight_layout()
-    plt.savefig('img/' + model.name + '.png')
+    plt.savefig('ensemble/img/' + model.name + '.png')
     plt.close()
 
 
@@ -111,7 +111,7 @@ def mainn():
                 [ItemResponseTheory(), 500, 500],
                 [StochasticVolatility(), 1000, 1000]]
 
-    chains = 256
+    chains = 4096
     mclachlan= True
     
     key = jax.random.key(42)
