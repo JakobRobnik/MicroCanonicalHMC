@@ -7,7 +7,7 @@ from blackjax.adaptation.ensemble_mclmc import emaus
 from benchmarks.inference_models import *
 
 
-#os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
+os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 #print(len(jax.devices()), jax.lib.xla_bridge.get_backend().platform)
 
 mesh = jax.sharding.Mesh(jax.devices(), 'chains')
@@ -116,7 +116,7 @@ def mainn():
     
     key = jax.random.key(42)
     
-    for i in [0,]:
+    for i in [0, 1, 2, 3, 4, 5]:
         target, num_steps1, num_steps2 = targets[i]
         print(target.name)
         info1, info2 = emaus(target, num_steps1, num_steps2, chains, mesh, key, mclachlan= mclachlan)
