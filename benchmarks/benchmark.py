@@ -69,7 +69,7 @@ from blackjax.mcmc.integrators import (
 from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 
-def benchmark(batch_size, models, key_index=1, do_grid_search=True):
+def benchmark(batch_size, models, key_index=1, do_grid_search=True, integrators = ["mclachlan"]):
 
     keys_for_not_grid, keys_for_grid = jax.random.split(jax.random.PRNGKey(key_index), 2)
 
@@ -78,16 +78,15 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
     do_unadjusted_mclmc = True
     do_nuts = True
 
-    integrators = ["mclachlan"]
+    num_chains = batch_size  # 1 + batch_size//model.ndims
+    
     for model in models:
         results = defaultdict(tuple)
         for integrator_type in integrators:
-            num_chains = batch_size  # 1 + batch_size//model.ndims
             print(
                 f"NUMBER OF CHAINS for {model.name} and adjusted_mclmc is {num_chains}"
             )
-            num_steps = models[model]["adjusted_mclmc"]
-            print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {num_steps}")
+            print(f"NUMBER OF STEPS for {model.name} and MHCMLMC is {models[model]["adjusted_mclmc"]}")
 
             if do_grid_search:
                 ####### run adjusted_mclmc with standard tuning + grid search
@@ -112,7 +111,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                     blackjax_adjusted_mclmc_sampler_params,
                 ) = adjusted_mclmc_tuning(
                     initial_position=initial_position,
-                    num_steps=num_steps,
+                    num_steps=models[model]["adjusted_mclmc"],
                     rng_key=tune_key_adjusted,
                     logdensity_fn=model.logdensity_fn,
                     integrator_type=integrator_type,
@@ -123,7 +122,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
 
                 (blackjax_unadjusted_state_after_tuning, blackjax_unadjusted_mclmc_sampler_params) = unadjusted_mclmc_tuning(
                     initial_position=initial_position,
-                    num_steps=num_steps,
+                    num_steps=models[model]["mclmc"],
                     rng_key=tune_key_unadjusted,
                     logdensity_fn=model.logdensity_fn,
                     integrator_type=integrator_type,
@@ -157,7 +156,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                                 L_proposal_factor=L_proposal_factor,
                             ),
                             key=grid_key,
-                            n=num_steps,
+                            n=models[model]["adjusted_mclmc"],
                             batch=batch_size,
                         )
 
@@ -188,7 +187,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                             return_ess_corr=True,
                         ),
                         bench_key,
-                        n=num_steps,
+                        n=models[model]["adjusted_mclmc"],
                         batch=num_chains,
                     )
                     print(f"best from grid search adjusted {ess}")
@@ -212,7 +211,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                             ess_corr.mean().item(),
                             ess_corr.min().item(),
                             (1/(1/ess_corr).mean()).item(),
-                            num_steps,
+                            models[model]["adjusted_mclmc"],
                             num_chains,
                             True,
                             1
@@ -245,7 +244,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                                 L_proposal_factor=L_proposal_factor,
                             ),
                             key=grid_key,
-                            n=num_steps,
+                            n=models[model]["adjusted_mclmc"],
                             batch=batch_size,
                         )
 
@@ -276,7 +275,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                             return_ess_corr=True,
                         ),
                         bench_key,
-                        n=num_steps,
+                        n=models[model]["adjusted_mclmc"],
                         batch=num_chains,
                     )
                     print(f"best from grid search adjusted {ess}")
@@ -300,7 +299,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                             ess_corr.mean().item(),
                             ess_corr.min().item(),
                             (1/(1/ess_corr).mean()).item(),
-                            num_steps,
+                            models[model]["adjusted_mclmc"],
                             num_chains,
                             False,
                             1
@@ -327,7 +326,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                                 step_size=step_size,
                             ),
                             key=unadjusted_grid_key,
-                            n=num_steps,
+                            n=models[model]["mclmc"],
                             batch=batch_size,
                         )
 
@@ -358,7 +357,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                             return_ess_corr=True,
                         ),
                         unadjusted_bench_key,
-                        n=num_steps,
+                        n=models[model]["mclmc"],
                         batch=num_chains,
                     )
                     print(f"best from grid search adjusted {ess}")
@@ -382,7 +381,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                             ess_corr.mean().item(),
                             ess_corr.min().item(),
                             (1/(1/ess_corr).mean()).item(),
-                            num_steps,
+                            models[model]["mclmc"],
                             num_chains,
                             True,
                             1
@@ -393,157 +392,122 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
 
             
             
-            for preconditioning in [False]:
 
-                keys_for_not_grid = jax.random.split(keys_for_not_grid, 1)[0]
+            # keys_for_not_grid = jax.random.split(keys_for_not_grid, 1)[0]
 
-                unadjusted_with_tuning_key, adjusted_with_tuning_key, adjusted_with_tuning_key_stage3, nuts_key_with_tuning = jax.random.split(keys_for_not_grid, 4)
+            unadjusted_with_tuning_key, adjusted_with_tuning_key, adjusted_with_tuning_key_stage3, nuts_key_with_tuning = jax.random.split(keys_for_not_grid, 4)
 
 
-                if do_unadjusted_mclmc:
-                    
+            if do_unadjusted_mclmc:
+                
+                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
+                    model,
+                    run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False),
+                    unadjusted_with_tuning_key,
+                    n=models[model]["mclmc"],
+                    batch=num_chains,
+                )
+
+                
+                results[
+                    (
+                        model.name, model.ndims, "mclmc:st3", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, False, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), models[model]["mclmc"], num_chains, False, 1
+                    )
+                ] = ess
+                print(f"unadjusted mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
+                
+                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
+                    model,
+                    run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0),
+                    unadjusted_with_tuning_key,
+                    n=models[model]["mclmc"],
+                    batch=num_chains,
+                )
+
+                
+                results[
+                    (
+                        model.name, model.ndims, "mclmc:st2", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, False, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), models[model]["mclmc"], num_chains, False, 1
+                    )
+                ] = ess
+                print(f"unadjusted stage 2 mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
+
+                ####### run adjusted_mclmc with standard tuning
+            for target_acc_rate, L_proposal_factor, max, num_windows in itertools.product(
+                    [0.9], [jnp.inf], [True, False], [1,2]
+                ):  # , 3., 1.25, 0.5] ):
+                    # coeffs = mclachlan_coefficients
+
+                    adjusted_with_tuning_key = jax.random.split(adjusted_with_tuning_key, 1)[0]
+
                     ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
                         model,
-                        run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning),
-                        unadjusted_with_tuning_key,
-                        n=num_steps,
+                        run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
+                        target_acc_rate=target_acc_rate, return_ess_corr=True, max=max, num_windows=num_windows),
+                        adjusted_with_tuning_key,
+                        n=models[model]["adjusted_mclmc"],
                         batch=num_chains,
+                        
                     )
-
-                    
                     results[
                         (
-                            model.name, model.ndims, "mclmc:st3", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), num_steps, num_chains, False, 1
+                            model.name,
+                            model.ndims,
+                            "adjusted_mclmc:" + str(target_acc_rate),
+                            jnp.nanmean(params.L).item(),
+                            jnp.nanmean(params.step_size).item(),
+                            (integrator_type),
+                            "standard",
+                            acceptance_rate.mean().item(),
+                            False,
+                            1 / L_proposal_factor,
+                            ess_avg,
+                            ess_corr.mean().item(),
+                            ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
+                            models[model]["adjusted_mclmc"],
+                            num_chains,
+                            max,
+                            num_windows
                         )
                     ] = ess
-                    print(f"unadjusted mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
-                    
-                    ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
-                        model,
-                        run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.0),
-                        unadjusted_with_tuning_key,
-                        n=num_steps,
-                        batch=num_chains,
+
+                  
+
+        if do_nuts:
+
+            for integrator_type in ["velocity_verlet", "mclachlan"]:
+                nuts_key_with_tuning = jax.random.split(keys_for_not_grid, 1)[0]
+                ####### run nuts
+                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
+                    model,
+                    run_nuts(integrator_type=integrator_type, preconditioning=False),
+                    nuts_key_with_tuning,
+                    n=models[model]["nuts"],
+                    batch=num_chains,
+                )
+                print(f"nuts, grads to low avg {grads_to_low_avg}")
+                
+                results[
+                    (
+                        model.name,
+                        model.ndims,
+                        "nuts",
+                        0.0,
+                        0.0,
+                        integrator_type,
+                        "standard",
+                        acceptance_rate.mean().item(),
+                        False,
+                        0,
+                        ess_avg,
+                        ess_corr.mean().item(),
+                        ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
+                        models[model]["nuts"],
+                        num_chains,
+                        None,
+                        -1,
                     )
-
-                    
-                    results[
-                        (
-                            model.name, model.ndims, "mclmc:st2", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), num_steps, num_chains, False, 1
-                        )
-                    ] = ess
-                    print(f"unadjusted stage 2 mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
-
-                    ####### run adjusted_mclmc with standard tuning
-                for target_acc_rate, L_proposal_factor, max, num_windows in itertools.product(
-                        [0.9], [jnp.inf], [True, False], [1,2]
-                    ):  # , 3., 1.25, 0.5] ):
-                        # coeffs = mclachlan_coefficients
-
-                        adjusted_with_tuning_key = jax.random.split(adjusted_with_tuning_key, 1)[0]
-
-                        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
-                            model,
-                            run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
-                            target_acc_rate=target_acc_rate, return_ess_corr=True, max=max, num_windows=num_windows),
-                            adjusted_with_tuning_key,
-                            n=num_steps,
-                            batch=num_chains,
-                            
-                        )
-                        results[
-                            (
-                                model.name,
-                                model.ndims,
-                                "adjusted_mclmc:" + str(target_acc_rate),
-                                jnp.nanmean(params.L).item(),
-                                jnp.nanmean(params.step_size).item(),
-                                (integrator_type),
-                                "standard",
-                                acceptance_rate.mean().item(),
-                                preconditioning,
-                                1 / L_proposal_factor,
-                                ess_avg,
-                                ess_corr.mean().item(),
-                                ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
-                                num_steps,
-                                num_chains,
-                                max,
-                                num_windows
-                            )
-                        ] = ess
-
-                        
-
-                        # print(f"adjusted_mclmc with tuning grads to low bias avg {grads_to_low_avg}")
-
-                        # # integrator_type = mclachlan_coefficients
-                        # ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
-                        #     model,
-                        #     run_adjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.1, L_proposal_factor=L_proposal_factor,
-                        #     target_acc_rate=target_acc_rate,return_ess_corr=True),
-                        #     adjusted_with_tuning_key_stage3,
-                        #     n=num_steps,
-                        #     batch=num_chains,
-                        # )
-                        # results[
-                        #     (
-                        #         model.name,
-                        #         model.ndims,
-                        #         "adjusted_mclmc:st3:" + str(target_acc_rate),
-                        #         jnp.nanmean(params.L).item(),
-                        #         jnp.nanmean(params.step_size).item(),
-                        #         (integrator_type),
-                        #         "standard",
-                        #         acceptance_rate.mean().item(),
-                        #         preconditioning,
-                        #         1 / L_proposal_factor,
-                        #         ess_avg,
-                        #         ess_corr.mean().item(),
-                        #         ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
-                        #         num_steps,
-                        # num_chains,
-                        #         False
-                        #     )
-                        # ] = ess
-                        # print(f"adjusted_mclmc with stage 3 tuning, grads to low avg {grads_to_low_avg}")
-
-
-                if do_nuts:
-
-                    for integrator_type in ["velocity_verlet", "mclachlan"]:
-                        nuts_key_with_tuning = jax.random.split(keys_for_not_grid, 1)[0]
-                        ####### run nuts
-                        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
-                            model,
-                            run_nuts(integrator_type=integrator_type, preconditioning=preconditioning),
-                            nuts_key_with_tuning,
-                            n=num_steps,
-                            batch=num_chains,
-                        )
-                        print(f"nuts, grads to low avg {grads_to_low_avg}")
-                        
-                        results[
-                            (
-                                model.name,
-                                model.ndims,
-                                "nuts",
-                                0.0,
-                                0.0,
-                                integrator_type,
-                                "standard",
-                                acceptance_rate.mean().item(),
-                                preconditioning,
-                                0,
-                                ess_avg,
-                                ess_corr.mean().item(),
-                                ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
-                                num_steps,
-                                num_chains,
-                                None,
-                                -1,
-                            )
-                        ] = ess
+                ] = ess
 
         df = pd.Series(results).reset_index()
         df.columns = [
@@ -1202,6 +1166,10 @@ if __name__ == "__main__":
     Gaussian(100, k, eigenvalues=eigenval_type): {'mclmc': 20000, 'adjusted_mclmc': 20000, 'nuts': 20000}
     for k in np.ceil(np.logspace(1, 5, num=10)).astype(int) for eigenval_type in ["log", "outliers"]
     }
+
+    # Gaussian(d, condition_number=1., eigenvalues='linear'): {'mclmc': 20000, 'adjusted_mclmc': 20000, 'nuts': 20000}
+    # for d in [2,3,4,5,6,7,8,9,10]
+    # }
 
     # models = {
 
