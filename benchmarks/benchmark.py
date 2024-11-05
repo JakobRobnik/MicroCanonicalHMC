@@ -69,11 +69,10 @@ from blackjax.mcmc.integrators import (
 from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 
-def benchmark(batch_size, key_index=1):
+def benchmark(batch_size, models, key_index=1, do_grid_search=True):
 
     keys_for_not_grid, keys_for_grid = jax.random.split(jax.random.PRNGKey(key_index), 2)
 
-    do_grid_search = True
     do_grid_search_for_adjusted = True and do_grid_search
     do_grid_search_for_unadjusted = False and do_grid_search
     do_unadjusted_mclmc = True
