@@ -455,7 +455,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                             (
                                 model.name,
                                 model.ndims,
-                                "adjusted_mclm:" + str(target_acc_rate),
+                                "adjusted_mclmc:" + str(target_acc_rate),
                                 jnp.nanmean(params.L).item(),
                                 jnp.nanmean(params.step_size).item(),
                                 (integrator_type),
@@ -490,7 +490,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True):
                         #     (
                         #         model.name,
                         #         model.ndims,
-                        #         "adjusted_mclm:st3:" + str(target_acc_rate),
+                        #         "adjusted_mclmc:st3:" + str(target_acc_rate),
                         #         jnp.nanmean(params.L).item(),
                         #         jnp.nanmean(params.step_size).item(),
                         #         (integrator_type),
