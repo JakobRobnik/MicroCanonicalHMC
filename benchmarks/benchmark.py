@@ -77,6 +77,7 @@ def benchmark(batch_size, key_index=1):
     do_grid_search_for_adjusted = True and do_grid_search
     do_grid_search_for_unadjusted = False and do_grid_search
     do_unadjusted_mclmc = True
+    do_nuts = True
 
     integrators = ["mclachlan"]
     for model in models:
@@ -509,38 +510,41 @@ def benchmark(batch_size, key_index=1):
                         # print(f"adjusted_mclmc with stage 3 tuning, grads to low avg {grads_to_low_avg}")
 
 
-                
-                ####### run nuts
-                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
-                    model,
-                    run_nuts(integrator_type="velocity_verlet", preconditioning=preconditioning),
-                    nuts_key_with_tuning,
-                    n=num_steps,
-                    batch=num_chains,
-                )
-                print(f"nuts, grads to low avg {grads_to_low_avg}")
-                
-                results[
-                    (
-                        model.name,
-                        model.ndims,
-                        "nuts",
-                        0.0,
-                        0.0,
-                        "velocity_verlet",
-                        "standard",
-                        acceptance_rate.mean().item(),
-                        preconditioning,
-                        0,
-                        ess_avg,
-                        ess_corr.mean().item(),
-                        ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
-                        num_steps,
-                        num_chains,
-                        None,
-                        -1,
-                    )
-                ] = ess
+                if do_nuts:
+
+                    for integrator_type in ["velocity_verlet", "mclachlan"]:
+                        nuts_key_with_tuning = jax.random.split(keys_for_not_grid, 1)[0]
+                        ####### run nuts
+                        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
+                            model,
+                            run_nuts(integrator_type=integrator_type, preconditioning=preconditioning),
+                            nuts_key_with_tuning,
+                            n=num_steps,
+                            batch=num_chains,
+                        )
+                        print(f"nuts, grads to low avg {grads_to_low_avg}")
+                        
+                        results[
+                            (
+                                model.name,
+                                model.ndims,
+                                "nuts",
+                                0.0,
+                                0.0,
+                                integrator_type,
+                                "standard",
+                                acceptance_rate.mean().item(),
+                                preconditioning,
+                                0,
+                                ess_avg,
+                                ess_corr.mean().item(),
+                                ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
+                                num_steps,
+                                num_chains,
+                                None,
+                                -1,
+                            )
+                        ] = ess
 
         df = pd.Series(results).reset_index()
         df.columns = [
