@@ -148,12 +148,12 @@ def benchmark_chains(model, sampler, key, n=10000, batch=None):
     )(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
 
-    err_t_mean_avg = jnp.mean(expectation[:, :, 0], axis=0)
+    err_t_mean_avg = jnp.median(expectation[:, :, 0], axis=0)
     esses_avg, grads_to_low_avg, _ = calculate_ess(
         err_t_mean_avg, grad_evals_per_step=avg_grad_calls_per_traj
     )
 
-    err_t_mean_max = jnp.mean(expectation[:, :, 1], axis=0)
+    err_t_mean_max = jnp.median(expectation[:, :, 1], axis=0)
     esses_max, _, _ = calculate_ess(
         err_t_mean_max, grad_evals_per_step=avg_grad_calls_per_traj
     )
