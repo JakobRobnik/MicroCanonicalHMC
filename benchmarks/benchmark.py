@@ -86,6 +86,8 @@ models = {
 #     Rosenbrock(): {'mclmc': 20000, 'adjusted_mclmc' : 20000, 'nuts': 20000},
 # }
 
+
+
 def get_num_latents(target):
     return target.ndims
 
@@ -133,9 +135,9 @@ def find_crossing(array, cutoff):
     indices = jnp.argwhere(b)
     if indices.shape[0] == 0:
         print("\n\n\nNO CROSSING FOUND!!!\n\n\n", array, cutoff)
-        return 1
+        return jnp.inf
 
-    return jnp.max(indices) + 1
+    return jnp.max(indices) 
 
 
 def cumulative_avg(samples):

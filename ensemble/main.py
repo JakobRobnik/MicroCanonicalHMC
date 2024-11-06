@@ -1,11 +1,26 @@
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+plt.style.use('style.mplstyle')
+
 import os, sys
 sys.path.append('../blackjax/')
 from blackjax.adaptation.ensemble_mclmc import emaus
+from blackjax.mcmc.integrators import velocity_verlet_coefficients, mclachlan_coefficients, omelyan_coefficients
 from benchmarks.inference_models import *
+import pandas as pd
 
+
+def find_crossing(n, bias, cutoff):
+    """the smallest M such that bias[m] < cutoff for all m >= M. Returns n[M]"""
+
+    indices = jnp.argwhere(bias > cutoff)
+    M= jnp.max(indices)+1
+    
+    if M == len(bias):
+        return jnp.inf
+    else: 
+        return n[M]
 
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 #print(len(jax.devices()), jax.lib.xla_bridge.get_backend().platform)
@@ -13,10 +28,28 @@ os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 mesh = jax.sharding.Mesh(jax.devices(), 'chains')
 
 
-def plot_trace(info1, info2, model, mclachlan):
-        
-    grads_per_step = 2 if mclachlan else 1 # in stage 2
+# models to solve
+targets = [[Banana(), 100, 300],
+            [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 500, 500],
+            [GermanCredit(), 500, 500],
+            [Brownian(), 500, 500],
+            [ItemResponseTheory(), 500, 500],
+            [StochasticVolatility(), 1000, 1000]]
+
+
+
+def get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, equi_full):
     
+    dir = 'ensemble/img/' + 'chainpower' + str(chain_power) + '_integrator' + str(integrator) + '_precond'+str(diag_precond)+'_earlystop'+str(early_stop)+ '_acc_rate' + str(acc_rate) + '_equi_full' + str(equi_full)+ '/'
+
+    if not os.path.isdir(dir):
+        os.mkdir(dir)
+    
+    return dir
+
+
+def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
+            
     plt.figure(figsize= (15, 5))
 
     n1 = info1['step_size'].shape[0]
@@ -24,27 +57,31 @@ def plot_trace(info1, info2, model, mclachlan):
     
     steps1 = jnp.arange(1, n1+1)
     steps2 = jnp.cumsum(info2['steps_per_sample']) * grads_per_step + n1
-    
-    def end_stage1(alpha = 0.4):
-        ylim = plt.gca().get_ylim()
-        plt.plot((n1+1) * np.ones(2), ylim, color = 'black', alpha = alpha)
+    steps = np.concatenate((steps1, steps2))
+
+    def end_stage1():
+        ax = plt.gca()
+        ylim = ax.get_ylim()
+        lw = ax.spines['bottom'].get_linewidth()
+        color = ax.spines['bottom'].get_edgecolor()
+        plt.plot((n1+1) * np.ones(2), ylim, color= color, lw= lw)
         plt.ylim(*ylim)
     
     ### bias ###
     plt.subplot(1, 2, 1)
-    plt.title('Bias')
+    #plt.title('Bias')
     
     # true
-    plt.plot(steps1, info1['contracted_exp_vals'][:, 1], color = 'tab:blue', label= 'average')
-    plt.plot(steps1, info1['contracted_exp_vals'][:, 0], color = 'tab:red', label = 'max')
-    plt.plot(steps2, info2['contracted_exp_vals'][:, 1], color = 'tab:blue')
-    plt.plot(steps2, info2['contracted_exp_vals'][:, 0], color = 'tab:red')
+    bias = np.concatenate((info1['contracted_exp_vals'], info2['contracted_exp_vals']))
+    n = [find_crossing(steps, bias[:, i], 0.01) for i in range(2)]
+    plt.plot(steps, bias[:, 1], color = 'tab:blue', label= 'average')
+    plt.plot(steps, bias[:, 0], color = 'tab:red', label = 'max')
 
     # equipartition
-    plt.plot(steps1, info1['equi_diag'], color = 'tab:olive', label = 'diagonal equipartition')
-    plt.plot(steps1, info1['equi_full'], color = 'tab:green', label = 'full rank equipartition')
-    plt.plot(steps2, info2['equi_diag'], color = 'tab:olive', alpha= 0.15)
-    plt.plot(steps2, info2['equi_full'], color = 'tab:green', alpha= 0.15)
+    plt.plot(steps1, info1['equi_diag'], '.', color = 'tab:olive', label = 'diagonal equipartition')
+    plt.plot(steps1, info1['equi_full'], '.', color = 'tab:green', label = 'full rank equipartition')
+    plt.plot(steps2, info2['equi_diag'], '.-', color = 'tab:olive', alpha= 0.3)
+    plt.plot(steps2, info2['equi_full'], '.-', color = 'tab:green', alpha= 0.3)
     
     plt.plot([0, ntotal], jnp.ones(2) * 1e-2, '-', color = 'black')
     plt.legend()
@@ -59,27 +96,28 @@ def plot_trace(info1, info2, model, mclachlan):
     ### stepsize tuning ###
     
     plt.subplot(3, 2, 2)
-    plt.title('Hyperparameters')
+    #plt.title('Hyperparameters')
     plt.plot(steps1, info1['EEVPD'], '.', color='teal', label= 'observed')
     plt.plot(steps1, info1['EEVPD_wanted'], '-', color='black', alpha = 0.5, label = 'targeted')
 
-    plt.legend()
+    plt.legend(loc=4)
     plt.ylabel("EEVPD")
     plt.yscale('log')
     
     ylim = plt.gca().get_ylim()
-    end_stage1(1.)
+    end_stage1()
     
     ax = plt.gca().twinx()  # instantiate a second axes that shares the same x-axis
+    ax.spines['right'].set_visible(True)
     ax.plot(steps2, info2['acc_prob'], '.', color='teal')
-    ax.plot(steps2, 0.7 * np.ones(steps2.shape), '-', alpha= 0.5, color='black')    
-    ax.set_ylabel('acceptance probability')
+    ax.plot([steps1[-1], steps2[-1]], acc_prob * np.ones(2), '-', alpha= 0.5, color='black')    
+    ax.set_ylabel('acc prob')
     ax.tick_params(axis='y')
     
     
     plt.subplot(3, 2, 4)
-    plt.plot(steps1, info1['step_size'], '.-', color='teal')
-    plt.plot(steps2, info2['step_size'], '.-', color='teal')
+    plt.plot(steps1, info1['step_size'], '.', color='teal')
+    plt.plot(steps2, info2['step_size'], '.', color='teal')
     plt.ylabel(r"step size")
     plt.yscale('log')
     end_stage1()
@@ -87,9 +125,9 @@ def plot_trace(info1, info2, model, mclachlan):
     ### L tuning ###
     plt.subplot(3, 2, 6)
     L0 = jnp.sqrt(jnp.sum(model.E_x2))
-    plt.plot(steps1, info1['L'], '.-', color='chocolate')
-    plt.plot(steps2, info2['L'], '.-', color='chocolate')
-    plt.plot([0, ntotal], L0 * jnp.ones(2), '-', color='black')
+    plt.plot(steps1, info1['L'], '.', color='chocolate')
+    plt.plot(steps2, info2['L'], '.', color='chocolate')
+    #plt.plot([0, ntotal], L0 * jnp.ones(2), '-', color='black')
     end_stage1()
     plt.ylabel("L")
     plt.yscale('log')
@@ -97,36 +135,49 @@ def plot_trace(info1, info2, model, mclachlan):
     
     
     plt.tight_layout()
-    plt.savefig('ensemble/img/' + model.name + '.png')
+    plt.savefig(dir + model.name + '.png')
     plt.close()
 
+    return n
 
 
-def mainn():
-
-    targets = [[Banana(), 100, 100],
-                [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 500, 500],
-                [GermanCredit(), 500, 500],
-                [Brownian(), 500, 500],
-                [ItemResponseTheory(), 500, 500],
-                [StochasticVolatility(), 1000, 1000]]
-
-    chains = 4096
-    mclachlan= True
+def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=1, acc_rate= 5, equi_full= 0):
     
+    # algorithm settings
+    chains = 2**chain_power
     key = jax.random.key(42)
-    
-    for i in [0, 1, 2, 3, 4, 5]:
-        target, num_steps1, num_steps2 = targets[i]
+    integrator_coefficients= [velocity_verlet_coefficients, mclachlan_coefficients, omelyan_coefficients][integrator]
+    grads_per_step = len(integrator_coefficients) // 2
+    acc_prob= [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99][acc_rate]
+    dir = get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, equi_full)
+
+    results = []
+    for t in targets:
+        target, num_steps1, num_steps2 = t
         print(target.name)
-        info1, info2 = emaus(target, num_steps1, num_steps2, chains, mesh, key, mclachlan= mclachlan)
-        
-        plot_trace(info1, info2, target, mclachlan)
+        info1, info2 = emaus(target, num_steps1, num_steps2, chains, mesh, key, early_stop, integrator_coefficients, acc_prob= acc_prob, equi_full= equi_full) # run the algorithm
+        results.append(plot_trace(info1, info2, target, grads_per_step, acc_prob, dir)) # do plots and compute the results
+    
+    
+    df = pd.DataFrame(results, columns= ['grads_to_low_bmax', 'grads_to_low_bavg']) # save the results
+    df['name'] = [target[0].name for target in targets]
+    df.to_csv(dir + 'data.csv', sep= '\t', index=False)
 
    
 
 if __name__ == '__main__':
 
-    mainn()
-    
+    _main(diag_precond=1, early_stop=0)
+    _main(diag_precond=0, early_stop=0)
+
     #shifter --image=reubenharry/cosmo:1.0 python3 -m ensemble.main
+    
+    
+    
+
+# TODO for package release:
+# - make stage 1 a while loop
+# - equi full should only be computed optionally
+# - no bias calculations
+# - test on multiple nodes
+# - test on other targets
