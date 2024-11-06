@@ -5,8 +5,9 @@ dist
 *__pycache__*
 mclmc.egg*
 *.jpg
+*.png
 *.mp4
-# *.npy
+*.npy
 *.pdf
 *.csv
 .ipynb_checkpoints
