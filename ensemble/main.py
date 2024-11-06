@@ -34,13 +34,13 @@ targets = [[Banana(), 100, 300],
             [GermanCredit(), 500, 500],
             [Brownian(), 500, 500],
             [ItemResponseTheory(), 500, 500],
-            [StochasticVolatility(), 1000, 1000]]
+            [StochasticVolatility(), 1000, 1000]][-1:]
 
 
 
-def get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, equi_full):
+def get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, steps_per_sample, equi_full):
     
-    dir = 'ensemble/img/' + 'chainpower' + str(chain_power) + '_integrator' + str(integrator) + '_precond'+str(diag_precond)+'_earlystop'+str(early_stop)+ '_acc_rate' + str(acc_rate) + '_equi_full' + str(equi_full)+ '/'
+    dir = 'ensemble/img/adjusted_grid/' + 'chainpower' + str(chain_power) + '_integrator' + str(integrator) + '_precond'+str(diag_precond)+'_earlystop'+str(early_stop)+ '_acc_rate' + str(acc_rate)+ '_N' + str(steps_per_sample) + '_equi_full' + str(equi_full)+ '/'
 
     if not os.path.isdir(dir):
         os.mkdir(dir)
@@ -141,7 +141,7 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     return n
 
 
-def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=1, acc_rate= 5, equi_full= 0):
+def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=1, acc_rate= 5, steps_per_sample= 10, equi_full= 0):
     
     # algorithm settings
     chains = 2**chain_power
@@ -149,13 +149,19 @@ def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=1, acc_rat
     integrator_coefficients= [velocity_verlet_coefficients, mclachlan_coefficients, omelyan_coefficients][integrator]
     grads_per_step = len(integrator_coefficients) // 2
     acc_prob= [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99][acc_rate]
-    dir = get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, equi_full)
+    dir = get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, steps_per_sample, equi_full)
 
     results = []
     for t in targets:
         target, num_steps1, num_steps2 = t
-        print(target.name)
-        info1, info2 = emaus(target, num_steps1, num_steps2, chains, mesh, key, early_stop, integrator_coefficients, acc_prob= acc_prob, equi_full= equi_full) # run the algorithm
+        info1, info2 = emaus(target, num_steps1, num_steps2, chains, mesh, key, 
+                             early_stop= early_stop,
+                             integrator_coefficients= integrator_coefficients, 
+                             acc_prob= acc_prob, 
+                             equi_full= equi_full, 
+                             diagonal_preconditioning= diag_precond, 
+                             steps_per_sample= steps_per_sample) # run the algorithm
+        
         results.append(plot_trace(info1, info2, target, grads_per_step, acc_prob, dir)) # do plots and compute the results
     
     
@@ -167,8 +173,12 @@ def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=1, acc_rat
 
 if __name__ == '__main__':
 
-    _main(diag_precond=1, early_stop=0)
-    _main(diag_precond=0, early_stop=0)
+
+    for N in [20, 30, 40, 50]:
+        _main(diag_precond=1, early_stop=0, integrator= 1, acc_rate= 1, steps_per_sample= N)
+    
+        _main(diag_precond=1, early_stop=0, integrator= 2, acc_rate= 5, steps_per_sample= N)
+
 
     #shifter --image=reubenharry/cosmo:1.0 python3 -m ensemble.main
     
