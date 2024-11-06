@@ -5,6 +5,7 @@ dist
 *__pycache__*
 mclmc.egg*
 *.jpg
+*.png
 *.mp4
 # *.npy
 *.pdf
