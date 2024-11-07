@@ -83,13 +83,13 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, integrators 
     for model in models:
         print(f"Running benchmark for {model.name} with {model.ndims} dimensions")
         results = defaultdict(tuple)
-        for integrator_type in integrators:
+        if do_grid_search:
             print(
                 f"NUMBER OF CHAINS for {model.name} and adjusted_mclmc is {num_chains}"
             )
+            for integrator_type in integrators:
 
 
-            if do_grid_search:
                 ####### run adjusted_mclmc with standard tuning + grid search
 
                 (
@@ -395,14 +395,15 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, integrators 
                 
 
             
-        ##### break 
-        df = pd.Series(results).reset_index()
-        df.columns = [
-            "model", "dims", "sampler", "L", "step_size", "integrator", "tuning", "acc_rate", "preconditioning", "inv_L_prop", "ess_avg", "ess_corr_avg", "ess_corr_min", "ess_corr_inv_mean", "num_steps", "num_chains", "worst", "num_windows", "ESS"]
-        # df.result = df.result.apply(lambda x: x[0].item())
-        # df.model = df.model.apply(lambda x: x[1])
-        df.to_csv(f"gridresults{model.name}{model.ndims}{key_index}.csv", index=False)
-        results = defaultdict(tuple)
+            ##### save grid results
+            df = pd.Series(results).reset_index()
+            df.columns = [
+                "model", "dims", "sampler", "L", "step_size", "integrator", "tuning", "acc_rate", "preconditioning", "inv_L_prop", "ess_avg", "ess_corr_avg", "ess_corr_min", "ess_corr_inv_mean", "num_steps", "num_chains", "worst", "num_windows", "ESS"]
+            # df.result = df.result.apply(lambda x: x[0].item())
+            # df.model = df.model.apply(lambda x: x[1])
+            df.to_csv(f"gridresults{model.name}{model.ndims}{key_index}.csv", index=False)
+            results = defaultdict(tuple)
+
         for integrator_type in integrators:
 
 
@@ -1277,13 +1278,13 @@ def test_da_functionality():
 
 if __name__ == "__main__":
 
-    test_benchmarking()
+    # test_benchmarking()
     
 
-    # models = {
-    # Gaussian(100, k, eigenvalues=eigenval_type): {'mclmc': 20000, 'adjusted_mclmc': 20000, 'nuts': 20000}
-    # for k in np.ceil(np.logspace(1, 5, num=10)).astype(int) for eigenval_type in ["log", "outliers"]
-    # }
+    models = {
+    Gaussian(100, k, eigenvalues=eigenval_type): {'mclmc': 20000, 'adjusted_mclmc': 20000, 'nuts': 20000}
+    for k in np.ceil(np.logspace(1, 5, num=10)).astype(int) for eigenval_type in ["log", "outliers"]
+    }
 
     # Gaussian(d, condition_number=1., eigenvalues='linear'): {'mclmc': 20000, 'adjusted_mclmc': 20000, 'nuts': 20000}
     # for d in [2,3,4,5,6,7,8,9,10]
@@ -1299,4 +1300,4 @@ if __name__ == "__main__":
     # }
 
 
-    # benchmark(batch_size=128, key_index=20)
+    benchmark(batch_size=128, models=models, key_index=20, do_grid_search=False)
