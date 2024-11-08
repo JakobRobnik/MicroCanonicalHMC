@@ -27,6 +27,7 @@ def _main(model):
     
     x2 = jax.vmap(observables)(observables)
     print(x2.shape)
+    
     E_x2 = jnp.average(x2, axis= 0)
     b2 = contract(E_x2)
     
