@@ -34,23 +34,47 @@ targets = [[Banana(), 100, 300],
             [GermanCredit(), 500, 500],
             [Brownian(), 500, 500],
             [ItemResponseTheory(), 500, 500],
-            [StochasticVolatility(), 1000, 1000]][:1]
+            [StochasticVolatility(), 1000, 1000]]
 
 
 
 def get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, steps_per_sample, equi_full):
     
-    dir = 'ensemble/img/adjusted_grid/' + 'chainpower' + str(chain_power) + '_integrator' + str(integrator) + '_precond'+str(diag_precond)+'_earlystop'+str(early_stop)+ '_acc_rate' + str(acc_rate)+ '_N' + str(steps_per_sample) + '_equi_full' + str(equi_full)+ '/'
+    dir = 'ensemble/img/' + 'chainpower' + str(chain_power) + '_integrator' + str(integrator) + '_precond'+str(diag_precond)+'_earlystop'+str(early_stop)+ '_acc_rate' + str(acc_rate)+ '_N' + str(steps_per_sample) + '_equi_full' + str(equi_full)+ '/'
 
     if not os.path.isdir(dir):
         os.mkdir(dir)
     
     return dir
 
+def plot_convergence_metrics(steps1, info1, file_name):
+
+    ### relative fluctuations ###
+    plt.subplot(2, 1, 1)    
+    
+    plt.plot(steps1, info1['fluctuations'][:, 0], '.-', color = 'tab:blue', label= 'average')
+    plt.plot(steps1, info1['fluctuations'][:, 1], '.-', color = 'tab:red', label = 'max')
+    plt.yscale('log')
+    plt.ylabel('relative fluctuations')
+    plt.legend()
+    
+    
+    ### entropy ###
+    plt.subplot(2, 1, 2)
+    H = info1['entropy']
+    plt.plot(steps1, H - jnp.min(H), '.-', color= 'tab:green')
+    plt.yscale('log')
+    plt.ylabel('entropy')    
+    plt.xlabel('# gradient evaluations')
+    
+    plt.savefig(file_name+ '_convergence.png')
+    plt.close()
+    
+
+
 
 def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
             
-    plt.figure(figsize= (15, 5))
 
     n1 = info1['step_size'].shape[0]
     ntotal = n1 + grads_per_step * jnp.sum(info2['steps_per_sample'])
@@ -58,6 +82,11 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     steps1 = jnp.arange(1, n1+1)
     steps2 = jnp.cumsum(info2['steps_per_sample']) * grads_per_step + n1
     steps = np.concatenate((steps1, steps2))
+
+    plot_convergence_metrics(steps1, info1, dir + model.name)
+    
+    
+    plt.figure(figsize= (15, 5))
 
     def end_stage1():
         ax = plt.gca()
@@ -72,7 +101,7 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     #plt.title('Bias')
     
     # true
-    bias = np.concatenate((info1['contracted_exp_vals'], info2['contracted_exp_vals']))
+    bias = np.concatenate((info1['bias'], info2['bias']))
     n = [find_crossing(steps, bias[:, i], 0.01) for i in range(2)]
     plt.plot(steps, bias[:, 1], color = 'tab:blue', label= 'average')
     plt.plot(steps, bias[:, 0], color = 'tab:red', label = 'max')
@@ -82,6 +111,18 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     plt.plot(steps1, info1['equi_full'], '.', color = 'tab:green', label = 'full rank equipartition')
     plt.plot(steps2, info2['equi_diag'], '.-', color = 'tab:olive', alpha= 0.3)
     plt.plot(steps2, info2['equi_full'], '.-', color = 'tab:green', alpha= 0.3)
+    
+    # pathfinder
+    pf= pd.read_csv('ensemble/pathfinder_data.csv', sep= '\t')
+    pf = pf[pf['name'] == model.name]
+    pf_bavg, pf_bmax, pf_grads = pf[['bavg', 'bmax', 'grads']].to_numpy()[0]
+
+    if pf_bavg > 2 * np.max([np.max(bias), np.max(info1['equi_full']), np.max(info1['equi_diag'])]): # pathfinder has not converged
+        plt.plot([], [], '*', color= 'grey', label= 'Pathfinder: not converged')
+    else:
+        plt.plot([pf_grads, ], [pf_bavg, ], '*', color= 'tab:blue')
+        plt.plot([pf_grads, ], [pf_bmax, ], '*', color= 'tab:red')
+        plt.plot([], [], '*', color= 'grey', label= 'Pathfinder')
     
     plt.plot([0, ntotal], jnp.ones(2) * 1e-2, '-', color = 'black')
     plt.legend()
@@ -141,7 +182,7 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     return n
 
 
-def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=1, acc_rate= 5, steps_per_sample= 10, equi_full= 0):
+def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=0, acc_rate= 5, steps_per_sample= 10, equi_full= 0):
     
     # algorithm settings
     chains = 2**chain_power
@@ -172,12 +213,14 @@ def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=1, acc_rat
    
 
 if __name__ == '__main__':
-
-
-    for N in [20, 30, 40, 50]:
-        _main(diag_precond=1, early_stop=0, integrator= 1, acc_rate= 1, steps_per_sample= N)
     
-        _main(diag_precond=1, early_stop=0, integrator= 2, acc_rate= 5, steps_per_sample= N)
+    _main()
+    
+
+    # for N in [20, 30, 40, 50]:
+    #     _main(diag_precond=1, early_stop=0, integrator= 1, acc_rate= 1, steps_per_sample= N)
+    
+    #     _main(diag_precond=1, early_stop=0, integrator= 2, acc_rate= 5, steps_per_sample= N)
 
 
     #shifter --image=reubenharry/cosmo:1.0 python3 -m ensemble.main
