@@ -1,4 +1,4 @@
-# Microcanonical Hamiltonian Monte Carlo (MCHMC)
+# Benchmarking Samplers 
 
 This repository exists to benchmark sampling algorithms implemented in blackjax, currently focusing on the family of Microcanonical Hamiltonian Monte Carlo algorithms.
 
@@ -42,6 +42,14 @@ You'll get
 > Gradient calls for MCLMC to reach RMSE of X^2 of 0.1: 978.0 (avg over 128 chains and dimensions)
 
 See the file `benchmarks/example.py` for this example in full, with imports and so on.
+
+## What this repository provides
+
+This repository is intended to be used in conjunction with blackjax, which is a library of sampling methods written in Jax.
+
+Blackjax is a developer facing library, and while it provides both the tuning procedures and the algorithms for e.g. NUTS, it doesn't put these together into a single function for you. This repository does that (benchmarks/sampling_algorithms.py).
+
+It also provides a library of distributions (benchmarks/inference_models.py) and scripts to calculate metrics (benchmarks/metrics.py) like autocorrelation and time to reach a target RMSE.
 
 ## Microcanonical Hamiltonian Monte Carlo
 
