@@ -195,7 +195,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_
                         (
                             model.name,
                             model.ndims,
-                            f"mhmchmc:grid_edge{edge}",
+                            f"adjusted_mclmc:grid_edge{edge}",
                             jnp.nanmean(params.L).item(),
                             jnp.nanmean(params.step_size).item(),
                             integrator_type,
@@ -283,7 +283,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_
                     #     (
                     #         model.name,
                     #         model.ndims,
-                    #         f"mhmchmc:grid_edge{edge}",
+                    #         f"adjusted_mclmc:grid_edge{edge}",
                     #         jnp.nanmean(params.L).item(),
                     #         jnp.nanmean(params.step_size).item(),
                     #         integrator_type,
@@ -370,7 +370,7 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_
                         (
                             model.name,
                             model.ndims,
-                            f"mhmchmc:grid_edge{edge}",
+                            f"adjusted_mclmc:grid_edge{edge}",
                             jnp.nanmean(params.L).item(),
                             jnp.nanmean(params.step_size).item(),
                             integrator_type,
