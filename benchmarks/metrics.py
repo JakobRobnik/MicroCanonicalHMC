@@ -128,7 +128,7 @@ def grid_search(func, x, y, delta_x, delta_y, grid_size=5, num_iter=3):
     return [state[0][0], state[0][1], *results], initial_edge
 
 
-def benchmark_chains(model, sampler, key, n=10000, batch=None):
+def benchmark(model, sampler, key, n=10000, batch=None):
 
     pvmap = jax.pmap
 

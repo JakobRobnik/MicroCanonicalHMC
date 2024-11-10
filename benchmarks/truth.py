@@ -11,7 +11,7 @@ from benchmarks.inference_models import *
 dir_ground_truth = os.path.dirname(os.path.realpath(__file__)) + '/ground_truth/'
 
 
-def run_nuts(model, num_steps, key= jax.random.key(0)):
+def nuts(model, num_steps, key= jax.random.key(0)):
     
     integrator = blackjax.mcmc.integrators.velocity_verlet
 
@@ -47,7 +47,7 @@ def cov_matrix(model, samples):
 if __name__ == '__main__':
     
     model = Funnel_with_Data(d= 101, sigma= 1.)
-    samples = run_nuts(model, num_steps= 10**7)
+    samples = nuts(model, num_steps= 10**7)
     cov_matrix(model, samples)
     
     

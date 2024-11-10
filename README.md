@@ -1,11 +1,56 @@
 # Microcanonical Hamiltonian Monte Carlo (MCHMC)
 
-This repository exists to benchmark and develop applications and extensions of the Microcanonical Hamiltonian Monte Carlo algorithm.
+This repository exists to benchmark sampling algorithms implemented in blackjax, currently focusing on the family of Microcanonical Hamiltonian Monte Carlo algorithms.
+
+## Example usage
+
+The core functionality is provided by the function `benchmark`, which takes a distribution from the repository's selection of distributions (defined up to a differentiable log pdf), a sampling algorithm (like NUTS), and returns some simple metrics. For example:
+
+```python
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
+    model=Gaussian(100,100),
+    sampler=nuts(integrator_type="velocity_verlet", preconditioning=False),
+    key=jax.random.PRNGKey(0), 
+    n=10000,
+    batch=num_chains,
+)
+
+print(f"\nGradient calls for NUTS to reach RMSE of X^2 of 0.1: {grads_to_low_avg} (avg over {num_chains} chains and dimensions)")
+```
+
+This will return:
+
+> Gradient calls for NUTS to reach RMSE of X^2 of 0.1: 8105.0810546875 (avg over 128 chains and dimensions)
+
+You can then compare to another algorithm, like Microcanonical Langevin Monte Carlo (MCLMC):
+
+```python
+num_chains = 128
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
+    model=Gaussian(100,100),
+    sampler=unadjusted_mclmc(integrator_type="mclachlan", preconditioning=False),
+    key=jax.random.PRNGKey(0), 
+    n=10000,
+    batch=num_chains,
+)
+
+print(f"\nGradient calls for MCLMC to reach RMSE of X^2 of 0.1: {grads_to_low_avg} (avg over {num_chains} chains and dimensions)")
+```
+
+You'll get 
+
+> Gradient calls for MCLMC to reach RMSE of X^2 of 0.1: 978.0 (avg over 128 chains and dimensions)
+
+See the file `benchmarks/example.py` for this example in full, with imports and so on.
+
+## Microcanonical Hamiltonian Monte Carlo
 
 For an open-source implementation, please refer to 
 https://blackjax-devs.github.io/sampling-book/algorithms/mclmc.html
 for the details of the algorithm 
 https://microcanonical-monte-carlo.netlify.app/.
+
+## Contact
 
 If you encounter any issues do not hesitate to contact us at jakob_robnik@berkeley.edu.
 
