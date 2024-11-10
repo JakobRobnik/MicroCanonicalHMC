@@ -503,37 +503,38 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_
 
             if do_unadjusted_mclmc:
                 
-                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
-                    model,
-                    run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False),
-                    unadjusted_with_tuning_key,
-                    n=models[model]["mclmc"],
-                    batch=num_chains,
-                )
+                for num_windows in [1,2]:
+                    ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
+                        model,
+                        run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False, num_windows=num_windows),
+                        unadjusted_with_tuning_key,
+                        n=models[model]["mclmc"],
+                        batch=num_chains,
+                    )
+
+                    
+                    results[
+                        (
+                            model.name, model.ndims, "mclmc:st3", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, False, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), models[model]["mclmc"], num_chains, False, num_windows
+                        )
+                    ] = ess
+                    print(f"unadjusted mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
+                
+                # ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
+                #     model,
+                #     run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0),
+                #     unadjusted_with_tuning_key,
+                #     n=models[model]["mclmc"],
+                #     batch=num_chains,
+                # )
 
                 
-                results[
-                    (
-                        model.name, model.ndims, "mclmc:st3", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, False, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), models[model]["mclmc"], num_chains, False, 1
-                    )
-                ] = ess
-                print(f"unadjusted mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
-                
-                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark_chains(
-                    model,
-                    run_unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0),
-                    unadjusted_with_tuning_key,
-                    n=models[model]["mclmc"],
-                    batch=num_chains,
-                )
-
-                
-                results[
-                    (
-                        model.name, model.ndims, "mclmc:st2", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, False, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), models[model]["mclmc"], num_chains, False, 1
-                    )
-                ] = ess
-                print(f"unadjusted stage 2 mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
+                # results[
+                #     (
+                #         model.name, model.ndims, "mclmc:st2", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, False, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), models[model]["mclmc"], num_chains, False, 1
+                #     )
+                # ] = ess
+                # print(f"unadjusted stage 2 mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
 
                 ####### run adjusted_mclmc with standard tuning
             for target_acc_rate, (L_proposal_factor, random_trajectory_length), max, num_windows in itertools.product(
@@ -901,7 +902,7 @@ def bayes_opt():
 
 
     # Sample new points using Jax PRNG approach.
-    for step in range(0):
+    for step in range(20):
         print(step)
         key = jax.random.fold_in(bayes_opt_key, step)
         key1, key2 = jax.random.split(key)
@@ -1535,8 +1536,8 @@ def test_da_functionality():
 
 if __name__ == "__main__":
 
-    # optimal_L_for_gaussian(100, 10)
-
+    optimal_L_for_gaussian(100, 10)
+    raise Exception 
     # test_benchmarking()
     bayes_opt()
     raise Exception    
