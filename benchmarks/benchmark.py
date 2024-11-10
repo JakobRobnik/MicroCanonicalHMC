@@ -160,12 +160,12 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_
 
                     out, edge = grid_search(
                         func=func,
-                        x=blackjax_adjusted_mclmc_sampler_params.L*4,
-                        y=blackjax_adjusted_mclmc_sampler_params.step_size*4,
+                        x=blackjax_adjusted_mclmc_sampler_params.L*3,
+                        y=blackjax_adjusted_mclmc_sampler_params.step_size*3,
                         # x=3.316967,
                         # y=0.390205,
-                        delta_x=blackjax_adjusted_mclmc_sampler_params.L*4 - 0.2,
-                        delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*4 - 0.2,
+                        delta_x=blackjax_adjusted_mclmc_sampler_params.L*3 - 1.0,
+                        delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*3 - 1.0,
                         grid_size=6,
                         num_iter=3,
                     )
@@ -248,12 +248,12 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_
 
                     # out, edge = grid_search(
                     #     func=func,
-                    #     x=blackjax_adjusted_mclmc_sampler_params.L*4,
-                    #     y=blackjax_adjusted_mclmc_sampler_params.step_size*4,
+                    #     x=blackjax_adjusted_mclmc_sampler_params.L*3,
+                    #     y=blackjax_adjusted_mclmc_sampler_params.step_size*3,
                     #     # x=3.316967,
                     #     # y=0.390205,
-                    #     delta_x=blackjax_adjusted_mclmc_sampler_params.L*4 - 0.2,
-                    #     delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*4 - 0.2,
+                    #     delta_x=blackjax_adjusted_mclmc_sampler_params.L*3 - 1.0,
+                    #     delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*3 - 1.0,
                     #     grid_size=6,
                     #     num_iter=3,
                     # )
@@ -335,12 +335,12 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_
 
                     out, edge = grid_search(
                         func=func,
-                        x=blackjax_adjusted_mclmc_sampler_params.L*4,
-                        y=blackjax_adjusted_mclmc_sampler_params.step_size*4,
+                        x=blackjax_adjusted_mclmc_sampler_params.L*3,
+                        y=blackjax_adjusted_mclmc_sampler_params.step_size*3,
                         # x=3.316967,
                         # y=0.390205,
-                        delta_x=blackjax_adjusted_mclmc_sampler_params.L*4 - 0.2,
-                        delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*4 - 0.2,
+                        delta_x=blackjax_adjusted_mclmc_sampler_params.L*3 - 1.0,
+                        delta_y=blackjax_adjusted_mclmc_sampler_params.step_size*3 - 1.0,
                         grid_size=6,
                         num_iter=3,
                     )
@@ -420,12 +420,12 @@ def benchmark(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_
 
                     out, edge = grid_search(
                         func=func,
-                        x=blackjax_unadjusted_mclmc_sampler_params.L*4,
-                        y=blackjax_unadjusted_mclmc_sampler_params.step_size*4,
+                        x=blackjax_unadjusted_mclmc_sampler_params.L*3,
+                        y=blackjax_unadjusted_mclmc_sampler_params.step_size*3,
                         # x=3.316967,
                         # y=0.390205,
-                        delta_x=blackjax_unadjusted_mclmc_sampler_params.L*4 - 0.2,
-                        delta_y=blackjax_unadjusted_mclmc_sampler_params.step_size*4 - 0.2,
+                        delta_x=blackjax_unadjusted_mclmc_sampler_params.L*3 - 1.0,
+                        delta_y=blackjax_unadjusted_mclmc_sampler_params.step_size*3 - 1.0,
                         grid_size=6,
                         num_iter=3,
                     )
