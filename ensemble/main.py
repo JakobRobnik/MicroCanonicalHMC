@@ -113,9 +113,12 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     plt.plot(steps2, info2['equi_full'], '.-', color = 'tab:green', alpha= 0.3)
     
     # pathfinder
-    pf= pd.read_csv('ensemble/pathfinder_data.csv', sep= '\t')
+    pf= pd.read_csv('ensemble/pathfinder_convergence.csv', sep= '\t')
+    pf_grads_all = np.array(pd.read_csv('ensemble/pathfinder_cost.csv', sep= '\t')[model.name])
+    pf_grads = np.max(pf_grads_all) # in the ensemble setting we have to wait for the slowest chain
+
     pf = pf[pf['name'] == model.name]
-    pf_bavg, pf_bmax, pf_grads = pf[['bavg', 'bmax', 'grads']].to_numpy()[0]
+    pf_bavg, pf_bmax = pf[['bavg', 'bmax']].to_numpy()[0]
 
     if pf_bavg > 2 * np.max([np.max(bias), np.max(info1['equi_full']), np.max(info1['equi_diag'])]): # pathfinder has not converged
         plt.plot([], [], '*', color= 'grey', label= 'Pathfinder: not converged')

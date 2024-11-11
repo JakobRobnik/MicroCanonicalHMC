@@ -8,7 +8,7 @@ sys.path.append('../blackjax/')
 from ensemble.main import targets
 import blackjax
 from jax.debug import callback
-#from arviz import psislw
+from arviz import psislw
 
 
 models = [t[0] for t in targets]
@@ -57,7 +57,8 @@ def multi_path_slow(model, num_chains, rng_key= jax.random.key(42)):
 
 
 def multi_path(model, num_chains, num_samples, rng_key= jax.random.key(42)):
-
+    """Multi-path Pathfinder, algorithm 2 in the paper"""
+    
     init_key, run_key, resample_key  = jax.random.split(rng_key, 3)
     init_keys = jax.random.split(init_key, num_chains)
     run_keys = jax.random.split(run_key, num_chains)
@@ -82,9 +83,8 @@ def multi_path(model, num_chains, num_samples, rng_key= jax.random.key(42)):
     
     multiple_run = jax.pmap(single_run)
 
-    # run the algorithm
-    init = jax.pmap(model.sample_init)(init_keys)
-    
+    # run multiple optimizations
+    init = jax.pmap(model.sample_init)(init_keys) # initial conditions
     samples, log_weights = multiple_run(run_keys, init)
     samples = jnp.concatenate(samples)
     log_weights = jnp.concatenate(log_weights)
@@ -107,33 +107,32 @@ def convergence(model):
     num_chains = 64
     samples = multi_path(model, num_chains= num_chains, num_samples= 4096//num_chains)
 
-        
     # compute the bias of the estimate
     observables, contract= blackjax.adaptation.ensemble_mclmc.bias(model)
     x2 = jax.vmap(observables)(samples)
     E_x2 = jnp.average(x2, axis= 0)
     b2 = contract(E_x2)
     
-    return (*b2, calls)
+    return b2
 
 
 def convergence():
     
     b = np.array([convergence(t[0]) for t in targets])
-    df = pd.DataFrame(b, columns= ['bmax', 'bavg', 'grads']) # save the results
+    df = pd.DataFrame(b, columns= ['bmax', 'bavg']) # save the results
     df['name'] = model_names
-    df.to_csv('ensemble/pathfinder_data.csv', sep= '\t', index=False)
+    df.to_csv('ensemble/submission/pathfinder_convergence.csv', sep= '\t', index=False)
     
     
 def cost():
     
     grad_calls = np.array([multi_path_slow(model, num_chains= 64) for model in models])
     df = pd.DataFrame(grad_calls.T, columns= model_names) # save the results
-    df.to_csv('ensemble/pathfinder_cost.csv', sep= '\t', index=False)
+    df.to_csv('ensemble/submission/pathfinder_cost.csv', sep= '\t', index=False)
     
     
     
 if __name__ == '__main__':
     
-    cost()
-    #convergence(num_chains)
+    #cost()
+    convergence()
