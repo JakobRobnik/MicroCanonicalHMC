@@ -159,7 +159,7 @@ def with_only_statistics(model, alg, initial_state, key, num_steps):
     )[1]
 
 
-def run_unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov, return_ess_corr=False):
+def unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov, return_ess_corr=False):
 
     def s(model, num_steps, initial_position, key):
 
@@ -193,7 +193,7 @@ def run_unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L,
 
     return s
 
-def run_adjusted_mclmc_no_tuning(
+def adjusted_mclmc_no_tuning(
     initial_state,
     integrator_type,
     step_size,
@@ -201,16 +201,21 @@ def run_adjusted_mclmc_no_tuning(
     sqrt_diag_cov,
     L_proposal_factor=jnp.inf,
     return_ess_corr=False,
+    random_trajectory_length=True,
 ):
 
     def s(model, num_steps, initial_position, key):
 
-
         num_steps_per_traj = L / step_size
+        if random_trajectory_length:
+            integration_steps_fn = lambda k: jnp.ceil(jax.random.uniform(k) * rescale(num_steps_per_traj))
+        else:
+            integration_steps_fn = lambda _: jnp.ceil(num_steps_per_traj)
+
         alg = blackjax.adjusted_mclmc(
             logdensity_fn=model.logdensity_fn,
             step_size=step_size,
-            integration_steps_fn=lambda k: jnp.ceil(jax.random.uniform(k) * rescale(num_steps_per_traj)),
+            integration_steps_fn=integration_steps_fn,
             integrator= map_integrator_type_to_integrator["mclmc"][integrator_type],
             sqrt_diag_cov=sqrt_diag_cov,
             L_proposal_factor=L_proposal_factor,
@@ -252,7 +257,7 @@ def run_adjusted_mclmc_no_tuning(
 
     return s
 
-def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, frac_tune3=0.1):
+def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, frac_tune3=0.1, num_windows=1):
 
     tune_key, init_key = jax.random.split(rng_key, 2)
 
@@ -275,10 +280,11 @@ def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,
         rng_key=tune_key,
         diagonal_preconditioning=diagonal_preconditioning,
         frac_tune3=frac_tune3,
+        num_windows=num_windows,
         
     )
 
-def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, target_acc_rate, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, L_proposal_factor=jnp.inf, params=None, max=False, num_windows=1):
+def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, target_acc_rate, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, L_proposal_factor=jnp.inf, params=None, max=False, num_windows=1, random_trajectory_length=True):
 
     integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
 
@@ -290,11 +296,15 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, i
         random_generator_arg=init_key,
     )
 
+    if random_trajectory_length:
+        integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
+            jax.random.uniform(k) * rescale(avg_num_integration_steps))
+    else:
+        integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
+
     kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
         integrator=integrator,
-        integration_steps_fn=lambda k: jnp.ceil(
-            jax.random.uniform(k) * rescale(avg_num_integration_steps)
-        ),
+        integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
         sqrt_diag_cov=sqrt_diag_cov,
     )(
         rng_key=rng_key,
@@ -327,7 +337,7 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, i
     return blackjax_state_after_tuning, blackjax_adjusted_mclmc_sampler_params
 
 
-def run_unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, return_ess_corr=False):
+def unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, return_ess_corr=False, num_windows=1):
 
     def s(model, num_steps, initial_position, key):
 
@@ -338,9 +348,9 @@ def run_unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, retur
         (
             blackjax_state_after_tuning,
             blackjax_mclmc_sampler_params,
-        ) = unadjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, frac_tune3)
+        ) = unadjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, frac_tune3, num_windows=num_windows)
 
-        return run_unadjusted_mclmc_no_tuning(
+        return unadjusted_mclmc_no_tuning(
             blackjax_state_after_tuning,
             integrator_type,
             blackjax_mclmc_sampler_params.step_size,
@@ -352,7 +362,7 @@ def run_unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, retur
     return s
 
 
-def run_adjusted_mclmc(
+def adjusted_mclmc(
     integrator_type,
     preconditioning,
     frac_tune1=0.1,
@@ -364,6 +374,7 @@ def run_adjusted_mclmc(
     return_ess_corr=False,
     max=False,
     num_windows=1,
+    random_trajectory_length=True,
 ):
 
     def s(model, num_steps, initial_position, key):
@@ -381,10 +392,10 @@ def run_adjusted_mclmc(
 
         (
             blackjax_state_after_tuning,
-            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, new_target_acc_rate, frac_tune1, frac_tune2, frac_tune3, L_proposal_factor, params=params, max=max, num_windows=num_windows)
+            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, new_target_acc_rate, frac_tune1, frac_tune2, frac_tune3, L_proposal_factor, params=params, max=max, num_windows=num_windows, random_trajectory_length=random_trajectory_length)
 
 
-        return run_adjusted_mclmc_no_tuning(
+        return adjusted_mclmc_no_tuning(
             blackjax_state_after_tuning,
             integrator_type,
             blackjax_mclmc_sampler_params.step_size,
@@ -392,11 +403,12 @@ def run_adjusted_mclmc(
             blackjax_mclmc_sampler_params.sqrt_diag_cov,
             L_proposal_factor,
             return_ess_corr=return_ess_corr,
+            random_trajectory_length=random_trajectory_length,
         )(model, num_steps, initial_position, run_key)
 
     return s
 
-def run_nuts(integrator_type, preconditioning, return_ess_corr=False):
+def nuts(integrator_type, preconditioning, return_ess_corr=False):
 
     def s(model, num_steps, initial_position, key):
 
@@ -455,7 +467,7 @@ def run_nuts(integrator_type, preconditioning, return_ess_corr=False):
 
 
 samplers = {
-    "nuts": run_nuts,
-    "mclmc": run_unadjusted_mclmc,
-    "adjusted_mclmc": run_adjusted_mclmc,
+    "nuts": nuts,
+    "mclmc": unadjusted_mclmc,
+    "adjusted_mclmc": adjusted_mclmc,
 }
