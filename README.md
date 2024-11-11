@@ -34,12 +34,12 @@ ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchma
     batch=num_chains,
 )
 
-print(f"\nGradient calls for MCLMC to reach RMSE of X^2 of 0.1: {grads_to_low_avg} (avg over {num_chains} chains and dimensions)")
+print(f"\nGradient calls for MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_avg} (avg over {num_chains} chains and dimensions)")
 ```
 
 You'll get 
 
-> Gradient calls for MCLMC to reach RMSE of X^2 of 0.1: 978.0 (avg over 128 chains and dimensions)
+> Gradient calls for MCLMC to reach standardized RMSE of X^2 of 0.1: 978.0 (avg over 128 chains and dimensions)
 
 See the file `benchmarks/example.py` for this example in full, with imports and so on.
 
