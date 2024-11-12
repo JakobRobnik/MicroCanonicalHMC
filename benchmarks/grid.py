@@ -3,8 +3,8 @@ import jax.numpy as jnp
 from jax.sharding import Mesh, PartitionSpec, NamedSharding
 from jax.experimental.shard_map import shard_map
 
-import os
-os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
+# import os
+# os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 
 # Initializes distributed JAX
 jax.distributed.initialize()
@@ -28,16 +28,16 @@ key = jax.random.split(jax.random.key(0), 128)
 _x, _y = jnp.meshgrid(key, L)
 
 # distribute the grid across the devices
-shard_grid_shape = (4, 64) # shape of the shard grid (can be anything, just make sure that total number of shards = number of devices)
+shard_grid_shape = (2, 4) # shape of the shard grid (can be anything, just make sure that total number of shards = number of devices)
 #mesh = jax.sharding.Mesh(shard_grid_shape, name_params)
 mesh = jax.make_mesh(shard_grid_shape, name_params)
 p = PartitionSpec(*name_params)
-#x = jax.device_put(_x, NamedSharding(mesh, p))
-#y = jax.device_put(_y, NamedSharding(mesh, p))
+x = jax.device_put(_x, NamedSharding(mesh, p))
+y = jax.device_put(_y, NamedSharding(mesh, p))
 
 
 # execute calculation on multiple devices
-parallel_execute = shard_map(jax.vmap(func),#, ((0, 1), (0, 1))), 
+parallel_execute = shard_map(jax.vmap(func, ((0, 1), (0, 1))), 
                         mesh= mesh,
                         in_specs= (p, p), 
                         out_specs= p

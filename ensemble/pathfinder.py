@@ -88,9 +88,9 @@ def multi_path(model, num_chains, num_samples, rng_key= jax.random.key(42)):
     samples, log_weights = multiple_run(run_keys, init)
     samples = jnp.concatenate(samples)
     log_weights = jnp.concatenate(log_weights)
-    
+
     # pareto smoothing    
-    log_weights = psislw(log_weights)
+    log_weights = jnp.array(psislw(np.array(log_weights))[0])
 
     # importance resampling
     samples = jax.random.choice(resample_key, samples, (len(samples), ), p = jnp.exp(log_weights))
@@ -99,7 +99,7 @@ def multi_path(model, num_chains, num_samples, rng_key= jax.random.key(42)):
 
 
 
-def convergence(model):
+def _convergence(model):
     
     print(model.name)
 
@@ -118,7 +118,7 @@ def convergence(model):
 
 def convergence():
     
-    b = np.array([convergence(t[0]) for t in targets])
+    b = np.array([_convergence(model) for model in models])
     df = pd.DataFrame(b, columns= ['bmax', 'bavg']) # save the results
     df['name'] = model_names
     df.to_csv('ensemble/submission/pathfinder_convergence.csv', sep= '\t', index=False)
