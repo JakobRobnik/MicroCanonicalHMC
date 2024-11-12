@@ -2,6 +2,8 @@
 import sys
 
 sys.path.append("./")
+sys.path.append("../blackjax")
+
 from benchmarks.benchmark import run_benchmarks
 from benchmarks.inference_models import Brownian, GermanCredit, ItemResponseTheory, Rosenbrock, StochasticVolatility
 
@@ -20,4 +22,4 @@ models = {
         StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
     }
 
-run_benchmarks(batch_size=128, models=models, key_index=21, do_grid_search=False, do_non_grid_search=True)
+run_benchmarks(batch_size=128, models=models, key_index=23, do_grid_search=False, do_non_grid_search=True)

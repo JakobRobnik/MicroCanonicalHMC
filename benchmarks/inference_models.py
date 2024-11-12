@@ -73,8 +73,8 @@ class Gaussian():
         if numpy_seed == None:  # diagonal covariance matrix
             self.E_x2 = eigs
             self.R = jnp.eye(ndims)
-            self.inv_cov = jnp.diag(1 / eigs)
-            self.cov = jnp.diag(eigs)
+            self.inv_cov = 1 / eigs
+            self.cov = eigs
 
         else:  # randomly rotate
             D = jnp.diag(eigs)
