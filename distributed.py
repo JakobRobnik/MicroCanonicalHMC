@@ -35,7 +35,7 @@ def func(x, y, key):
     return jnp.sum(jnp.power(y * jnp.abs(jax.random.normal(key, shape = (10,))), x))
 
 in_specs = (0, 0, None)
-func_vmap = jax.vmap(lambda key: jax.vmap(jax.vmap(func, in_specs), in_specs)(X, Y, key))
+func_vmap = jax.vmap(lambda key: jax.vmap(jax.vmap(func, in_specs), in_specs)(X, Y, key)) # we distribute over grid and the local_keys on a single gpu, using vmap
 
 
 # Execute calculation
