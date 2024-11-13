@@ -22,7 +22,6 @@ dirr = os.path.dirname(os.path.realpath(__file__)) + '/'
 
 rng_inference_gym_icg = 10 & (2 ** 32 - 1)
             
-
 class Gaussian():
     """Gaussian distribution. It has zero mean and is therefore completely specified by the covariance matrix. """
 
@@ -72,9 +71,10 @@ class Gaussian():
         
         if numpy_seed == None:  # diagonal covariance matrix
             self.E_x2 = eigs
-            self.R = jnp.eye(ndims)
+            #self.R = jnp.eye(ndims)
             self.inv_cov = 1 / eigs
             self.cov = eigs
+            self.logdensity_fn = lambda x: -0.5 * jnp.sum(jnp.square(x) * self.inv_cov)
 
         else:  # randomly rotate
             D = jnp.diag(eigs)
@@ -87,12 +87,13 @@ class Gaussian():
 
             #cov_precond = jnp.diag(1 / jnp.sqrt(self.E_x2)) @ self.cov @ jnp.diag(1 / jnp.sqrt(self.E_x2))
             #print(jnp.linalg.cond(cov_precond) / jnp.linalg.cond(self.cov))
-        
+
+            self.logdensity_fn = lambda x: -0.5 * x.T @ self.inv_cov @ x
+
         self.E_x = jnp.zeros(ndims)
         self.Var_x2 = 2 * jnp.square(self.E_x2)
 
 
-        self.logdensity_fn = lambda x: -0.5 * x.T @ self.inv_cov @ x
         self.transform = lambda x: x
         
 
@@ -107,7 +108,6 @@ class Gaussian():
         else:
             raise ValueError('initialization = '+ str(initialization) + ' is not a valid option.')
             
-
 
 class Banana():
     """Banana target fromm the Inference Gym"""
