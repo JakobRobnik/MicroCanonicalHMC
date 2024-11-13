@@ -63,6 +63,3 @@ results = parallel_execute(global_keys)
 
 # save results
 jnp.save(save_name, process_allgather(results))
-
-if verbose:
-    print(results.shape)
