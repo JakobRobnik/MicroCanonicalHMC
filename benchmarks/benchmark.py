@@ -1242,8 +1242,6 @@ def grid_search_only_L(model, num_steps, num_chains, target_acc_rate, integrator
         (
             blackjax_state_after_tuning,
             params,
-            _,
-            _,
         ) = adjusted_mclmc_make_L_step_size_adaptation(
             kernel=kernel,
             dim=model.ndims,

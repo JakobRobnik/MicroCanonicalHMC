@@ -15,11 +15,11 @@ num_cores = jax.local_device_count()
 
 models = {
 
-        # Brownian(): {"mclmc": 40000, "adjusted_mclmc": 40000, "nuts": 40000},
-        GermanCredit(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
-        ItemResponseTheory(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
-        Rosenbrock(): {'mclmc': 80000, 'adjusted_mclmc' : 80000, 'nuts': 80000},
-        StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
+        Brownian(): {"mclmc": 40000, "adjusted_mclmc": 40000, "nuts": 40000},
+        # GermanCredit(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
+        # ItemResponseTheory(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
+        # Rosenbrock(): {'mclmc': 80000, 'adjusted_mclmc' : 80000, 'nuts': 80000},
+        # StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
     }
 
-run_benchmarks(batch_size=10, models=models, key_index=23, do_grid_search=False, do_non_grid_search=True)
+run_benchmarks(batch_size=10, models=models, key_index=23, do_grid_search=False, do_fast_grid_search=True, do_non_grid_search=False)
