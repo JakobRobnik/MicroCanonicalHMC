@@ -19,4 +19,4 @@ models = {
     for k in np.ceil(np.logspace(1, 5, num=10)).astype(int) for eigenval_type in ["log", "outliers"]
     }
 
-run_benchmarks(batch_size=128, models=models, key_index=25, do_grid_search=True, do_non_grid_search=True, return_ess_corr=False)
+run_benchmarks(batch_size=10, models=models, key_index=24, do_grid_search=True, do_non_grid_search=True, return_ess_corr=False)
