@@ -22,4 +22,4 @@ models = {
         # StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc' : 40000, 'nuts': 40000},
     }
 
-run_benchmarks(batch_size=10, models=models, key_index=23, do_grid_search=False, do_fast_grid_search=True, do_non_grid_search=False)
+run_benchmarks(batch_size=10, models=models, key_index=23, do_grid_search=True, do_fast_grid_search=False, do_non_grid_search=False)

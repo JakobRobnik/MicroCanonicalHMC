@@ -1465,8 +1465,6 @@ def test_da_functionality():
     (
         blackjax_state_after_tuning,
         params,
-        _,
-        _,
     ) = adjusted_mclmc_make_L_step_size_adaptation(
         kernel=kernel,
         dim=model.ndims,
