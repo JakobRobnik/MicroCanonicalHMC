@@ -2,29 +2,15 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 plt.style.use('style.mplstyle')
-
+import pandas as pd
 import os, sys
 sys.path.append('../blackjax/')
 from blackjax.adaptation.ensemble_mclmc import emaus
 from blackjax.mcmc.integrators import velocity_verlet_coefficients, mclachlan_coefficients, omelyan_coefficients
 from benchmarks.inference_models import *
-import pandas as pd
-
-
-def find_crossing(n, bias, cutoff):
-    """the smallest M such that bias[m] < cutoff for all m >= M. Returns n[M]"""
-
-    indices = jnp.argwhere(bias > cutoff)
-    M= jnp.max(indices)+1
-    
-    if M == len(bias):
-        return jnp.inf
-    else: 
-        return n[M]
-
-os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
+from ensemble.grid_search import do_grid
+#os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 #print(len(jax.devices()), jax.lib.xla_bridge.get_backend().platform)
-
 mesh = jax.sharding.Mesh(jax.devices(), 'chains')
 
 
@@ -38,45 +24,40 @@ targets = [[Banana(), 100, 300],
 
 
 
-def get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, steps_per_sample, equi_full):
-    
-    dir = 'ensemble/img/' + 'chainpower' + str(chain_power) + '_integrator' + str(integrator) + '_precond'+str(diag_precond)+'_earlystop'+str(early_stop)+ '_acc_rate' + str(acc_rate)+ '_N' + str(steps_per_sample) + '_equi_full' + str(equi_full)+ '/'
+def find_crossing(n, bias, cutoff):
+    """the smallest M such that bias[m] < cutoff for all m >= M. Returns n[M]"""
 
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
+    indices = jnp.argwhere(bias > cutoff)
+    M= jnp.max(indices)+1
     
-    return dir
+    if M == len(bias):
+        return jnp.inf
+    else: 
+        return n[M]
 
 def plot_convergence_metrics(steps1, info1, file_name):
-
-    ### relative fluctuations ###
-    plt.subplot(2, 1, 1)    
-    
-    plt.plot(steps1, info1['fluctuations'][:, 0], '.-', color = 'tab:blue', label= 'average')
-    plt.plot(steps1, info1['fluctuations'][:, 1], '.-', color = 'tab:red', label = 'max')
-    plt.yscale('log')
-    plt.ylabel('relative fluctuations')
-    plt.legend()
-    
     
     ### entropy ###
-    plt.subplot(2, 1, 2)
     H = info1['entropy']
-    plt.plot(steps1, H - jnp.min(H), '.-', color= 'tab:green')
+    H -= H[-1]
+    
+    mask = H < 0.
+    plt.plot(steps1[~mask], H[~mask], '.-', color= 'tab:red', label= 'positive')
+    plt.plot(steps1[mask], -H[mask], '.-', color= 'tab:green', label= 'negative')
+    
     plt.yscale('log')
-    plt.ylabel('entropy')    
+    plt.ylabel('|Entropy|')    
     plt.xlabel('# gradient evaluations')
     
-    plt.savefig(file_name+ '_convergence.png')
+    plt.savefig(file_name+ '_entropy.png')
     plt.close()
     
-
-
 
 def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
             
 
     n1 = info1['step_size'].shape[0]
+    
     ntotal = n1 + grads_per_step * jnp.sum(info2['steps_per_sample'])
     
     steps1 = jnp.arange(1, n1+1)
@@ -112,10 +93,15 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     plt.plot(steps2, info2['equi_diag'], '.-', color = 'tab:olive', alpha= 0.3)
     plt.plot(steps2, info2['equi_full'], '.-', color = 'tab:green', alpha= 0.3)
     
+    
+    # relative fluctuations
+    plt.plot(steps1, info1['r_avg'], '--', color = 'tab:blue')
+    plt.plot(steps1, info1['r_max'], '--', color = 'tab:red', label = 'fluctuations')
+    
     # pathfinder
-    pf= pd.read_csv('ensemble/pathfinder_convergence.csv', sep= '\t')
-    pf_grads_all = np.array(pd.read_csv('ensemble/pathfinder_cost.csv', sep= '\t')[model.name])
-    pf_grads = np.max(pf_grads_all) # in the ensemble setting we have to wait for the slowest chain
+    pf= pd.read_csv('ensemble/submission/pathfinder_convergence.csv', sep= '\t')
+    pf_grads_all = np.array(pd.read_csv('ensemble/submission/pathfinder_cost.csv', sep= '\t')[model.name])
+    pf_grads = np.max(pf_grads_all) # in an ensemble setting we have to wait for the slowest chain
 
     pf = pf[pf['name'] == model.name]
     pf_bavg, pf_bmax = pf[['bavg', 'bmax']].to_numpy()[0]
@@ -185,55 +171,54 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     return n
 
 
-def _main(chain_power= 12, integrator= 2, diag_precond= 1, early_stop=0, acc_rate= 5, steps_per_sample= 10, equi_full= 0):
+def _main(dir,
+          chains= 4096, 
+          alpha = 1., bias_type= 3, C= 0.1, power= 3./8., early_stop=1, 
+          diagonal_preconditioning= 1, integrator= 2, steps_per_sample= 10, acc_prob= 0.9):
     
     # algorithm settings
-    chains = 2**chain_power
     key = jax.random.key(42)
     integrator_coefficients= [velocity_verlet_coefficients, mclachlan_coefficients, omelyan_coefficients][integrator]
     grads_per_step = len(integrator_coefficients) // 2
-    acc_prob= [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99][acc_rate]
-    dir = get_name(chain_power, integrator, diag_precond, early_stop, acc_rate, steps_per_sample, equi_full)
 
-    results = []
+    results = {}
     for t in targets:
         target, num_steps1, num_steps2 = t
+        #print(target.name)
         info1, info2 = emaus(target, num_steps1, num_steps2, chains, mesh, key, 
-                             early_stop= early_stop,
-                             integrator_coefficients= integrator_coefficients, 
-                             acc_prob= acc_prob, 
-                             equi_full= equi_full, 
-                             diagonal_preconditioning= diag_precond, 
-                             steps_per_sample= steps_per_sample) # run the algorithm
+                             alpha= alpha, bias_type= bias_type, C= C, power= power, early_stop= early_stop,
+                             diagonal_preconditioning= diagonal_preconditioning, integrator_coefficients= integrator_coefficients, steps_per_sample= steps_per_sample, acc_prob= acc_prob) # run the algorithm
         
-        results.append(plot_trace(info1, info2, target, grads_per_step, acc_prob, dir)) # do plots and compute the results
+        
+        result = plot_trace(info1, info2, target, grads_per_step, acc_prob, dir) # do plots and compute the results
+        results['grads_to_low_bmax_' + target.name] = result[0]
+        results['grads_to_low_bavg_' + target.name] = result[1]
     
-    
-    df = pd.DataFrame(results, columns= ['grads_to_low_bmax', 'grads_to_low_bavg']) # save the results
-    df['name'] = [target[0].name for target in targets]
-    df.to_csv(dir + 'data.csv', sep= '\t', index=False)
+    return results
 
-   
+
+mylogspace = lambda a, b, num, decimals=3: np.round(np.logspace(np.log10(a), np.log10(b), num), decimals)
+
+grid = lambda params, fixed_params= None: do_grid(_main, params, fixed_params=fixed_params)
+
+
 
 if __name__ == '__main__':
     
-    _main()
+    _main('ensemble/img/')
+    # grid({'C': [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3],
+    #       'power': [3./4., 3./8.]})
     
-
-    # for N in [20, 30, 40, 50]:
-    #     _main(diag_precond=1, early_stop=0, integrator= 1, acc_rate= 1, steps_per_sample= N)
+    #grid({'alpha': mylogspace(0.1, 10., 5)})
     
-    #     _main(diag_precond=1, early_stop=0, integrator= 2, acc_rate= 5, steps_per_sample= N)
-
 
     #shifter --image=reubenharry/cosmo:1.0 python3 -m ensemble.main
-    
-    
     
 
 # TODO for package release:
 # - make stage 1 a while loop
 # - equi full should only be computed optionally
-# - no bias calculations
+# - remove true bias calculations
 # - test on multiple nodes
 # - test on other targets
+# - nan handling (check also that initial condition is not nan)
