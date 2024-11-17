@@ -45,10 +45,7 @@ f = func
 for i in range(num_params):
     f = jax.vmap(f, in_specs)
 
-if num_params == 1:
-    func_vmap = jax.vmap(lambda key: f(Grid, key))
-else:
-    func_vmap = jax.vmap(lambda key: f(*Grid, key))
+func_vmap = jax.vmap(lambda key: f(*Grid, key))
 
 
 # parallelize over different devices

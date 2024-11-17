@@ -284,7 +284,7 @@ def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,
         
     )
 
-def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, target_acc_rate, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, L_proposal_factor=jnp.inf, params=None, max=False, num_windows=1, random_trajectory_length=True):
+def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, target_acc_rate, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, L_proposal_factor=jnp.inf, params=None, max=False, num_windows=1, random_trajectory_length=True, tuning_factor=1.0):
 
     integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
 
@@ -317,8 +317,7 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, i
     (
         blackjax_state_after_tuning,
         blackjax_adjusted_mclmc_sampler_params,
-        params_history,
-        final_da,
+        
     ) = blackjax.adjusted_mclmc_find_L_and_step_size(
         mclmc_kernel=kernel,
         num_steps=num_steps,
@@ -332,6 +331,7 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, i
         params=params,
         max=max,
         num_windows=num_windows,
+        tuning_factor=tuning_factor,
     )
 
     return blackjax_state_after_tuning, blackjax_adjusted_mclmc_sampler_params
@@ -375,6 +375,7 @@ def adjusted_mclmc(
     max=False,
     num_windows=1,
     random_trajectory_length=True,
+    tuning_factor=1.0,
 ):
 
     def s(model, num_steps, initial_position, key):
@@ -392,7 +393,7 @@ def adjusted_mclmc(
 
         (
             blackjax_state_after_tuning,
-            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, new_target_acc_rate, frac_tune1, frac_tune2, frac_tune3, L_proposal_factor, params=params, max=max, num_windows=num_windows, random_trajectory_length=random_trajectory_length)
+            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, new_target_acc_rate, frac_tune1, frac_tune2, frac_tune3, L_proposal_factor, params=params, max=max, num_windows=num_windows, random_trajectory_length=random_trajectory_length, tuning_factor=tuning_factor)
 
 
         return adjusted_mclmc_no_tuning(

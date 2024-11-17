@@ -58,7 +58,7 @@ def find_crossing(array, cutoff):
 def cumulative_avg(samples):
     return jnp.cumsum(samples, axis=0) / jnp.arange(1, samples.shape[0] + 1)[:, None]
 
-def grid_search(func, x, y, delta_x, delta_y, grid_size=5, num_iter=3):
+def grid_search(func, x, y, delta_x, delta_y, key, grid_size=5, num_iter=3,):
     """Args:
       func(x, y) = (score, extra_results),
       where score is the scalar that we would like to maximize (e.g. ESS averaged over the chains)
@@ -74,13 +74,15 @@ def grid_search(func, x, y, delta_x, delta_y, grid_size=5, num_iter=3):
       (x, y, score, extra results) at the best parameters
     """
 
-    def kernel(state):
+    def kernel(state, key):
         z, delta_z = state
+
+        keys = jax.random.split(key, (grid_size, grid_size))
 
         # compute the func on the grid
         Z = np.linspace(z - delta_z, z + delta_z, grid_size)
-        # jax.debug.print("grid {x}", x=Z)
-        Results = [[func(xx, yy) for yy in Z[:, 1]] for xx in Z[:, 0]]
+        jax.debug.print("grid {x}", x=Z)
+        Results = [[func(xx, yy, keys[i,j]) for (i, yy) in enumerate(Z[:, 1])] for (j,xx) in enumerate(Z[:, 0])]
         Scores = [
             [Results[i][j][0] for j in range(grid_size)] for i in range(grid_size)
         ]
@@ -118,7 +120,8 @@ def grid_search(func, x, y, delta_x, delta_y, grid_size=5, num_iter=3):
 
     initial_edge = False
     for iteration in range(num_iter):  # iteratively shrink and shift the grid
-        state, results, edge = kernel(state)
+        key = jax.random.fold_in(key, iteration)
+        state, results, edge = kernel(state, key)
         jax.debug.print("optimal result on iteration {x}", x=(iteration, results[0]))
         # jax.debug.print("Optimal params on iteration: {x}", x=(results[1]))
         # jax.debug.print("Optimal score on iteration: {x}", x=(results[0]))
@@ -128,9 +131,8 @@ def grid_search(func, x, y, delta_x, delta_y, grid_size=5, num_iter=3):
     return [state[0][0], state[0][1], *results], initial_edge
 
 
-def benchmark(model, sampler, key, n=10000, batch=None):
+def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
 
-    pvmap = jax.pmap
 
     d = get_num_latents(model)
     if batch is None:
