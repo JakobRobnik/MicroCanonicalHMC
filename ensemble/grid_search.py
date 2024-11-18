@@ -58,7 +58,10 @@ def do_grid(func, param_grid, fixed_params=None, verbose= False):
     combinations = list(product(*grid_values))
     
     results = []
+    counter = 0
     for values in combinations:
+        if verbose: print(f'{counter} / {len(combinations)}')
+        counter += 1
         # Update parameters for this combination
         params = all_fixed_params.copy()
         params.update(dict(zip(grid_keys, values)))
