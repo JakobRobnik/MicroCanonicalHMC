@@ -68,7 +68,7 @@ def multi_path(model, num_chains, num_samples, rng_key= jax.random.key(42)):
     
     def single_run(key, init):
         key1, key2 = jax.random.split(key)
-            
+                
         state, info = pf.approximate(key1, init, maxiter=30)
 
         # obtain samples from the estimate of the posterior
