@@ -16,14 +16,16 @@ mesh = jax.sharding.Mesh(jax.devices(), 'chains')
 
 # models to solve
 targets = [[Banana(), 100, 300],
-            [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 300, 500],
+            [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 500, 500],
             [GermanCredit(), 500, 500],
             [Brownian(), 500, 500],
             [ItemResponseTheory(), 500, 500],
             [StochasticVolatility(), 800, 1000]][1:2]
 
+for_paper = False
 
 
+    
 def find_crossing(n, bias, cutoff):
     """the smallest M such that bias[m] < cutoff for all m >= M. Returns n[M]"""
 
@@ -56,7 +58,6 @@ def plot_convergence_metrics(steps1, info1, file_name):
 
 def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
             
-    for_paper = False
     
     n1 = info1['step_size'].shape[0]
     
@@ -114,15 +115,17 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
         plt.plot([pf_grads, ], [pf_bmax, ], '*', color= 'tab:red')
         plt.plot([], [], '*', color= 'grey', label= 'Pathfinder')
     
-    #plt.text(steps1[len(steps1)//2], 4e-4, 'Unadjusted', horizontalalignment= 'center')
-    #plt.text(steps2[len(steps2)//2], 4e-4, 'Adjusted', horizontalalignment= 'center')
+    if for_paper:
+        plt.text(steps1[len(steps1)//2], 4e-4, 'Unadjusted', horizontalalignment= 'center')
+        plt.text(steps2[len(steps2)//2], 4e-4, 'Adjusted', horizontalalignment= 'center')
     
     plt.plot([0, ntotal], jnp.ones(2) * 1e-2, '-', color = 'black')
     plt.legend()
     plt.ylabel(r'$\mathrm{bias}^2$')
     plt.xlabel('# gradient evaluations')
 
-    #plt.ylim(2e-4, 2e2)
+    if for_paper:
+        plt.ylim(2e-4, 2e2)
 
     plt.yscale('log')
     end_stage1()
@@ -208,7 +211,8 @@ grid = lambda params, fixed_params= None, verbose=False: do_grid(_main, params, 
 
 if __name__ == '__main__':
     
-    _main('ensemble/img/', acc_prob=0.9, early_stop= False)
+    _main('ensemble/img/', early_stop= False, diagonal_preconditioning= False)
+    
     # print('C_power')
     # grid({'C': mylogspace(0.001, 3, 6),
     #        'power': [3./4., 3./8.]}, verbose= True)

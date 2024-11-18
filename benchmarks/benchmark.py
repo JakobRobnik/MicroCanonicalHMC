@@ -19,7 +19,7 @@ from jax.flatten_util import ravel_pytree
 from .metrics import benchmark, grid_search
 
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
-from blackjax.adaptation.adjusted_mclmc_adaptation import adjusted_mclmc_make_L_step_size_adaptation
+#from blackjax.adaptation.adjusted_mclmc_adaptation import adjusted_mclmc_make_L_step_size_adaptation
 
 os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(128)
 num_cores = jax.local_device_count()
@@ -72,7 +72,7 @@ from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_search=True, integrators = ["mclachlan"], return_ess_corr=True, do_fast_grid_search=False, do_grid_search_for_unadjusted=False, pvmap=jax.pmap):
 
-    keys_for_not_grid, keys_for_grid, keys_for_fast_grid = jax.random.split(jax.random.PRNGKey(key_index), 3)
+    keys_for_not_grid, keys_for_grid, keys_for_fast_grid = jax.random.split(jax.random.key(key_index), 3)
 
     do_grid_search_for_adjusted = True and do_grid_search
     do_grid_search_for_unadjusted = do_grid_search_for_unadjusted and do_grid_search
