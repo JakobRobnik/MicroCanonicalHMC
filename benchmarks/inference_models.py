@@ -67,8 +67,7 @@ class Gaussian():
             eigs = jnp.concatenate((jnp.ones(num_outliers) * condition_number, jnp.ones(ndims-num_outliers)))
         else:
             raise ValueError('eigenvalues = '+ str(eigenvalues) + ' is not a valid option.')
-        
-        
+
         if numpy_seed == None:  # diagonal covariance matrix
             self.E_x2 = eigs
             #self.R = jnp.eye(ndims)
@@ -104,7 +103,7 @@ class Gaussian():
             self.sample_init = lambda key: self.R @ (jax.random.normal(key, shape=(ndims,)) * jnp.sqrt(eigs))
 
         elif initialization == 'wide': # N(0, sigma_true_max)
-            self.sample_init = lambda key: jax.random.normal(key, shape=(ndims,)) * jnp.max(jnp.sqrt(eigs))
+            self.sample_init = lambda key: 1.3 * jax.random.normal(key, shape=(ndims,)) * jnp.max(jnp.sqrt(eigs))
         else:
             raise ValueError('initialization = '+ str(initialization) + ' is not a valid option.')
             
