@@ -17,7 +17,7 @@ from benchmarks.inference_models import (
     Gaussian,
 )
 
-model = Gaussian(ndims=100,condition_number=1e5)
+model = Gaussian(ndims=10,condition_number=1)
 num_chains = 128
 ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
     model=model,
@@ -26,6 +26,8 @@ ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchma
     n=20000,
     batch=num_chains,  
 )
+
+print(f'ess {ess_avg}')
 
 print(f"\nGradient calls for MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_avg} (avg over {num_chains} chains and dimensions)")
 

@@ -314,6 +314,8 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, i
         L_proposal_factor=L_proposal_factor,
     )
 
+    logdensity_grad_fn = jax.grad(logdensity_fn)
+
     (
         blackjax_state_after_tuning,
         blackjax_adjusted_mclmc_sampler_params,
@@ -332,6 +334,7 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, i
         max=max,
         num_windows=num_windows,
         tuning_factor=tuning_factor,
+        logdensity_grad_fn=logdensity_grad_fn,
     )
 
     return blackjax_state_after_tuning, blackjax_adjusted_mclmc_sampler_params
