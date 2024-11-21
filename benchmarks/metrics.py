@@ -1,7 +1,35 @@
 
+import sys
+
+sys.path.append("./")
+sys.path.append("../blackjax")
+
+from blackjax.mcmc.adjusted_mclmc import rescale
+from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
+
+import blackjax
+
+from benchmarks.sampling_algorithms import (
+    adjusted_mclmc_tuning,
+    calls_per_integrator_step,
+    integrator_order,
+    map_integrator_type_to_integrator,
+    adjusted_mclmc,
+    adjusted_mclmc_no_tuning,
+    nuts,
+    unadjusted_mclmc_no_tuning,
+    target_acceptance_rate_of_order,
+    unadjusted_mclmc,
+    unadjusted_mclmc_tuning,
+)
+
+from benchmarks.sampling_algorithms import adjusted_mclmc_no_tuning, unadjusted_mclmc_no_tuning
 import jax
 import jax.numpy as jnp
 import numpy as np
+from blackjax.adaptation.adjusted_mclmc_adaptation import adjusted_mclmc_make_L_step_size_adaptation
+from blackjax.adaptation.mclmc_adaptation import make_L_step_size_adaptation
+
 
 def get_num_latents(target):
     return target.ndims
@@ -129,6 +157,252 @@ def grid_search(func, x, y, delta_x, delta_y, key, grid_size=5, num_iter=3,):
             initial_edge = True
 
     return [state[0][0], state[0][1], *results], initial_edge
+
+
+def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, key, grid_size, opt='max', grid_iterations=2,):
+
+    da_key, bench_key, init_pos_key, fast_tune_key = jax.random.split(key, 4)
+    initial_position = model.sample_init(init_pos_key)
+
+    if sampler=='adjusted_mclmc':
+
+        (
+            blackjax_state_after_tuning,
+            blackjax_sampler_params,
+        ) = adjusted_mclmc_tuning(
+            initial_position=initial_position,
+            num_steps=num_steps,
+            rng_key=fast_tune_key,
+            logdensity_fn=model.logdensity_fn,
+            integrator_type=integrator_type,
+            frac_tune3=0.0,
+            target_acc_rate=0.9,
+            diagonal_preconditioning=False,
+            num_windows=2,
+        )
+    elif sampler=='mclmc':
+
+        (blackjax_state_after_tuning, blackjax_sampler_params) = unadjusted_mclmc_tuning(
+                    initial_position=initial_position,
+                    num_steps=num_steps,
+                    rng_key=fast_tune_key,
+                    logdensity_fn=model.logdensity_fn,
+                    integrator_type=integrator_type,
+                    diagonal_preconditioning=False,
+                    num_windows=2,
+                )
+        
+    else:
+        raise Exception("sampler not recognized")
+        
+
+    z=blackjax_sampler_params.L
+    state=blackjax_state_after_tuning
+    jax.debug.print("initial L {x}", x=(z))
+
+    # Lgrid = np.array([z])
+    ESS = np.zeros(grid_size)
+    ESS_AVG = np.zeros(grid_size)
+    ESS_CORR_AVG = np.zeros(grid_size)
+    ESS_CORR_MAX = np.zeros(grid_size)
+    STEP_SIZE = np.zeros(grid_size)
+    RATE = np.zeros(grid_size)
+    integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
+
+    for grid_iteration in range(grid_iterations):
+
+        da_key_per_iter = jax.random.fold_in(da_key, grid_iteration)
+        bench_key_per_iter = jax.random.fold_in(bench_key, grid_iteration)
+
+        if grid_iteration==0:
+            Lgrid = np.linspace(z/3, z * 3, grid_size)
+        else:
+            Lgrid = np.linspace(Lgrid[iopt-1], Lgrid[iopt+1], grid_size)
+        jax.debug.print("Lgrid {x}", x=(Lgrid))
+
+        for i in range(len(Lgrid)):
+            da_key_per_iter = jax.random.fold_in(da_key_per_iter, i)
+            bench_key_per_iter = jax.random.fold_in(bench_key_per_iter, i)
+            jax.debug.print("L {x}", x=(Lgrid[i]))
+            print("i", i)
+
+            params = MCLMCAdaptationState(
+                L=Lgrid[i],
+                step_size=Lgrid[i]/5,
+                sqrt_diag_cov=1.0,
+            )
+
+            if sampler=='adjusted_mclmc':
+
+                kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+                    integrator=integrator,
+                    integration_steps_fn=lambda k: jnp.ceil(
+                        jax.random.uniform(k) * rescale(avg_num_integration_steps)
+                    ),
+                    sqrt_diag_cov=sqrt_diag_cov,
+                )(
+                    rng_key=rng_key,
+                    state=state,
+                    step_size=step_size,
+                    logdensity_fn=model.logdensity_fn,
+                    L_proposal_factor=jnp.inf,
+                )
+
+                (
+                    blackjax_state_after_tuning,
+                    params,
+                ) = adjusted_mclmc_make_L_step_size_adaptation(
+                    kernel=kernel,
+                    dim=model.ndims,
+                    frac_tune1=0.1,
+                    frac_tune2=0.0,
+                    target=0.9,
+                    diagonal_preconditioning=False,
+                    fix_L_first_da=True,
+                )(
+                    state, params, num_steps, da_key_per_iter
+                )
+
+            elif sampler=='mclmc':
+                    
+                kernel = lambda sqrt_diag_cov: blackjax.mcmc.mclmc.build_kernel(
+                    logdensity_fn=model.logdensity_fn,
+                    integrator=integrator,
+                    sqrt_diag_cov=sqrt_diag_cov,
+                )
+    
+
+                    
+                (
+                    blackjax_state_after_tuning,
+                    params,
+                ) = make_L_step_size_adaptation(
+                    kernel=kernel,
+                    dim=model.ndims,
+                    frac_tune1=0.1,
+                    frac_tune2=0.0,
+                    diagonal_preconditioning=False,
+                )(
+                    state, params, num_steps, da_key_per_iter
+                )
+
+
+            # jax.debug.print("DA {x}", x=(final_da))
+            jax.debug.print("benchmarking with L and step size {x}", x=(Lgrid[i], params.step_size))
+
+            if sampler=='adjusted_mclmc':
+
+                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
+                    model,
+                    adjusted_mclmc_no_tuning(
+                        integrator_type=integrator_type,
+                        initial_state=blackjax_state_after_tuning,
+                        sqrt_diag_cov=1.0,
+                        L=Lgrid[i],
+                        step_size=params.step_size,
+                        L_proposal_factor=jnp.inf,
+                        return_ess_corr=False,
+                    ),
+                    bench_key_per_iter,
+                    n=num_steps,
+                    batch=num_chains,
+                )
+
+            elif sampler=='mclmc':
+
+                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
+                    model,
+                    unadjusted_mclmc_no_tuning(
+                        integrator_type=integrator_type,
+                        initial_state=blackjax_state_after_tuning,
+                        sqrt_diag_cov=1.0,
+                        L=Lgrid[i],
+                        step_size=params.step_size,
+                        return_ess_corr=False,
+                    ),
+                    bench_key_per_iter,
+                    n=num_steps,
+                    batch=num_chains,
+                )
+
+            else:
+                raise Exception("sampler not recognized")
+                
+
+
+            jax.debug.print("{x} ess", x=(ess))
+            ESS[i] = ess
+            ESS_AVG[i] = ess_avg
+            ESS_CORR_AVG[i] = ess_corr.mean().item()
+            STEP_SIZE[i] = params.step_size.mean().item()
+            RATE[i] = acceptance_rate.mean().item()
+        # iopt = np.argmax(ESS)
+        if opt=='max':
+            iopt = np.argmax(ESS)
+        elif opt=='avg':
+            iopt = np.argmax(ESS_AVG)
+        else:
+            raise Exception("opt not recognized")
+        edge = grid_iteration==0 and (iopt == 0 or iopt == (len(Lgrid) - 1))
+
+        print("iopt", iopt)
+        jax.debug.print("optimal ess {x}", x=(ESS[iopt], ESS_AVG[iopt]))
+
+    return Lgrid[iopt], STEP_SIZE[iopt], ESS[iopt], ESS_AVG[iopt], ESS_CORR_AVG[iopt], RATE[iopt], edge
+
+
+
+def grid_search_only_stepsize(L, model, num_steps, num_chains, integrator_type, key, grid_size, grid_boundaries, state, opt='max'):
+
+
+    step_size_grid = np.linspace(grid_boundaries[0], grid_boundaries[1], grid_size)
+    # Lgrid = np.array([z])
+    ESS = np.zeros_like(step_size_grid)
+    ESS_AVG = np.zeros_like(step_size_grid)
+    ESS_CORR_AVG = np.zeros_like(step_size_grid)
+    ESS_CORR_MAX = np.zeros_like(step_size_grid)
+    RATE = np.zeros_like(step_size_grid)
+    # integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
+
+    da_key, bench_key = jax.random.split(key, 2)
+
+    for i in range(len(step_size_grid)):
+
+        
+
+        # jax.debug.print("L {x}", x=params.L)
+        # raise Exception
+
+        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
+            model,
+            adjusted_mclmc_no_tuning(
+                integrator_type=integrator_type,
+                initial_state=state,
+                sqrt_diag_cov=1.0,
+                L=L,
+                step_size=step_size_grid[i],
+                L_proposal_factor=jnp.inf,
+                return_ess_corr=True,
+            ),
+            bench_key,
+            n=num_steps,
+            batch=num_chains,
+        )
+        jax.debug.print("ess_avg {x}", x=(ess_avg))
+        jax.debug.print("L {x}", x=(L))
+        # jax.debug.print("{x} comparison of acceptance", x=(acceptance_rate, target_acc_rate))
+        ESS[i] = ess
+        ESS_AVG[i] = ess_avg
+        ESS_CORR_AVG[i] = ess_corr.mean().item()
+        ESS_CORR_MAX[i] = ess_corr.max().item()
+        RATE[i] = acceptance_rate.mean().item()
+    # iopt = np.argmax(ESS)
+    if opt=='max':
+        iopt = np.argmax(ESS)
+    else:
+        iopt = np.argmax(ESS_AVG)
+
+    return step_size_grid[iopt], ESS[iopt], ESS_AVG[iopt], ESS_CORR_MAX[iopt], ESS_CORR_AVG[iopt], RATE[iopt]
 
 
 def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
