@@ -72,7 +72,7 @@ from blackjax.mcmc.integrators import (
 from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 
-def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_search=True, integrators = ["mclachlan"], return_ess_corr=True, do_fast_grid_search=False, do_grid_search_for_unadjusted=False, pvmap=jax.pmap):
+def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_search=True, integrators = ["mclachlan"], return_ess_corr=True, do_fast_grid_search=False, do_grid_search_for_unadjusted=False, pvmap=jax.pmap, folder = '.', preconditioning= False):
 
     keys_for_not_grid, keys_for_grid, keys_for_fast_grid = jax.random.split(jax.random.key(key_index), 3)
 
@@ -490,17 +490,12 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                 "model", "dims", "sampler", "L", "step_size", "integrator", "tuning", "acc_rate", "preconditioning", "inv_L_prop", "ess_avg", "ess_corr_avg", "ess_corr_min", "ess_corr_inv_mean", "num_steps", "num_chains", "worst", "num_windows", "ESS"]
             # df.result = df.result.apply(lambda x: x[0].item())
             # df.model = df.model.apply(lambda x: x[1])
-            df.to_csv(f"gridresults{model.name}{model.ndims}{key_index}.csv", index=False)
+            df.to_csv(folder + f"gridresults{model.name}{model.ndims}{key_index}.csv", index=False)
             results = defaultdict(tuple)
 
         if  do_non_grid_search:
         
             for i,integrator_type in enumerate(integrators):
-
-
-
-
-                
 
                 # keys_for_not_grid = jax.random.split(keys_for_not_grid, 1)[0]
 
@@ -515,14 +510,13 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                         unadjusted_with_tuning_key = jax.random.fold_in(unadjusted_with_tuning_key, j)
                         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
                             model,
-                            unadjusted_mclmc(integrator_type=integrator_type, preconditioning=False, num_windows=num_windows, return_ess_corr=return_ess_corr,),
+                            unadjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, num_windows=num_windows, return_ess_corr=return_ess_corr,),
                             unadjusted_with_tuning_key,
                             n=models[model]["mclmc"],
                             batch=num_chains,
                             pvmap=pvmap,
                             
                         )
-
                         
                         results[
                             (
@@ -537,7 +531,8 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                 for j, (target_acc_rate, (L_proposal_factor, random_trajectory_length), max, num_windows, tuning_factor) in enumerate(itertools.product(
                         [0.9], [(jnp.inf, True), (1.25, False)], ['max', 'avg'], [2], [1.3]
                     )):  # , 3., 1.25, 0.5] ):
-                        # coeffs = mclachlan_coefficients
+                    ####### run adjusted_mclmc with standard tuning
+                
 
                         print(f"running adjusted mclmc with target acceptance rate {target_acc_rate}, L_proposal_factor {L_proposal_factor}, max {max}, num_windows {num_windows}")
 
@@ -589,7 +584,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                     ####### run nuts
                     ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
                         model,
-                        nuts(integrator_type=integrator_type, preconditioning=False,return_ess_corr=return_ess_corr,),
+                        nuts(integrator_type=integrator_type, preconditioning=preconditioning,return_ess_corr=return_ess_corr,),
                         nuts_key_with_tuning,
                         n=models[model]["nuts"],
                         batch=num_chains,
@@ -621,10 +616,10 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
 
             df = pd.Series(results).reset_index()
             df.columns = [
-                "model", "dims", "sampler", "L", "step_size", "integrator", "tuning", "acc_rate", "preconditioning", "inv_L_prop", "ess_avg", "ess_corr_avg", "ess_corr_min", "ess_corr_inv_mean", "num_steps", "num_chains", "worst", "num_windows", "ESS"]
+               "model", "dims", "sampler", "L", "step_size", "integrator", "tuning", "acc_rate", "preconditioning", "inv_L_prop", "ess_avg", "ess_corr_avg", "ess_corr_min", "ess_corr_inv_mean", "num_steps", "num_chains", "worst", "num_windows", "ESS"]
             # df.result = df.result.apply(lambda x: x[0].item())
             # df.model = df.model.apply(lambda x: x[1])
-            df.to_csv(f"results{model.name}{model.ndims}{key_index}.csv", index=False)
+            df.to_csv(folder + f"{model.name}{model.ndims}{key_index}.csv", index=False)
 
 
 
