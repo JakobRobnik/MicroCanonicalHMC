@@ -58,15 +58,18 @@ def grads_to_low_error(err_t, grad_evals_per_step=1, low_error=0.01):
     return find_crossing(err_t, low_error) * grad_evals_per_step, cutoff_reached
 
 
-def calculate_ess(err_t, grad_evals_per_step, neff=100):
+def calculate_ess(err_t, grad_evals_per_step, num_tuning_steps, neff=100):
 
     grads_to_low, cutoff_reached = grads_to_low_error(
         err_t, grad_evals_per_step, 1.0 / neff
     )
 
+    full_grads_to_low = grads_to_low 
+    # + num_tuning_steps * grad_evals_per_step
+
     return (
-        (neff / grads_to_low) * cutoff_reached,
-        grads_to_low * (1 / cutoff_reached),
+        (neff / full_grads_to_low) * cutoff_reached,
+        full_grads_to_low * (1 / cutoff_reached),
         cutoff_reached,
     )
 
@@ -201,12 +204,12 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
     jax.debug.print("initial L {x}", x=(z))
 
     # Lgrid = np.array([z])
-    ESS = np.zeros(grid_size)
-    ESS_AVG = np.zeros(grid_size)
-    ESS_CORR_AVG = np.zeros(grid_size)
-    ESS_CORR_MAX = np.zeros(grid_size)
-    STEP_SIZE = np.zeros(grid_size)
-    RATE = np.zeros(grid_size)
+    ESS = jnp.zeros(grid_size)
+    ESS_AVG = jnp.zeros(grid_size)
+    ESS_CORR_AVG = jnp.zeros(grid_size)
+    ESS_CORR_MAX = jnp.zeros(grid_size)
+    STEP_SIZE = jnp.zeros(grid_size)
+    RATE = jnp.zeros(grid_size)
     integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
 
     for grid_iteration in range(grid_iterations):
@@ -215,9 +218,10 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
         bench_key_per_iter = jax.random.fold_in(bench_key, grid_iteration)
 
         if grid_iteration==0:
-            Lgrid = np.linspace(z/3, z * 3, grid_size)
+            Lgrid = jnp.linspace(z/3, z * 3, grid_size)
         else:
-            Lgrid = np.linspace(Lgrid[iopt-1], Lgrid[iopt+1], grid_size)
+            
+            Lgrid = jnp.linspace(Lgrid[iopt-1], Lgrid[iopt+1], grid_size)
         jax.debug.print("Lgrid {x}", x=(Lgrid))
 
         for i in range(len(Lgrid)):
@@ -331,11 +335,14 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
 
 
             jax.debug.print("{x} ess", x=(ess))
-            ESS[i] = ess
-            ESS_AVG[i] = ess_avg
-            ESS_CORR_AVG[i] = ess_corr.mean().item()
-            STEP_SIZE[i] = params.step_size.mean().item()
-            RATE[i] = acceptance_rate.mean().item()
+            ESS = ESS.at[i].set(ess)
+            ESS_AVG = ESS_AVG.at[i].set(ess_avg)
+            # ESS_CORR_AVG[i] = ess_corr.mean().item()
+            ESS_CORR_AVG = ESS_CORR_AVG.at[i].set(ess_corr.mean().item())
+            # STEP_SIZE[i] = params.step_size.mean().item()
+            STEP_SIZE = STEP_SIZE.at[i].set(params.step_size.mean().item())
+            # RATE[i] = acceptance_rate.mean().item()
+            RATE = RATE.at[i].set(acceptance_rate.mean().item())
         # iopt = np.argmax(ESS)
         if opt=='max':
             iopt = np.argmax(ESS)
@@ -417,21 +424,28 @@ def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
     init_keys = jax.random.split(init_key, batch)
     init_pos = pvmap(model.sample_init)(init_keys)  # [batch_size, dim_model]
 
-    params, grad_calls_per_traj, acceptance_rate, expectation, ess_corr = pvmap(
+    params, grad_calls_per_traj, acceptance_rate, expectation, ess_corr, num_tuning_steps = pvmap(
         lambda pos, key: sampler(
             model=model, num_steps=n, initial_position=pos, key=key
         )
     )(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
 
+    num_tuning_steps = jnp.mean(num_tuning_steps, axis=0)
+    # jax.debug.print("{x} num tuning steps", x=num_tuning_steps)
+
     err_t_mean_avg = jnp.median(expectation[:, :, 0], axis=0)
     esses_avg, grads_to_low_avg, _ = calculate_ess(
-        err_t_mean_avg, grad_evals_per_step=avg_grad_calls_per_traj
+        err_t_mean_avg, 
+        grad_evals_per_step=avg_grad_calls_per_traj,
+        num_tuning_steps=num_tuning_steps
     )
 
     err_t_mean_max = jnp.median(expectation[:, :, 1], axis=0)
     esses_max, _, _ = calculate_ess(
-        err_t_mean_max, grad_evals_per_step=avg_grad_calls_per_traj
+        err_t_mean_max, 
+        grad_evals_per_step=avg_grad_calls_per_traj,
+        num_tuning_steps=num_tuning_steps
     )
 
     # if not jnp.isinf(jnp.mean(ess_corr)):
