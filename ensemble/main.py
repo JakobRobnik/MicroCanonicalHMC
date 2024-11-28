@@ -24,7 +24,7 @@ targets = [[Banana(), 100, 300],
             [GermanCredit(), 500, 500],
             [Brownian(), 500, 500],
             [ItemResponseTheory(), 500, 500],
-            [StochasticVolatility(), 800, 1000]][:-1]
+            [StochasticVolatility(), 800, 1000]]
 
 for_paper = False
 sv = False
