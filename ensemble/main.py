@@ -16,6 +16,8 @@ from ensemble.extract_image import imported_plot, third_party_methods
 mesh = jax.sharding.Mesh(jax.devices(), 'chains')
 
 
+rng_key_int = int(sys.argv[1])
+    
 third_party_splines = []
 
 # models to solve
@@ -68,6 +70,9 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     steps2 = jnp.cumsum(info2['steps_per_sample']) * grads_per_step + n1
     steps = np.concatenate((steps1, steps2))
 
+    bias = np.concatenate((info1['bias'], info2['bias']))
+    n = [find_crossing(steps, bias[:, i], 0.01) for i in range(2)]
+    
     #plot_convergence_metrics(steps1, info1, dir + model.name)
     
     plt.figure(figsize= (15, 5))
@@ -85,8 +90,6 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     #plt.title('Bias')
     
     # true
-    bias = np.concatenate((info1['bias'], info2['bias']))
-    n = [find_crossing(steps, bias[:, i], 0.01) for i in range(2)]
     plt.plot(steps, bias[:, 1], color = 'tab:blue', label= 'average')
     plt.plot(steps, bias[:, 0], lw= 3, color = 'tab:red', label = 'max')
  
@@ -189,7 +192,7 @@ def _main(dir,
           ):
     
     # algorithm settings
-    key = jax.random.key(42)
+    key = jax.random.split(jax.random.key(42), 100)[rng_key_int]
     integrator_coefficients= [None, velocity_verlet_coefficients, mclachlan_coefficients, omelyan_coefficients][integrator]
 
     results = {}
@@ -211,38 +214,37 @@ def _main(dir,
         result = plot_trace(info1, info2, target, grads_per_step, _acc_prob, dir) # do plots and compute the results
         results['grads_to_low_bmax_' + target.name] = result[0]
         results['grads_to_low_bavg_' + target.name] = result[1]
-        print(result)
     
     return results
 
 
 mylogspace = lambda a, b, num, decimals=3: np.round(np.logspace(np.log10(a), np.log10(b), num), decimals)
 
-grid = lambda params, fixed_params= None, verbose=False: do_grid(_main, params, fixed_params=fixed_params, verbose= verbose)
+grid = lambda params, fixed_params= None, verbose= True, extra_word= '': do_grid(_main, params, fixed_params=fixed_params, verbose= verbose, extra_word= extra_word)
 
 
 
 if __name__ == '__main__':
     
-    results = _main('ensemble/img/bisect/')
-    print(results)
+    #results = _main('ensemble/img/')
     
     # print('C_power')
     # grid({'C': mylogspace(0.001, 3, 6),
-    #        'power': [3./4., 3./8.]}, verbose= True)
+    #        'power': [3./4., 3./8.]})
     
     # grid({'integrator': [2, 3],
-    #        'steps_per_sample': np.logspace(np.log10(5), np.log10(30), 10).astype(int)}, verbose= True)
+    #        'steps_per_sample': np.logspace(np.log10(5), np.log10(30), 10).astype(int)})
     
     # print('alpha')
-    # grid({'alpha': mylogspace(1, 4., 6)}, verbose= True)
+    # grid({'alpha': mylogspace(1, 4., 6)})
     
-    #grid({'chains': [2**k for k in range(6, 13)]}, verbose= True)
+    
+    grid({'chains': [2**k for k in range(6, 13)]}, extra_word= str(rng_key_int))
     
     # print('r_end')
-    # grid({'r_end': mylogspace(1e-3, 1e-1, 6)}, verbose= True)
+    # grid({'r_end': mylogspace(1e-3, 1e-1, 6)})
     
-    #grid({'steps_per_sample': np.logspace(np.log10(5), np.log10(30), 10).astype(int))
+    #grid({'steps_per_sample': np.logspace(np.log10(5), np.log10(30), 10).astype(int)})
     
 
 # TODO for package release:
