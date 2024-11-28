@@ -18,8 +18,10 @@ first_list = np.array([2,3,4,5,6,7,8,9])
 second_list = np.ceil(np.logspace(2, 5, num=10)).astype(int)
 full_list = np.concatenate((first_list, second_list))
 
-models = {Gaussian(d, condition_number=1., eigenvalues='linear'): {'mclmc': 10000, 'adjusted_mclmc': 5000, 'nuts': 5000}
-    for d in first_list
+models = {model(d): {'mclmc': 1000, 'adjusted_mclmc': 1000, 'nuts': 1000}
+    for d in first_list for model in [lambda dim: Gaussian(dim, condition_number=1., eigenvalues='linear'), lambda dim : Gaussian(dim, condition_number=1000, eigenvalues='log'), 
+                                    #    lambda d: Rosenbrock(d)
+                                       ]
     }
 
 run_benchmarks(batch_size=128, models=models, key_index=20, do_grid_search=False, do_non_grid_search=True, do_fast_grid_search=True, return_ess_corr=False, integrators = ["omelyan", "mclachlan", "velocity_verlet"])
