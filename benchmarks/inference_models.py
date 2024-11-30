@@ -54,7 +54,7 @@ class Gaussian():
         if numpy_seed != None:
             rng = np.random.RandomState(seed=numpy_seed)
 
-        # fix the eigenvalues
+        # fix the eigenvalues of the covariance matrix
         if eigenvalues == 'linear':
             eigs = jnp.linspace(1./condition_number, 1, ndims)
         elif eigenvalues == 'log':
@@ -71,7 +71,7 @@ class Gaussian():
         if numpy_seed == None:  # diagonal covariance matrix
             self.E_x2 = eigs
             #self.R = jnp.eye(ndims)
-            self.inv_cov = 1 / eigs
+            self.inv_cov = 1. / eigs
             self.cov = eigs
             self.logdensity_fn = lambda x: -0.5 * jnp.sum(jnp.square(x) * self.inv_cov)
 
@@ -103,7 +103,7 @@ class Gaussian():
             self.sample_init = lambda key: self.R @ (jax.random.normal(key, shape=(ndims,)) * jnp.sqrt(eigs))
 
         elif initialization == 'wide': # N(0, sigma_true_max)
-            self.sample_init = lambda key: 1.3 * jax.random.normal(key, shape=(ndims,)) * jnp.max(jnp.sqrt(eigs))
+            self.sample_init = lambda key: jax.random.normal(key, shape=(ndims,)) * jnp.max(jnp.sqrt(eigs)) #* 1.3
         else:
             raise ValueError('initialization = '+ str(initialization) + ' is not a valid option.')
             
