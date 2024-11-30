@@ -19,10 +19,12 @@ from benchmarks.sampling_algorithms import (
     unadjusted_mclmc,
 )
 from benchmarks.inference_models import (
+    Brownian,
     Gaussian,
 )
 
-model = Gaussian(ndims=10,condition_number=1)
+# model = Gaussian(ndims=10,condition_number=1)
+model = Brownian()
 
 init_pos_key, fast_tune_key_adjusted, key_for_fast_grid = jax.random.split(jax.random.PRNGKey(1), 3)
 
@@ -33,7 +35,7 @@ init_pos_key, fast_tune_key_adjusted, key_for_fast_grid = jax.random.split(jax.r
 
 L, step_size, ess, ess_avg, ess_corr_avg, rate, edge = grid_search_only_L(
     model=model,
-    sampler='mclmc',
+    sampler='adjusted_mclmc',
     num_steps=2000,
     num_chains=128,
     integrator_type='mclachlan',
@@ -48,3 +50,4 @@ L, step_size, ess, ess_avg, ess_corr_avg, rate, edge = grid_search_only_L(
 
 print(f"fast grid search edge {edge}")
 print(f"fast grid search L {L}, step_size {step_size}")
+print(f"fast grid search ess {ess}, ess_avg {ess_avg}, ess_corr_avg {ess_corr_avg}, rate {rate}")

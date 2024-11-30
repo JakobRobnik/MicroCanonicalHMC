@@ -529,7 +529,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
 
                     ####### run adjusted_mclmc with standard tuning
                 for j, (target_acc_rate, (L_proposal_factor, random_trajectory_length), max, num_windows, tuning_factor) in enumerate(itertools.product(
-                        [0.9], [(jnp.inf, True), (1.25, False)], ['max', 'avg'], [2], [1.3]
+                        [0.9], [(jnp.inf, True), (1.25, False)], ['max', 'avg'], [3], [1.3]
                     )):  # , 3., 1.25, 0.5] ):
                     ####### run adjusted_mclmc with standard tuning
                 
