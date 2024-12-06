@@ -351,7 +351,7 @@ def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,
         
     )
 
-def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, target_acc_rate, kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, L_proposal_factor=jnp.inf, params=None, max='avg', num_windows=1, random_trajectory_length=True, tuning_factor=1.0):
+def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,  diagonal_preconditioning, target_acc_rate, kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, params=None, max='avg', num_windows=1,  tuning_factor=1.0):
 
 
     init_key, tune_key = jax.random.split(rng_key, 2)
@@ -473,7 +473,7 @@ def adjusted_mclmc(
 
         (
             blackjax_state_after_tuning,
-            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, new_target_acc_rate, kernel, frac_tune1, frac_tune2, frac_tune3, L_proposal_factor, params=params, max=max, num_windows=num_windows, random_trajectory_length=random_trajectory_length, tuning_factor=tuning_factor)
+            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, preconditioning, new_target_acc_rate, kernel, frac_tune1, frac_tune2, frac_tune3, params=params, max=max, num_windows=num_windows, tuning_factor=tuning_factor)
 
         num_tuning_steps = (frac_tune1 + frac_tune2 ) * num_windows * num_steps + frac_tune3 * num_steps
         # jax.debug.print("num_tuning_steps {x}", x=num_tuning_steps)
