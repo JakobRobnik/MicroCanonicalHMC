@@ -21,12 +21,19 @@ rng_key_int = int(sys.argv[1])
 third_party_splines = []
 
 # models to solve
+# targets = [[Banana(), 100, 300],
+#             [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 500, 500],
+#             [GermanCredit(), 500, 500],
+#             [Brownian(), 500, 500],
+#             [ItemResponseTheory(), 500, 500],
+#             [StochasticVolatility(), 800, 1000]][-1:]
+
 targets = [[Banana(), 100, 300],
             [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 500, 500],
             [GermanCredit(), 500, 500],
             [Brownian(), 500, 500],
-            [ItemResponseTheory(), 500, 500],
-            [StochasticVolatility(), 800, 1000]]
+            [ItemResponseTheory(), 500, 3000],
+            [StochasticVolatility(), 800, 3000]]
 
 for_paper = False
 sv = False
@@ -112,14 +119,14 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     pf = pf[pf['name'] == model.name]
     pf_bavg, pf_bmax = pf[['bavg', 'bmax']].to_numpy()[0]
 
-    if pf_bavg > 2 * np.max([np.max(bias), np.max(info1['equi_full']), np.max(info1['equi_diag'])]): # pathfinder has not converged
-        plt.plot([], [], '*', color= 'grey', label= 'Pathfinder: not converged')
-    else:
+    if pf_bavg < 2 * np.max([np.max(bias), np.max(info1['equi_full']), np.max(info1['equi_diag'])]): # pathfinder has not converged
+        
         plt.plot([pf_grads, ], [pf_bavg, ], '*', color= 'tab:blue')
         plt.plot([pf_grads, ], [pf_bmax, ], '*', color= 'tab:red')
         plt.plot([], [], '*', color= 'grey', label= 'Pathfinder')
     
     if for_paper:
+        print('here')
         plt.text(steps1[len(steps1)//2], 4e-4, 'Unadjusted', horizontalalignment= 'center')
         plt.text(steps2[len(steps2)//2], 4e-4, 'Adjusted', horizontalalignment= 'center')
     if sv:
@@ -133,6 +140,7 @@ def plot_trace(info1, info2, model, grads_per_step, acc_prob, dir):
     plt.xlabel('# gradient evaluations')
     plt.xlim(0, ntotal)
     plt.ylim(2e-4, 2e2)
+    #plt.ylim(1e-4, 1e4)
 
     plt.yscale('log')
     end_stage1()
@@ -227,7 +235,7 @@ grid = lambda params, fixed_params= None, verbose= True, extra_word= '': do_grid
 if __name__ == '__main__':
     
     #results = _main('ensemble/img/')
-    
+    #print(results)
     # print('C_power')
     # grid({'C': mylogspace(0.001, 3, 6),
     #        'power': [3./4., 3./8.]})

@@ -10,6 +10,9 @@ from collections import namedtuple
 import numpy as np
 import sys
 
+
+import os, sys
+sys.path.append('../blackjax/')
 import blackjax
 from blackjax.mcmc.integrators import isokinetic_velocity_verlet
 from blackjax.util import run_inference_algorithm, store_only_expectation_values, thinning
@@ -108,7 +111,8 @@ def sample(m, sampling_alg, L, n):
         lambda k: _sample(m.model, sampling_alg.alg, num_saved_steps, burn_in_steps, num_thinning, stepsize, k, L
                 ))(keys))(step_size)
     
-    np.savez('bias/data/'+ m.model.name + '/' + sampling_alg.name + str(L) + '.npz', stepsize= step_size, bias= b, eevpd= eevpd)
+    
+    np.savez('/pscratch/sd/j/jrobnik/mchmc/bias/'+ m.model.name + '/' + sampling_alg.name + str(L) + '.npz', stepsize= step_size, bias= b, eevpd= eevpd)
 
 
 SamplingAlg = namedtuple('Algorithm', ['alg', 'name'])
@@ -116,7 +120,7 @@ sampling_algs = [SamplingAlg(mclmc, 'mclmc'), SamplingAlg(hmc, 'hmc')]
 
 Model = namedtuple('Model', ['model', 'stepsize_bounds', 'burn_in_steps'])
 num_burnin = 10**4
-models = [Model(Gaussian(ndims= 100), [2.5, 20.], 0), # [2.5, 14.]
+models = [Model(Gaussian(ndims= 10000), [2.5, 20.], 0), # [2.5, 14.]
           Model(Gaussian(ndims= 100, condition_number= 1000), [0.4, 7.], num_burnin),
           Model(Rosenbrock(), [0.1, 1.5], num_burnin), #[0.1, 0.6]
           Model(Brownian(), [0.06, 1.], num_burnin),
@@ -130,3 +134,4 @@ if __name__ == '__main__':
     num_steps = 10**step_power 
     sample(models[imodel], sampling_algs[ialg], L, num_steps)
     
+    # The results data has somehow been lost. If you want to rerun, make the folders with target names in scratch.
