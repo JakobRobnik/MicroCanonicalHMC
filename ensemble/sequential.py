@@ -9,7 +9,8 @@ from benchmarks.benchmark import run_benchmarks
 from benchmarks.inference_models import*
 
 
-os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(128)
+chains = 128
+os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(chains)
 num_cores = jax.local_device_count()
 
 
@@ -23,12 +24,9 @@ models = [
     {GermanCredit(): steps(100000, 30000)},
     {Brownian(): steps(),},
     {ItemResponseTheory(): steps(),}, 
-    {StochasticVolatility(): steps(100000),}
-    ]#[which]
-        
-        # Banana(): steps(),
-        # Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg): steps(200000, 30000),
-        # 
-        
+    {StochasticVolatility(): steps(30000),}
+    ][-1:]#[which]
+
+
 for model in models:
-    results = run_benchmarks(batch_size=128, models=model, key_index=0, do_grid_search=False, preconditioning= True, folder = 'ensemble/sequential_results/')
+    results = run_benchmarks(batch_size=chains, models=model, key_index=0, do_grid_search=False, preconditioning= True, folder = 'ensemble/sequential_results/')

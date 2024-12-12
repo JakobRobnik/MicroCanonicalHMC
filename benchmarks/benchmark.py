@@ -527,53 +527,53 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                     
                
 
-                    ####### run adjusted_mclmc with standard tuning
-                for j, (target_acc_rate, (L_proposal_factor, random_trajectory_length), max, num_windows, tuning_factor) in enumerate(itertools.product(
-                        [0.9], [(jnp.inf, True), (1.25, False)], ['max', 'avg'], [3], [1.3]
-                    )):  # , 3., 1.25, 0.5] ):
-                    ####### run adjusted_mclmc with standard tuning
+                #     ####### run adjusted_mclmc with standard tuning
+                # for j, (target_acc_rate, (L_proposal_factor, random_trajectory_length), max, num_windows, tuning_factor) in enumerate(itertools.product(
+                #         [0.9], [(jnp.inf, True), (1.25, False)], ['max', 'avg'], [3], [1.3]
+                #     )):  # , 3., 1.25, 0.5] ):
+                #     ####### run adjusted_mclmc with standard tuning
                 
 
-                        print(f"running adjusted mclmc with target acceptance rate {target_acc_rate}, L_proposal_factor {L_proposal_factor}, max {max}, num_windows {num_windows}")
+                #         print(f"running adjusted mclmc with target acceptance rate {target_acc_rate}, L_proposal_factor {L_proposal_factor}, max {max}, num_windows {num_windows}")
 
 
-                        adjusted_with_tuning_key = jax.random.fold_in(adjusted_with_tuning_key, j)
+                #         adjusted_with_tuning_key = jax.random.fold_in(adjusted_with_tuning_key, j)
 
-                        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
-                            model,
-                            adjusted_mclmc(
-                                integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
-                                target_acc_rate=target_acc_rate, return_ess_corr=return_ess_corr, max=max, num_windows=num_windows, random_trajectory_length=random_trajectory_length,
-                                tuning_factor=tuning_factor),
-                            adjusted_with_tuning_key,
-                            n=models[model]["adjusted_mclmc"],
-                            batch=num_chains,
-                            pvmap=pvmap,
+                #         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
+                #             model,
+                #             adjusted_mclmc(
+                #                 integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
+                #                 target_acc_rate=target_acc_rate, return_ess_corr=return_ess_corr, max=max, num_windows=num_windows, random_trajectory_length=random_trajectory_length,
+                #                 tuning_factor=tuning_factor),
+                #             adjusted_with_tuning_key,
+                #             n=models[model]["adjusted_mclmc"],
+                #             batch=num_chains,
+                #             pvmap=pvmap,
                             
-                        )
+                #         )
                             
-                        print(f"ess {ess}, ess_corr avg {ess_corr.mean()}, ess_corr min {ess_corr.min()}, ess_corr inv mean {1/(1/ess_corr).mean()}")
-                        results[
-                            (
-                                model.name,
-                                model.ndims,
-                                "adjusted_mclmc:" + str(target_acc_rate)+str(tuning_factor),
-                                jnp.nanmean(params.L).item(),
-                                jnp.nanmean(params.step_size).item(),
-                                (integrator_type),
-                                "standard",
-                                acceptance_rate.mean().item(),
-                                False,
-                                1 / L_proposal_factor,
-                                ess_avg,
-                                ess_corr.mean().item(),
-                                ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
-                                models[model]["adjusted_mclmc"],
-                                num_chains,
-                                max,
-                                num_windows
-                            )
-                        ] = ess
+                #         print(f"ess {ess}, ess_corr avg {ess_corr.mean()}, ess_corr min {ess_corr.min()}, ess_corr inv mean {1/(1/ess_corr).mean()}")
+                #         results[
+                #             (
+                #                 model.name,
+                #                 model.ndims,
+                #                 "adjusted_mclmc:" + str(target_acc_rate)+str(tuning_factor),
+                #                 jnp.nanmean(params.L).item(),
+                #                 jnp.nanmean(params.step_size).item(),
+                #                 (integrator_type),
+                #                 "standard",
+                #                 acceptance_rate.mean().item(),
+                #                 False,
+                #                 1 / L_proposal_factor,
+                #                 ess_avg,
+                #                 ess_corr.mean().item(),
+                #                 ess_corr.min().item(), (1/(1/ess_corr).mean()).item(),
+                #                 models[model]["adjusted_mclmc"],
+                #                 num_chains,
+                #                 max,
+                #                 num_windows
+                #             )
+                #         ] = ess
 
                     
 
