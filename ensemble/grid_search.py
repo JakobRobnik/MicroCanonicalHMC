@@ -20,7 +20,7 @@ def subdir(values):
     return file[:-1] + '/'
     
 
-def do_grid(func, param_grid, fixed_params=None, verbose= False):
+def do_grid(func, param_grid, fixed_params=None, verbose= False, extra_word= ''):
     """
     Perform a grid search over specified parameters for a given function, 
     while keeping other parameters fixed to their default values, and allowing
@@ -87,4 +87,4 @@ def do_grid(func, param_grid, fixed_params=None, verbose= False):
     df = pd.DataFrame(results)
     df = df.drop(columns= ['dir', ])
     
-    df.to_csv(base + 'data.csv', sep= '\t', index= False)
+    df.to_csv(base + 'data'+extra_word+'.csv', sep= '\t', index= False)
