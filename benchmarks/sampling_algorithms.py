@@ -560,9 +560,9 @@ def adjusted_hmc(
 
 def nuts(integrator_type, preconditioning, return_ess_corr=False):
 
-    num_tuning_steps = 1000
 
     def s(model, num_steps, initial_position, key):
+        num_tuning_steps = num_steps // 5
 
         integrator = map_integrator_type_to_integrator["hmc"][integrator_type]
 
