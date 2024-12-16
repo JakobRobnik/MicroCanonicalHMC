@@ -371,8 +371,8 @@ class Rosenbrock():
             self.E_x2 = jnp.array([2., ] * D + [10.10017429, ] * D)
             self.Var_x2 = jnp.array([6.00036273, ] * D + [668.69693635, ] * D)
             
-            self.cov = construct_block_diagonal(1., 6.1, 2., num= D)
-            self.inv_cov = construct_block_diagonal(6.1 / 2.1, 1. / 2.1, -2. / 2.1, num= D)
+            # self.cov = construct_block_diagonal(1., 6.1, 2., num= D)
+            # self.inv_cov = construct_block_diagonal(6.1 / 2.1, 1. / 2.1, -2. / 2.1, num= D)
             
         else:
             raise ValueError('Ground truth moments for Q = ' + str(Q) + ' were not precomputed.')

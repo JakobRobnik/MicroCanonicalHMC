@@ -18,7 +18,7 @@ first_list = np.array([2,3,4,5,6,7,8,9])
 second_list = np.ceil(np.logspace(2, 5, num=10)).astype(int)
 full_list = np.concatenate((first_list, second_list))
 
-models = {model(d): {'mclmc': 10000, 'adjusted_mclmc': 10000, 'nuts': 10000}
+models = {model(d): {'mclmc': 10000, 'adjusted_mclmc': 10000, 'adjusted_mchmc': 10000, 'adjusted_hmc': 10000, 'nuts': 10000}
     for d in first_list for model in [
         # lambda dim: Gaussian(dim, condition_number=1., eigenvalues='linear'), 
         lambda dim : Gaussian(dim, condition_number=1000, eigenvalues='log'), 

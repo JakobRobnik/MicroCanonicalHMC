@@ -90,7 +90,7 @@ def find_crossing(array, cutoff):
 def cumulative_avg(samples):
     return jnp.cumsum(samples, axis=0) / jnp.arange(1, samples.shape[0] + 1)[:, None]
 
-def grid_search(func, x, y, delta_x, delta_y, key, grid_size=5, num_iter=3,):
+def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, num_steps, num_chains, pvmap):
     """Args:
       func(x, y) = (score, extra_results),
       where score is the scalar that we would like to maximize (e.g. ESS averaged over the chains)
@@ -105,6 +105,112 @@ def grid_search(func, x, y, delta_x, delta_y, key, grid_size=5, num_iter=3,):
     Returns:
       (x, y, score, extra results) at the best parameters
     """
+
+    da_key, bench_key, init_pos_key, tune_key = jax.random.split(key, 4)
+    initial_position = model.sample_init(init_pos_key)
+
+    ### create a kernel
+
+
+
+    if sampler_type=='adjusted_mclmc':
+
+        integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
+
+        L_proposal_factor = jnp.inf
+        random_trajectory_length = True 
+        if random_trajectory_length:
+            integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
+            jax.random.uniform(k) * rescale(avg_num_integration_steps))
+        else:
+            integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
+
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+        integrator=integrator,
+        integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
+        sqrt_diag_cov=sqrt_diag_cov,
+        )(
+            rng_key=rng_key,
+            state=state,
+            step_size=step_size,
+            logdensity_fn=model.logdensity_fn,
+            L_proposal_factor=L_proposal_factor,
+        )
+
+
+        target_acc_rate = 0.9
+
+        (
+            blackjax_state_after_tuning,
+            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3)
+
+        def func(L, step_size, key):
+
+                        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
+                            model=model,
+                            sampler=adjusted_mclmc_no_tuning(
+                                integrator_type=integrator_type,
+                                initial_state=blackjax_state_after_tuning,
+                                sqrt_diag_cov=blackjax_sampler_params.sqrt_diag_cov,
+                                L=L,
+                                step_size=step_size,
+                                L_proposal_factor=L_proposal_factor,
+                                return_ess_corr=False,
+                                num_tuning_steps=None, # doesn't matter what is passed here
+                            ),
+                            key=key,
+                            n=num_steps,
+                            batch=num_chains,
+                            pvmap=pvmap,
+                        )
+
+                        return ess, (params.L.mean(), params.step_size.mean())
+
+
+    elif sampler_type=='mclmc':
+
+        (blackjax_state_after_tuning, blackjax_sampler_params) = unadjusted_mclmc_tuning(
+                    initial_position=initial_position,
+                    num_steps=num_steps,
+                    rng_key=tune_key,
+                    logdensity_fn=model.logdensity_fn,
+                    integrator_type=integrator_type,
+                    diagonal_preconditioning=False,
+                    num_windows=2,
+                )
+    
+    elif sampler_type=='adjusted_hmc':
+
+        integrator = map_integrator_type_to_integrator["hmc"][integrator_type]
+
+        random_trajectory_length = True 
+        if random_trajectory_length:
+            integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
+            jax.random.uniform(k) * rescale(avg_num_integration_steps)).astype(jnp.int32)
+        else:
+            integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps).astype(jnp.int32)
+
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.dynamic_hmc.build_kernel(
+        integrator=map_integrator_type_to_integrator["hmc"][integrator_type],
+        integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
+        )(
+            rng_key=rng_key,
+            state=state,
+            logdensity_fn=model.logdensity_fn,
+            step_size=step_size,
+            inverse_mass_matrix=jnp.diag(jnp.ones(model.ndims)),
+        )
+
+      
+
+        (
+            blackjax_state_after_tuning,
+            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, rng_key=tune_key, logdensity_fn=model.logdensity_fn,diagonal_preconditioning=False, target_acc_rate=0.9, kernel=kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1,  params=None, max='avg', num_windows=2,tuning_factor=1.3)
+        
+    else:
+        raise Exception("sampler not recognized")
+
+
 
     def kernel(state, key):
         z, delta_z = state
@@ -147,6 +253,10 @@ def grid_search(func, x, y, delta_x, delta_y, key, grid_size=5, num_iter=3,):
             np.any(np.isin(np.array(ind), [0, grid_size - 1])),
         )
     
+    delta_x=blackjax_sampler_params.L*2 - 0.1,
+    delta_y=blackjax_sampler_params.step_size*2 - 0.1,
+    x=blackjax_sampler_params.L*2,
+    y=blackjax_sampler_params.step_size*2,
 
     state = (np.array([x, y]), np.array([delta_x, delta_y]))
 
@@ -160,7 +270,7 @@ def grid_search(func, x, y, delta_x, delta_y, key, grid_size=5, num_iter=3,):
         if edge and iteration == 0:
             initial_edge = True
 
-    return [state[0][0], state[0][1], *results], initial_edge
+    return [state[0][0], state[0][1], *results], initial_edge, blackjax_state_after_tuning
 
 
 def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, key, grid_size, opt='max', grid_iterations=2,):
@@ -168,12 +278,43 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
     da_key, bench_key, init_pos_key, fast_tune_key = jax.random.split(key, 4)
     initial_position = model.sample_init(init_pos_key)
 
-    if sampler=='adjusted_mclmc':
+    if sampler=='adjusted_mchmc':
 
         integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
 
         L_proposal_factor = jnp.inf
         random_trajectory_length = True 
+        if random_trajectory_length:
+            integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
+            jax.random.uniform(k) * rescale(avg_num_integration_steps))
+        else:
+            integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
+
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+        integrator=integrator,
+        integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
+        sqrt_diag_cov=sqrt_diag_cov,
+        )(
+            rng_key=rng_key,
+            state=state,
+            step_size=step_size,
+            logdensity_fn=model.logdensity_fn,
+            L_proposal_factor=L_proposal_factor,
+        )
+
+
+        target_acc_rate = 0.9
+
+        (
+            blackjax_state_after_tuning,
+            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, fast_tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3)
+    
+    elif sampler=='adjusted_mclmc':
+
+        integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
+
+        L_proposal_factor = 1.25
+        random_trajectory_length = False 
         if random_trajectory_length:
             integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
             jax.random.uniform(k) * rescale(avg_num_integration_steps))
@@ -241,7 +382,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
             blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, rng_key=fast_tune_key, logdensity_fn=model.logdensity_fn,diagonal_preconditioning=False, target_acc_rate=0.9, kernel=kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1,  params=None, max='avg', num_windows=2,tuning_factor=1.3)
         
     else:
-        raise Exception("sampler not recognized")
+        raise Exception(f"sampler {sampler} not recognized")
         
 
     z=blackjax_sampler_params.L
@@ -281,7 +422,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
                 sqrt_diag_cov=1.0,
             )
 
-            if sampler in ['adjusted_mclmc', 'adjusted_hmc']:
+            if sampler in ['adjusted_mclmc', 'adjusted_mchmc', 'adjusted_hmc']:
 
                 (
                     blackjax_state_after_tuning,
@@ -328,7 +469,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
             # jax.debug.print("DA {x}", x=(final_da))
             jax.debug.print("benchmarking with L and step size {x}", x=(Lgrid[i], params.step_size))
 
-            if sampler=='adjusted_mclmc':
+            if sampler=='adjusted_mchmc':
 
                 ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
                     model,
@@ -339,6 +480,27 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
                         L=Lgrid[i],
                         step_size=params.step_size,
                         L_proposal_factor=jnp.inf,
+                        random_trajectory_length=True,
+                        return_ess_corr=False,
+                        num_tuning_steps=0,
+                    ),
+                    bench_key_per_iter,
+                    n=num_steps,
+                    batch=num_chains,
+                )
+            
+            elif sampler=='adjusted_mclmc':
+
+                ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
+                    model,
+                    adjusted_mclmc_no_tuning(
+                        integrator_type=integrator_type,
+                        initial_state=blackjax_state_after_tuning,
+                        sqrt_diag_cov=1.0,
+                        L=Lgrid[i],
+                        step_size=params.step_size,
+                        L_proposal_factor=1.25,
+                        random_trajectory_length=False,
                         return_ess_corr=False,
                         num_tuning_steps=0,
                     ),

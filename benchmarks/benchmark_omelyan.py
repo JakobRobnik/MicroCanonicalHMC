@@ -15,13 +15,13 @@ import jax
 # num_cores = jax.local_device_count()
 
 first_list = np.array([2,3,4,5,6,7,8,9])
-second_list = np.ceil(np.logspace(2, 5, num=10)).astype(int)[6:]
+second_list = np.ceil(np.logspace(2, 5, num=10)).astype(int)[:]
 full_list = np.concatenate((first_list, second_list))
 
-models = {model(d): {'mclmc': 20000, 'adjusted_mclmc': 20000, 'nuts': 20000}
+models = {model(d): {'mclmc': 20000, 'adjusted_mclmc': 20000, 'adjusted_mchmc': 20000, 'nuts': 20000, 'adjusted_hmc': 20000}
     for d in second_list for model in [
         # lambda dim: Gaussian(dim, condition_number=1., eigenvalues='linear'), 
-        lambda dim : Gaussian(dim, condition_number=1000, eigenvalues='log'), 
+        lambda dim : Gaussian(dim, condition_number=100, eigenvalues='log'), 
                                     #    lambda d: Rosenbrock(d)
                                        ]
     }
