@@ -28,7 +28,7 @@ targets = [[Banana(), 100, 300],
             [Brownian(), 500, 500],
             [ItemResponseTheory(), 500, 3000],#500], # change to 3000 for M dependence plot
             [StochasticVolatility(), 800, 3000]#1500]# change to 3000 for M dependence plot
-            ]
+            ][:1]
 
 annotations = False
     
@@ -240,11 +240,13 @@ def _main(dir,
         info1, info2, grads_per_step, _acc_prob = emaus(target, num_steps1, num_steps2, chains, mesh, key, 
                              alpha= alpha, bias_type= bias_type, C= C, power= power, early_stop= early_stop, r_end= r_end,
                              diagonal_preconditioning= diagonal_preconditioning, integrator_coefficients= integrator_coefficients, steps_per_sample= steps_per_sample, acc_prob= acc_prob,
+                             ensemble_observables= lambda x: x
                              #ensemble_observables = lambda x: vec @ x
                              ) # run the algorithm
         
-        # X = np.concatenate((info1[1], info2[1]))
-        # np.save('ensemble/movie/samples_2_' + target.name + '.npy', X)
+        X = np.concatenate((info1[1], info2[1]))
+        np.save('ensemble/movie/samples_' + target.name + '.npy', X)
+        
         
         result = plot_trace(info1, info2, target, grads_per_step, _acc_prob, dir) # do plots and compute the results
         #plot_trace_sv(info1, info2, grads_per_step)
@@ -264,7 +266,7 @@ grid = lambda params, fixed_params= None, verbose= True, extra_word= '': do_grid
 
 if __name__ == '__main__':
     
-    # results = _main('ensemble/img/')
+    results = _main('ensemble/img/')
     # print(results)
     # print('C_power')
     # grid({'C': mylogspace(0.001, 3, 6),
