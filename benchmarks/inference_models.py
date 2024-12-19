@@ -360,6 +360,10 @@ class Rosenbrock():
 
     def __init__(self, d = 36, Q = 0.1):
 
+
+        if d % 2 != 0:
+            d += 1
+
         self.name = 'Rosenbrock'
         self.ndims = d
         self.Q = Q

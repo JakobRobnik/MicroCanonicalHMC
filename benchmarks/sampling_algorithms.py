@@ -134,19 +134,24 @@ map_integrator_type_to_integrator = {
 
 
 # produce a kernel that only stores the average values of the bias for E[x_2] and Var[x_2]
-def with_only_statistics(model, alg, initial_state, key, num_steps):
+def with_only_statistics(model, alg, initial_state, key, num_steps, incremental_value_transform=None):
+
+    if incremental_value_transform is None:
+        incremental_value_transform=lambda x: jnp.array(
+                [
+                    jnp.average(jnp.square(x[0] - model.E_x2) / model.Var_x2),
+                    # jnp.sqrt(jnp.average(jnp.square(x - model.E_x2) / model.Var_x2)),
+                    # jnp.sqrt(jnp.average(jnp.square(x - model.E_x2) / (model.Var_x2))),
+                    jnp.max(jnp.square(x[0] - model.E_x2) / model.Var_x2),
+                    
+                    
+                ]
+            )
 
     memory_efficient_sampling_alg, transform = store_only_expectation_values(
         sampling_algorithm=alg,
-        state_transform=lambda state: jnp.array([model.transform(state.position) ** 2]),
-        incremental_value_transform=lambda x: jnp.array(
-            [
-                jnp.average(jnp.square(x - model.E_x2) / model.Var_x2),
-                # jnp.sqrt(jnp.average(jnp.square(x - model.E_x2) / model.Var_x2)),
-                # jnp.sqrt(jnp.average(jnp.square(x - model.E_x2) / (model.Var_x2))),
-                jnp.max(jnp.square(x - model.E_x2) / model.Var_x2),
-            ]
-        ),
+        state_transform=lambda state: jnp.array([model.transform(state.position) ** 2, model.transform(state.position)]),
+        incremental_value_transform=incremental_value_transform,
     )
 
     return run_inference_algorithm(
@@ -324,9 +329,12 @@ def adjusted_hmc_no_tuning(
 
     return s
 
-def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, frac_tune3=0.1, num_windows=1):
+def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn, integrator_type, diagonal_preconditioning, frac_tune3=0.1, num_windows=1, num_tuning_steps=500):
 
     tune_key, init_key = jax.random.split(rng_key, 2)
+
+    frac_tune1 = num_tuning_steps / (2*num_steps)
+    frac_tune2 = num_tuning_steps / (2*num_steps)
 
     initial_state = blackjax.mcmc.mclmc.init(
             position=initial_position,
@@ -347,11 +355,13 @@ def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,
         rng_key=tune_key,
         diagonal_preconditioning=diagonal_preconditioning,
         frac_tune3=frac_tune3,
+        frac_tune2=frac_tune2,
+        frac_tune1=frac_tune1,
         num_windows=num_windows,
         
     )
 
-def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,  diagonal_preconditioning, target_acc_rate, kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1, params=None, max='avg', num_windows=1,  tuning_factor=1.0):
+def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,  diagonal_preconditioning, target_acc_rate, kernel, frac_tune3=0.1, params=None, max='avg', num_windows=1,  tuning_factor=1.0, num_tuning_steps=500):
 
 
     init_key, tune_key = jax.random.split(rng_key, 2)
@@ -362,6 +372,8 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,  
         random_generator_arg=init_key,
     )
 
+    frac_tune1 = num_tuning_steps / (2*num_steps)
+    frac_tune2 = num_tuning_steps / (2*num_steps)
     
 
     
@@ -398,14 +410,15 @@ def unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, return_es
 
         tune_key, run_key = jax.random.split(key, 2)
 
+        num_tuning_steps = 1000
         
 
         (
             blackjax_state_after_tuning,
             blackjax_mclmc_sampler_params,
-        ) = unadjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, frac_tune3, num_windows=num_windows)
+        ) = unadjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, integrator_type, preconditioning, frac_tune3, num_windows=num_windows, num_tuning_steps=num_tuning_steps)
 
-        num_tuning_steps = (0.1 + 0.1) * num_windows * num_steps + frac_tune3 * num_steps
+        # num_tuning_steps = (0.1 + 0.1) * num_windows * num_steps + frac_tune3 * num_steps
 
         return unadjusted_mclmc_no_tuning(
             blackjax_state_after_tuning,
@@ -471,11 +484,12 @@ def adjusted_mclmc(
             new_target_acc_rate = target_acc_rate
 
 
+        num_tuning_steps = 1000
         (
             blackjax_state_after_tuning,
-            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, preconditioning, new_target_acc_rate, kernel, frac_tune1, frac_tune2, frac_tune3, params=params, max=max, num_windows=num_windows, tuning_factor=tuning_factor)
+            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, preconditioning, new_target_acc_rate, kernel, frac_tune3, params=params, max=max, num_windows=num_windows, tuning_factor=tuning_factor,num_tuning_steps=num_tuning_steps)
 
-        num_tuning_steps = (frac_tune1 + frac_tune2 ) * num_windows * num_steps + frac_tune3 * num_steps
+        # num_tuning_steps = (frac_tune1 + frac_tune2 ) * num_windows * num_steps + frac_tune3 * num_steps
         # jax.debug.print("num_tuning_steps {x}", x=num_tuning_steps)
 
         return adjusted_mclmc_no_tuning(
@@ -535,13 +549,14 @@ def adjusted_hmc(
             inverse_mass_matrix=sqrt_diag_cov,
         )
 
+        num_tuning_steps = 1000
       
 
         (
             blackjax_state_after_tuning,
-            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, preconditioning, new_target_acc_rate, kernel, frac_tune1, frac_tune2, frac_tune3, params=params, max=max, num_windows=num_windows, tuning_factor=tuning_factor)
+            blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, preconditioning, new_target_acc_rate, kernel, frac_tune3, params=params, max=max, num_windows=num_windows, tuning_factor=tuning_factor,num_tuning_steps=num_tuning_steps)
         
-        num_tuning_steps = (frac_tune1 + frac_tune2 ) * num_windows * num_steps + frac_tune3 * num_steps
+        # num_tuning_steps = (frac_tune1 + frac_tune2 ) * num_windows * num_steps + frac_tune3 * num_steps
 
         return adjusted_hmc_no_tuning(
             blackjax_state_after_tuning,
@@ -558,11 +573,12 @@ def adjusted_hmc(
 
     return s
 
-def nuts(integrator_type, preconditioning, return_ess_corr=False):
+def nuts(integrator_type, preconditioning, return_ess_corr=False, return_samples=False,incremental_value_transform=None):
 
 
     def s(model, num_steps, initial_position, key):
-        num_tuning_steps = num_steps // 5
+        # num_tuning_steps = num_steps // 5
+        num_tuning_steps = 1000
 
         integrator = map_integrator_type_to_integrator["hmc"][integrator_type]
 
@@ -596,8 +612,9 @@ def nuts(integrator_type, preconditioning, return_ess_corr=False):
 
         fast_key, slow_key = jax.random.split(rng_key, 2)
 
-        results = with_only_statistics(model, alg, state, fast_key, num_steps)
+        results = with_only_statistics(model, alg, state, fast_key, num_steps, incremental_value_transform=incremental_value_transform)
         expectations, info = results[0], results[1]
+
 
         ess_corr = jax.lax.cond(not return_ess_corr, lambda: jnp.inf, lambda: jnp.mean(effective_sample_size(jax.vmap(lambda x: ravel_pytree(x)[0])(run_inference_algorithm(
             rng_key=slow_key,
@@ -606,6 +623,19 @@ def nuts(integrator_type, preconditioning, return_ess_corr=False):
             num_steps=num_steps,
             transform=lambda state, _: (model.transform(state.position)),
             progress_bar=False)[1])[None, ...]))/num_steps)
+
+        
+
+
+        if return_samples:
+            expectations=run_inference_algorithm(
+            rng_key=slow_key,
+            initial_state=state,
+            inference_algorithm=alg,
+            num_steps=num_steps,
+            transform=lambda state, _: (model.transform(state.position)),
+            progress_bar=False)[1]
+      
         
         
 

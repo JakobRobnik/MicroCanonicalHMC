@@ -13,13 +13,13 @@ class Phi4:
 
         self.name = 'Phi4'
         
-        self.d = L**2
+        self.ndims = L**2
         self.L = L
         self.lam = lam
         
         self.transform = self.psd
 
-        self.sample_init = lambda key: jax.random.normal(key, shape = (self.d, ))
+        self.sample_init = lambda key: jax.random.normal(key, shape = (self.ndims, ))
         
     
     def logdensity_fn(self, x):
@@ -48,13 +48,13 @@ class U1:
         """
         
         self.name = 'U1'
-        self.d = 2 * Lt*Lx
+        self.ndims = 2 * Lt*Lx
         self.Lt, self.Lx, self.beta = Lt, Lx, beta
         self.beta = beta
         self.unflatten = lambda links_flattened: links_flattened.reshape(2, Lt, Lx)
         self.locs = jnp.array([[i//Lx, i%Lx] for i in range(Lt*Lx)]) #the set of all possible lattice sites
 
-        self.sample_init = lambda key: 2 * jnp.pi * jax.random.uniform(key, shape = (self.d, ))
+        self.sample_init = lambda key: 2 * jnp.pi * jax.random.uniform(key, shape = (self.ndims, ))
 
         self.transform = self.polyakov_autocorr
 

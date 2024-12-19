@@ -658,7 +658,7 @@ def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
     )
 
     err_t_mean_max = jnp.median(expectation[:, :, 1], axis=0)
-    esses_max, _, _ = calculate_ess(
+    esses_max, grads_to_low_max, _ = calculate_ess(
         err_t_mean_max, 
         grad_evals_per_step=avg_grad_calls_per_traj,
         num_tuning_steps=num_tuning_steps
@@ -685,4 +685,4 @@ def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
     # jax.debug.print("{x}",x=jnp.mean(1/ess_corr))
 
     # return esses_max, esses_avg.item(), jnp.mean(1/ess_corr).item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
-    return esses_max.item(), esses_avg.item(), ess_corr, params, jnp.mean(acceptance_rate, axis=0), grads_to_low_avg, err_t_mean_avg, err_t_mean_max
+    return esses_max.item(), esses_avg.item(), ess_corr, params, jnp.mean(acceptance_rate, axis=0), grads_to_low_max, err_t_mean_avg, err_t_mean_max
