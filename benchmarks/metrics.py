@@ -142,7 +142,7 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
 
         (
             blackjax_state_after_tuning,
-            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3)
+            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3, num_tuning_steps=5000)
 
         def func(L, step_size, key):
 
@@ -156,7 +156,7 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
                                 step_size=step_size,
                                 L_proposal_factor=L_proposal_factor,
                                 return_ess_corr=False,
-                                num_tuning_steps=None, # doesn't matter what is passed here
+                                num_tuning_steps=1000, # doesn't matter what is passed here
                             ),
                             key=key,
                             n=num_steps,
@@ -177,7 +177,30 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
                     integrator_type=integrator_type,
                     diagonal_preconditioning=False,
                     num_windows=2,
+                    num_tuning_steps=5000
                 )
+        
+        def func(L, step_size, key):
+
+            ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
+                model=model,
+                sampler=unadjusted_mclmc_no_tuning(
+                    integrator_type=integrator_type,
+                    initial_state=blackjax_state_after_tuning,
+                    sqrt_diag_cov=blackjax_sampler_params.sqrt_diag_cov,
+                    L=L,
+                    step_size=step_size,
+                    # L_proposal_factor=L_proposal_factor,
+                    return_ess_corr=False,
+                    num_tuning_steps=1000, # doesn't matter what is passed here
+                ),
+                key=key,
+                n=num_steps,
+                batch=num_chains,
+                pvmap=pvmap,
+            )
+
+            return ess, (params.L.mean(), params.step_size.mean())
     
     elif sampler_type=='adjusted_hmc':
 
@@ -219,8 +242,11 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
 
         # compute the func on the grid
         Z = np.linspace(z - delta_z, z + delta_z, grid_size)
-        jax.debug.print("grid {x}", x=Z)
-        Results = [[func(xx, yy, keys[i,j]) for (i, yy) in enumerate(Z[:, 1])] for (j,xx) in enumerate(Z[:, 0])]
+        # jax.debug.print("grid {x}", x=Z)
+        # func(2,1,jax.random.PRNGKey(1))
+        # jax.debug.print("passed test")
+        # print([[(xx, yy, keys[i,j]) for (i, yy) in enumerate(Z[:, 1])] for (j,xx) in enumerate(Z[:, 0])])
+        Results = [[func(xx[0], yy[0], keys[i,j]) for (i, yy) in enumerate(Z[:, 1])] for (j,xx) in enumerate(Z[:, 0])]
         Scores = [
             [Results[i][j][0] for j in range(grid_size)] for i in range(grid_size)
         ]

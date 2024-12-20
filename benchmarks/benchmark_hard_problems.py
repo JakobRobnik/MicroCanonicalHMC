@@ -17,7 +17,7 @@ num_cores = jax.local_device_count()
 
 models = {
 
-        ItemResponseTheory(): {'mclmc': 40000, 'adjusted_mclmc': 10000, 'adjusted_mchmc': 10000, 'adjusted_hmc': 40000, 'nuts': 40000},
+        # ItemResponseTheory(): {'mclmc': 40000, 'adjusted_mclmc': 10000, 'adjusted_mchmc': 10000, 'adjusted_hmc': 40000, 'nuts': 40000},
         StochasticVolatility(): {'mclmc': 40000, 'adjusted_mclmc': 40000, 'adjusted_mchmc': 40000, 'adjusted_hmc': 40000, 'nuts': 40000},
         Funnel(): {'mclmc': 200000, 'adjusted_mclmc': 200000, 'adjusted_mchmc': 200000, 'adjusted_hmc': 200000, 'nuts': 200000},
         Gaussian(100): {"mclmc": 10000, 'adjusted_mclmc': 10000, 'adjusted_mchmc': 10000, 'adjusted_hmc': 10000, "nuts": 10000},

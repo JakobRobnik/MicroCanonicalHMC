@@ -79,8 +79,8 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
 
     do_grid_search_for_adjusted = True and do_grid_search
     do_grid_search_for_unadjusted = do_grid_search_for_unadjusted and do_grid_search
-    do_unadjusted_mclmc = False
-    do_adjusted_hmc = False
+    do_unadjusted_mclmc = True
+    do_adjusted_hmc = True
     do_nuts = True
 
     num_chains = batch_size  # 1 + batch_size//model.ndims
@@ -251,7 +251,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
 
                 if do_unadjusted_mclmc:
                     
-                    for j,num_windows in enumerate([1,2]):
+                    for j,num_windows in enumerate([2]):
                         unadjusted_with_tuning_key = jax.random.fold_in(unadjusted_with_tuning_key, j)
                         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
                             model,
@@ -274,7 +274,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
 
                     ####### run adjusted_mclmc with standard tuning
                 for j, (target_acc_rate, (L_proposal_factor, random_trajectory_length), (max, tuning_factor), num_windows) in enumerate(itertools.product(
-                        [0.9], [(jnp.inf, True), (1.25, False)], [('max', 0.5), ('avg', 1.3)], [3]
+                        [0.9], [(jnp.inf, True), (1.25, False)], [('max', 1.0), ('avg', 1.3)], [2]
                     )):  # , 3., 1.25, 0.5] ):
                     ####### run adjusted_mclmc with standard tuning
                 
@@ -322,7 +322,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                         
                 if do_adjusted_hmc:
                     for j, (target_acc_rate, max, num_windows, tuning_factor) in enumerate(itertools.product(
-                            [0.9], ['max', 'avg'], [3], [1.3]
+                            [0.9], ['max', 'avg'], [2], [1.3]
                         )):  # , 3., 1.25, 0.5] ):
                             
                             print(f"running adjusted hmc with max {max}, num_windows {num_windows}")

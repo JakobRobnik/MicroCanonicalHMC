@@ -410,7 +410,7 @@ def unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, return_es
 
         tune_key, run_key = jax.random.split(key, 2)
 
-        num_tuning_steps = 1000
+        num_tuning_steps = 5000
         
 
         (
@@ -484,7 +484,7 @@ def adjusted_mclmc(
             new_target_acc_rate = target_acc_rate
 
 
-        num_tuning_steps = 1000
+        num_tuning_steps = 5000
         (
             blackjax_state_after_tuning,
             blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, preconditioning, new_target_acc_rate, kernel, frac_tune3, params=params, max=max, num_windows=num_windows, tuning_factor=tuning_factor,num_tuning_steps=num_tuning_steps)
@@ -549,7 +549,7 @@ def adjusted_hmc(
             inverse_mass_matrix=sqrt_diag_cov,
         )
 
-        num_tuning_steps = 1000
+        num_tuning_steps = 5000
       
 
         (
@@ -578,7 +578,7 @@ def nuts(integrator_type, preconditioning, return_ess_corr=False, return_samples
 
     def s(model, num_steps, initial_position, key):
         # num_tuning_steps = num_steps // 5
-        num_tuning_steps = 1000
+        num_tuning_steps = 5000
 
         integrator = map_integrator_type_to_integrator["hmc"][integrator_type]
 
