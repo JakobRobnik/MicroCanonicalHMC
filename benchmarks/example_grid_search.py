@@ -11,7 +11,7 @@ os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(128)
 num_cores = jax.local_device_count()
 
 
-from metrics import benchmark, grid_search
+from metrics import benchmark, grid_search, grid_search_langevin_mams
 from benchmarks.sampling_algorithms import (
 
     adjusted_mclmc_tuning,
@@ -56,14 +56,13 @@ model = Brownian()
 # print(ess)
 # raise Exception
 
-results, edge, _ = grid_search(
+results, edge, _ = grid_search_langevin_mams(
     model=model,
     key=jax.random.PRNGKey(1),
-    grid_size=6,
+    grid_size=2,
     num_iter=2,
-    sampler_type="adjusted_mclmc",
     integrator_type='mclachlan',
-    num_steps=10000,
+    num_steps=1000,
     num_chains=128,
     pvmap=jax.pmap
 )

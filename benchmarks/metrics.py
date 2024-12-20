@@ -298,6 +298,165 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
 
     return [state[0][0], state[0][1], *results], initial_edge, blackjax_state_after_tuning
 
+def grid_search_langevin_mams(model, key, grid_size, num_iter, integrator_type, num_steps, num_chains, pvmap):
+    """Args:
+      func(x, y) = (score, extra_results),
+      where score is the scalar that we would like to maximize (e.g. ESS averaged over the chains)
+      and extra_results are some additional info that we would like to store, e.g. acceptance rate
+
+      The initial grid will be set on the region [x - delta_x, x + delta x] \times [y - delta_y, y + delta y].
+      In each iteration the grid will be shifted to the best location found by the previous grid and it will be shrinked,
+      such that the nearest neigbours of the previous grid become the edges of the new grid.
+
+      If at any point, the best point is found at the edge of the grid a warning is printed.
+
+    Returns:
+      (x, y, score, extra results) at the best parameters
+    """
+
+    da_key, bench_key, init_pos_key, tune_key = jax.random.split(key, 4)
+    initial_position = model.sample_init(init_pos_key)
+
+    ### create a kernel
+
+
+
+    integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
+
+    random_trajectory_length = True 
+    if random_trajectory_length:
+        integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
+        jax.random.uniform(k) * rescale(avg_num_integration_steps))
+    else:
+        integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
+
+    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+    integrator=integrator,
+    integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
+    sqrt_diag_cov=sqrt_diag_cov,
+    )(
+        rng_key=rng_key,
+        state=state,
+        step_size=step_size,
+        logdensity_fn=model.logdensity_fn,
+        L_proposal_factor=jnp.inf,
+    )
+
+
+    target_acc_rate = 0.9
+
+    (
+        blackjax_state_after_tuning,
+        blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3, num_tuning_steps=5000)
+
+    def func(L, L_proposal_factor, key, st, prms):
+
+        da_key_per_iter, key = jax.random.split(key)
+                    
+
+        (
+            blackjax_state_after_tuning,
+            params,
+            _
+        ) = adjusted_mclmc_make_L_step_size_adaptation(
+            kernel=kernel,
+            dim=model.ndims,
+            frac_tune1=0.1,
+            frac_tune2=0.0,
+            target=0.9,
+            diagonal_preconditioning=False,
+            fix_L_first_da=True,
+        )(
+            st, prms, num_steps, da_key_per_iter
+        )
+
+        ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
+            model=model,
+            sampler=adjusted_mclmc_no_tuning(
+                integrator_type=integrator_type,
+                initial_state=blackjax_state_after_tuning,
+                sqrt_diag_cov=blackjax_sampler_params.sqrt_diag_cov,
+                L=L,
+                step_size=params.step_size,
+                L_proposal_factor=L_proposal_factor,
+                return_ess_corr=False,
+                num_tuning_steps=1000, # doesn't matter what is passed here
+            ),
+            key=key,
+            n=num_steps,
+            batch=num_chains,
+            pvmap=pvmap,
+        )
+
+        return ess, (params.L.mean(), params.step_size.mean())
+
+
+
+
+    def kernel_grid_search(state, key):
+        z, delta_z = state
+
+        keys = jax.random.split(key, (grid_size, grid_size))
+
+        # compute the func on the grid
+        Z = np.linspace(z - delta_z, z + delta_z, grid_size)
+        # jax.debug.print("grid {x}", x=Z)
+        # func(2,1,jax.random.PRNGKey(1))
+        # jax.debug.print("passed test")
+        # print([[(xx, yy, keys[i,j]) for (i, yy) in enumerate(Z[:, 1])] for (j,xx) in enumerate(Z[:, 0])])
+        Results = [[func(xx[0], yy[0], keys[i,j], st=blackjax_state_after_tuning, prms=blackjax_sampler_params) for (i, yy) in enumerate(Z[:, 1])] for (j,xx) in enumerate(Z[:, 0])]
+        Scores = [
+            [Results[i][j][0] for j in range(grid_size)] for i in range(grid_size)
+        ]
+        grid = [[(xx, yy) for yy in Z[:, 1]] for xx in Z[:, 0]]
+        # jax.debug.print("grid {x}", x=grid)
+        # jax.lax.fori_loop(0, len(Results), lambda)
+        # jax.debug.print("{x}",x="Outcomes from grid")
+        # for i,f in enumerate(Scores):
+        #     for j, g in enumerate(f):
+
+                # jax.debug.print("{x}", x=(Scores[i][j].item(), grid[i][j][0].item(), grid[i][j][1].item()))
+
+        # find the best point on the grid
+        ind = np.unravel_index(np.argmax(Scores, axis=None), (grid_size, grid_size))
+
+        if np.any(np.isin(np.array(ind), [0, grid_size - 1])):
+            print("Best parameters found at the edge of the grid.")
+
+        # new grid
+        state = (
+            np.array([Z[ind[i], i] for i in range(2)]),
+            2 * delta_z / (grid_size - 1),
+        )
+    
+        # sns.heatmap(np.array(Scores).T, annot=True, xticklabels=Z[:, 0], yticklabels=Z[:, 1])
+        # plt.savefig(f"grid_search{iteration}.png")
+
+        return (
+            state,
+            Results[ind[0]][ind[1]],
+            np.any(np.isin(np.array(ind), [0, grid_size - 1])),
+        )
+    
+    delta_x=blackjax_sampler_params.L*2 - 0.1,
+    delta_y=2.75,
+    x=blackjax_sampler_params.L*2,
+    y=3.,
+
+    state = (np.array([x, y]), np.array([delta_x, delta_y]))
+
+    initial_edge = False
+    for iteration in range(num_iter):  # iteratively shrink and shift the grid
+        key = jax.random.fold_in(key, iteration)
+        state, results, edge = kernel_grid_search(state, key)
+        jax.debug.print("optimal result on iteration {x}", x=(iteration, results[0]))
+        # jax.debug.print("Optimal params on iteration: {x}", x=(results[1]))
+        # jax.debug.print("Optimal score on iteration: {x}", x=(results[0]))
+        if edge and iteration == 0:
+            initial_edge = True
+
+    return [state[0][0], state[0][1], *results], initial_edge, blackjax_state_after_tuning
+
 
 def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, key, grid_size, opt='max', grid_iterations=2,):
 
