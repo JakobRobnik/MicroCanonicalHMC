@@ -492,7 +492,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
 
         (
             blackjax_state_after_tuning,
-            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, fast_tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3)
+            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, fast_tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3, num_tuning_steps=5000)
     
     elif sampler=='adjusted_mclmc':
 
@@ -523,7 +523,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
 
         (
             blackjax_state_after_tuning,
-            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, fast_tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3)
+            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, fast_tune_key, model.logdensity_fn, False, target_acc_rate, kernel, frac_tune3=0.0, params=None, max='avg', num_windows=2, tuning_factor=1.3, num_tuning_steps=5000)
 
 
     elif sampler=='mclmc':
@@ -536,6 +536,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
                     integrator_type=integrator_type,
                     diagonal_preconditioning=False,
                     num_windows=2,
+                    num_tuning_steps=5000
                 )
     
     elif sampler=='adjusted_hmc':
@@ -564,7 +565,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
 
         (
             blackjax_state_after_tuning,
-            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, rng_key=fast_tune_key, logdensity_fn=model.logdensity_fn,diagonal_preconditioning=False, target_acc_rate=0.9, kernel=kernel, frac_tune1=0.1, frac_tune2=0.1, frac_tune3=0.1,  params=None, max='avg', num_windows=2,tuning_factor=1.3)
+            blackjax_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, rng_key=fast_tune_key, logdensity_fn=model.logdensity_fn,diagonal_preconditioning=False, target_acc_rate=0.9, kernel=kernel, frac_tune3=0.1,  params=None, max='avg', num_windows=2,tuning_factor=1.3, num_tuning_steps=5000)
         
     else:
         raise Exception(f"sampler {sampler} not recognized")

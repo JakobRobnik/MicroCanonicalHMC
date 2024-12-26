@@ -29,14 +29,17 @@ from benchmarks.inference_models import (
     Rosenbrock,
 )
 
-# model = Gaussian(ndims=10,condition_number=1)
+# model = Gaussian(ndims=100,condition_number=100)
 # model = GermanCredit()
-model = Brownian()
-# model = Rosenbrock()
+# model = Brownian()
+model = Rosenbrock()
 n = 10000
-num_chains = 30
+num_chains = 64
 
-init_state_key, init_pos_key = jax.random.split(jax.random.PRNGKey(1))
+# print(jnp.sqrt(jnp.mean(model.E_x2)*model.ndims))
+# raise Exception
+
+init_state_key, init_pos_key = jax.random.split(jax.random.PRNGKey(0))
 
 
 # initial_position = model.sample_init(init_pos_key)
@@ -54,26 +57,27 @@ init_state_key, init_pos_key = jax.random.split(jax.random.PRNGKey(1))
 #     batch=num_chains,  
 # )
 
-ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
-    model=model,
-    sampler=unadjusted_mclmc(integrator_type="mclachlan", preconditioning=False, num_windows=2,),
-    key=jax.random.PRNGKey(1), 
-    n=n,
-    batch=num_chains,  
-)
+# ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
+#     model=model,
+#     sampler=unadjusted_mclmc(integrator_type="mclachlan", preconditioning=False, num_windows=2,),
+#     key=jax.random.PRNGKey(1), 
+#     n=n,
+#     batch=num_chains,  
+# )
 
 # raise Exception
 
 
-print(f"\nGradient calls for unadjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_avg} (avg over {num_chains} chains and dimensions)")
-print(f'ess {ess_avg}')
-print(f'ess {ess_avg}, ess max {ess}, L = {params.L.mean()}, step size = {params.step_size.mean()}')  
+# print(f"\nGradient calls for unadjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_avg} (avg over {num_chains} chains and dimensions)")
+# print(f'ess {ess_avg}')
+# print(f'ess {ess_avg}, ess max {ess}, L = {params.L.mean()}, step size = {params.step_size.mean()}')  
 
-for integrator_type, (max, tuning_factor), (L_proposal_factor, random_trajectory_length), frac_tune3, in itertools.product(['mclachlan',], [
-    # ('avg', 1.3), 
-    # ('max',1.0), 
-    ('max_svd', 0.75)
-    ], [(jnp.inf, True)], [0.0,0.1]):
+for integrator_type, (max, tuning_factor, frac_tune3), (L_proposal_factor, random_trajectory_length), in itertools.product(['mclachlan',], [
+    ('max',1.0, 0.0), 
+    ('avg', 1.3, 0.0), 
+    ('max_svd', 0.5, 0.0),
+    ('max_svd', 0.5, 0.1),
+    ], [(jnp.inf, True)]):
 
 
     # print(f"\nGradient calls for adjusted MCLMC with {integrator_type} and max to reach standardized RMSE of X^2 of 0.1: {grads_to_low_avg} (avg over {num_chains} chains and dimensions)")
@@ -82,7 +86,7 @@ for integrator_type, (max, tuning_factor), (L_proposal_factor, random_trajectory
     ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
         model=model,
         sampler=adjusted_mclmc(integrator_type=integrator_type, preconditioning=False, num_windows=2,max=max, frac_tune3=frac_tune3, tuning_factor=tuning_factor,target_acc_rate=0.9, L_proposal_factor=L_proposal_factor, random_trajectory_length=random_trajectory_length),
-        key=jax.random.PRNGKey(1), 
+        key=jax.random.PRNGKey(3), 
         n=n,
         batch=num_chains,  
     )
@@ -115,7 +119,7 @@ for integrator_type, (max, tuning_factor), (L_proposal_factor, random_trajectory
 ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
     model=model,
     sampler=nuts(integrator_type="velocity_verlet", preconditioning=False),
-    key=jax.random.PRNGKey(1), 
+    key=jax.random.PRNGKey(0), 
     n=n,
     batch=num_chains,
 )
