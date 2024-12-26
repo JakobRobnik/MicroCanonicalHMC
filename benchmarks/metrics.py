@@ -458,7 +458,7 @@ def grid_search_langevin_mams(model, key, grid_size, num_iter, integrator_type, 
     return [state[0][0], state[0][1], *results], initial_edge, blackjax_state_after_tuning
 
 
-def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, key, grid_size, opt='max', grid_iterations=2,):
+def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, key, grid_size, opt='max', grid_iterations=2,L_proposal_factor=1.25):
 
     da_key, bench_key, init_pos_key, fast_tune_key = jax.random.split(key, 4)
     initial_position = model.sample_init(init_pos_key)
@@ -467,7 +467,6 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
 
         integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
 
-        L_proposal_factor = jnp.inf
         random_trajectory_length = True 
         if random_trajectory_length:
             integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
@@ -484,7 +483,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
             state=state,
             step_size=step_size,
             logdensity_fn=model.logdensity_fn,
-            L_proposal_factor=L_proposal_factor,
+            L_proposal_factor=jnp.inf,
         )
 
 
@@ -498,7 +497,6 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
 
         integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
 
-        L_proposal_factor = 1.25
         random_trajectory_length = False 
         if random_trajectory_length:
             integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
@@ -685,7 +683,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
                         sqrt_diag_cov=1.0,
                         L=Lgrid[i],
                         step_size=params.step_size,
-                        L_proposal_factor=1.25,
+                        L_proposal_factor=L_proposal_factor,
                         random_trajectory_length=False,
                         return_ess_corr=False,
                         num_tuning_steps=0,
