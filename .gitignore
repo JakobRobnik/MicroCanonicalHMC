@@ -1,3 +1,5 @@
+wandb/*
+slurm*
 dist
 .benchmarks
 .pytest*

@@ -134,7 +134,7 @@ map_integrator_type_to_integrator = {
 
 
 # produce a kernel that only stores the average values of the bias for E[x_2] and Var[x_2]
-def with_only_statistics(model, alg, initial_state, key, num_steps, incremental_value_transform=None):
+def with_only_statistics(model, alg, initial_state, key, num_steps, incremental_value_transform=None, return_history=True):
 
     if incremental_value_transform is None:
         incremental_value_transform=lambda x: jnp.array(
@@ -154,14 +154,27 @@ def with_only_statistics(model, alg, initial_state, key, num_steps, incremental_
         incremental_value_transform=incremental_value_transform,
     )
 
-    return run_inference_algorithm(
+    if not return_history:
+        transform = lambda x, y: None
+
+    out =  run_inference_algorithm(
         rng_key=key,
         initial_state=memory_efficient_sampling_alg.init(initial_state),
         inference_algorithm=memory_efficient_sampling_alg,
         num_steps=num_steps,
         transform=transform,
         progress_bar=False,
-    )[1]
+    )
+    if not return_history:
+        # transform = lambda x, y: None
+        # print("out shape", incremental_value_transform(out[0][1][1]).shape)
+        return incremental_value_transform(out[0][1][1]), None
+    else:
+        # print("out shape", out[1][0].shape)
+        return out[1]
+    # jax.debug.print("out {x}", x=out)
+    # print("out shape", out[1][1].shape)
+    # return out
 
 
 def unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov, num_tuning_steps, return_ess_corr=False):
@@ -404,13 +417,13 @@ def adjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,  
     return blackjax_state_after_tuning, blackjax_adjusted_mclmc_sampler_params
 
 
-def unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, return_ess_corr=False, num_windows=1):
+def unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, return_ess_corr=False, num_windows=1, num_tuning_steps = 2000):
 
     def s(model, num_steps, initial_position, key):
 
         tune_key, run_key = jax.random.split(key, 2)
 
-        num_tuning_steps = 2000
+        
         
 
         (
@@ -447,6 +460,7 @@ def adjusted_mclmc(
     num_windows=1,
     random_trajectory_length=True,
     tuning_factor=1.0,
+    num_tuning_steps = 2000
 ):
     
     
@@ -484,7 +498,7 @@ def adjusted_mclmc(
             new_target_acc_rate = target_acc_rate
 
 
-        num_tuning_steps = 2000
+        
         (
             blackjax_state_after_tuning,
             blackjax_mclmc_sampler_params) = adjusted_mclmc_tuning( initial_position, num_steps, tune_key, model.logdensity_fn, preconditioning, new_target_acc_rate, kernel, frac_tune3, params=params, max=max, num_windows=num_windows, tuning_factor=tuning_factor,num_tuning_steps=num_tuning_steps)
@@ -518,6 +532,7 @@ def adjusted_hmc(
     max='avg',
     num_windows=1,
     tuning_factor=1.0,
+    num_tuning_steps = 2000
 ):
 
     def s(model, num_steps, initial_position, key):
@@ -549,7 +564,7 @@ def adjusted_hmc(
             inverse_mass_matrix=sqrt_diag_cov,
         )
 
-        num_tuning_steps = 2000
+        
       
 
         (
@@ -573,12 +588,12 @@ def adjusted_hmc(
 
     return s
 
-def nuts(integrator_type, preconditioning, return_ess_corr=False, return_samples=False,incremental_value_transform=None):
+def nuts(integrator_type, preconditioning, return_ess_corr=False, return_samples=False,incremental_value_transform=None, num_tuning_steps = 2000, return_history=True):
 
 
     def s(model, num_steps, initial_position, key):
         # num_tuning_steps = num_steps // 5
-        num_tuning_steps = 2000
+        
 
         integrator = map_integrator_type_to_integrator["hmc"][integrator_type]
 
@@ -612,7 +627,7 @@ def nuts(integrator_type, preconditioning, return_ess_corr=False, return_samples
 
         fast_key, slow_key = jax.random.split(rng_key, 2)
 
-        results = with_only_statistics(model, alg, state, fast_key, num_steps, incremental_value_transform=incremental_value_transform)
+        results = with_only_statistics(model, alg, state, fast_key, num_steps, incremental_value_transform=incremental_value_transform, return_history=return_history)
         expectations, info = results[0], results[1]
 
 
@@ -636,7 +651,17 @@ def nuts(integrator_type, preconditioning, return_ess_corr=False, return_samples
             transform=lambda state, _: (model.transform(state.position)),
             progress_bar=False)[1]
       
+        if not return_history:
+            return (
+                params,
+                0,
+                1.0,
+                expectations,
+                ess_corr,
+                num_tuning_steps,
+            )
         
+        params["L"] = info.num_integration_steps.mean()*params["step_size"]
         
 
         return (

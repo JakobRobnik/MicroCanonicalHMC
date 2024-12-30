@@ -73,14 +73,14 @@ from blackjax.mcmc.integrators import (
 from blackjax.util import run_inference_algorithm, store_only_expectation_values
 
 
-def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_search=True, integrators = ["mclachlan"], return_ess_corr=True, do_fast_grid_search=False, do_grid_search_for_unadjusted=False, pvmap=jax.pmap, folder = 'results', preconditioning= False):
+def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_grid_search=True, integrators = ["mclachlan"], return_ess_corr=True, do_fast_grid_search=False, do_grid_search_for_unadjusted=False, pvmap=jax.pmap, folder = 'results', num_tuning_steps=1000):
 
     keys_for_not_grid, keys_for_grid, keys_for_fast_grid = jax.random.split(jax.random.key(key_index), 3)
 
     do_grid_search_for_adjusted = True and do_grid_search
     do_grid_search_for_unadjusted = do_grid_search_for_unadjusted and do_grid_search
-    do_unadjusted_mclmc = True
-    do_adjusted_hmc = True
+    do_unadjusted_mclmc = False
+    do_adjusted_hmc = False
     do_nuts = True
 
     num_chains = batch_size  # 1 + batch_size//model.ndims
@@ -184,7 +184,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                     pvmap=pvmap,
                 )
 
-                ess = undefined
+                # ess = undefined
 
                 # print("BENCHMARK after finding optimal params with grid \n\n\n")
                 # ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
@@ -216,7 +216,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                         integrator_type,
                         f"gridsearch",
                         acceptance_rate.mean().item(),
-                        False,
+                        preconditioning,
                         1 / L_proposal_factor,
                         ess_avg,
                         ess_corr.mean().item(),
@@ -251,11 +251,11 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
 
                 if do_unadjusted_mclmc:
                     
-                    for j,num_windows in enumerate([2]):
+                    for j,(num_windows, preconditioning) in enumerate(itertools.product([2], [True, False])):
                         unadjusted_with_tuning_key = jax.random.fold_in(unadjusted_with_tuning_key, j)
                         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
                             model,
-                            unadjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, num_windows=num_windows, return_ess_corr=return_ess_corr,),
+                            unadjusted_mclmc(integrator_type=integrator_type, preconditioning=preconditioning, num_windows=num_windows, return_ess_corr=return_ess_corr,num_tuning_steps=num_tuning_steps),
                             unadjusted_with_tuning_key,
                             n=models[model]["mclmc"],
                             batch=num_chains,
@@ -265,7 +265,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                         
                         results[
                             (
-                                model.name, model.ndims, "mclmc:st3", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, False, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), models[model]["mclmc"], num_chains, False, num_windows
+                                model.name, model.ndims, "mclmc:st3", params.L.mean().item(), params.step_size.mean().item(), (integrator_type), "standard", 1.0, preconditioning, 0, ess_avg, ess_corr.mean().item(), ess_corr.min().item(), (1/(1/ess_corr).mean()).item(), models[model]["mclmc"], num_chains, False, num_windows
                             )
                         ] = ess
                         print(f"unadjusted mclmc with tuning, grads to low bias avg {grads_to_low_avg}")
@@ -273,8 +273,8 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                
 
                     ####### run adjusted_mclmc with standard tuning
-                for j, (target_acc_rate, (L_proposal_factor, random_trajectory_length), (max, tuning_factor), num_windows) in enumerate(itertools.product(
-                        [0.9], [(jnp.inf, True), (1.25, False)], [('max', 1.0), ('avg', 1.3)], [2]
+                for j, (target_acc_rate, (L_proposal_factor, random_trajectory_length), (max, tuning_factor), num_windows, preconditioning) in enumerate(itertools.product(
+                        [0.9], [(jnp.inf, True),], [('max', 1.0), ('avg', 1.3)], [2], [True, False]
                     )):  # , 3., 1.25, 0.5] ):
                     ####### run adjusted_mclmc with standard tuning
                 
@@ -287,9 +287,10 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                         ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
                             model,
                             adjusted_mclmc(
-                                integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
+                                integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
                                 target_acc_rate=target_acc_rate, return_ess_corr=return_ess_corr, max=max, num_windows=num_windows, random_trajectory_length=random_trajectory_length,
-                                tuning_factor=tuning_factor),
+                                tuning_factor=tuning_factor,
+                                num_tuning_steps=num_tuning_steps),
                             adjusted_with_tuning_key,
                             n=models[model]["adjusted_mclmc"],
                             batch=num_chains,
@@ -308,7 +309,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                                 (integrator_type),
                                 "standard",
                                 acceptance_rate.mean().item(),
-                                False,
+                                preconditioning,
                                 1 / L_proposal_factor,
                                 ess_avg,
                                 ess_corr.mean().item(),
@@ -321,8 +322,8 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                         ] = ess
                         
                 if do_adjusted_hmc:
-                    for j, (target_acc_rate, max, num_windows, tuning_factor) in enumerate(itertools.product(
-                            [0.9], ['max', 'avg'], [2], [1.3]
+                    for j, (target_acc_rate, max, num_windows, tuning_factor, preconditioning) in enumerate(itertools.product(
+                            [0.9], ['max', 'avg'], [2], [1.3], [True, False]
                         )):  # , 3., 1.25, 0.5] ):
                             
                             print(f"running adjusted hmc with max {max}, num_windows {num_windows}")
@@ -333,9 +334,10 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                             ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
                                 model,
                                 adjusted_hmc(
-                                    integrator_type=integrator_type, preconditioning=False, frac_tune3=0.0, 
+                                    integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.0, 
                                     return_ess_corr=return_ess_corr, max=max, num_windows=num_windows, 
-                                    tuning_factor=tuning_factor),
+                                    tuning_factor=tuning_factor,
+                                    num_tuning_steps=num_tuning_steps),
                                 adjusted_with_tuning_key,
                                 n=models[model]["adjusted_hmc"],
                                 batch=num_chains,
@@ -354,7 +356,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                                     (integrator_type),
                                     "standard",
                                     acceptance_rate.mean().item(),
-                                    False,
+                                    preconditioning,
                                     1 / jnp.inf,
                                     ess_avg,
                                     ess_corr.mean().item(),
@@ -370,12 +372,12 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
 
             if do_nuts:
 
-                for i, integrator_type in enumerate(["velocity_verlet"]):
+                for i, (integrator_type, preconditioning) in enumerate(itertools.product(["velocity_verlet"], [False, True])):
                     nuts_key_with_tuning = jax.random.fold_in(nuts_key_with_tuning, i)
                     ####### run nuts
                     ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _ = benchmark(
                         model,
-                        nuts(integrator_type=integrator_type, preconditioning=preconditioning,return_ess_corr=return_ess_corr,),
+                        nuts(integrator_type=integrator_type, preconditioning=preconditioning,return_ess_corr=return_ess_corr, num_tuning_steps=num_tuning_steps),
                         nuts_key_with_tuning,
                         n=models[model]["nuts"],
                         batch=num_chains,
@@ -388,12 +390,12 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                             model.name,
                             model.ndims,
                             "nuts",
-                            0.0,
-                            0.0,
+                            params["L"].mean().item(),
+                            params["step_size"].mean().item(),
                             integrator_type,
                             "standard",
                             acceptance_rate.mean().item(),
-                            False,
+                            preconditioning,
                             0,
                             ess_avg,
                             ess_corr.mean().item(),

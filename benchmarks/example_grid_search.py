@@ -38,7 +38,7 @@ init_pos_key, fast_tune_key_adjusted, key_for_fast_grid = jax.random.split(jax.r
 L, step_size, ess, ess_avg, ess_corr_avg, rate, edge = grid_search_only_L(
     model=model,
     sampler='adjusted_mclmc',
-    num_steps=2000,
+    num_steps=10000,
     num_chains=128,
     integrator_type='mclachlan',
     key=key_for_fast_grid,
@@ -47,7 +47,8 @@ L, step_size, ess, ess_avg, ess_corr_avg, rate, edge = grid_search_only_L(
     # delta_z=blackjax_adjusted_mclmc_sampler_params.L*2-1.0,
     # state=blackjax_adjusted_state_after_tuning,
     grid_iterations=2,
-    opt='max'
+    opt='max',
+    L_proposal_factor=1.25
 )
 
 print(f"fast grid search edge {edge}")

@@ -5,10 +5,11 @@ sys.path.append("./")
 sys.path.append("../blackjax")
 import os
 
-from benchmarks.lattice import Phi4
+from benchmarks.lattice import U1, Phi4
 import jax
 import jax.numpy as jnp
 import blackjax
+import time 
 
 os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(128)
 num_cores = jax.local_device_count()
@@ -34,12 +35,14 @@ from benchmarks.inference_models import (
 )
 
 # model = Gaussian(ndims=10,condition_number=1)
-model = Phi4(L=2, lam=1)
+# model = Phi4(L=2, lam=1)
 # model = GermanCredit()
 # model = Brownian()
 # model = Rosenbrock()
-n = 10000
+n = 100000
 num_chains = 3
+
+print(U1(Lt=20,Lx=20,).ndims)
 
 def relative_fluctuations(E_x2):
       E_x2 = E_x2.T
@@ -49,7 +52,7 @@ def relative_fluctuations(E_x2):
 
 def nuts_rhat(model):
 
-    sampler=nuts(integrator_type="velocity_verlet", preconditioning=False, return_ess_corr=False, return_samples=False, incremental_value_transform=lambda x: x)
+    sampler=nuts(integrator_type="velocity_verlet", preconditioning=False, return_ess_corr=False, return_samples=False, incremental_value_transform=lambda x: x, return_history=False)
 
 
     key = jax.random.PRNGKey(1)
@@ -67,20 +70,29 @@ def nuts_rhat(model):
         )
     )(init_pos, keys)
 
-    print(expectation.shape)
-
-    e_x2 = expectation[:,:,0,:]
-    e_x = expectation[:,:,1,:]
+    print("expectation shape", expectation.shape)
+    print(expectation.mean())
+    # raise Exception
+    # raise Exception
+    e_x2 = expectation[:,0,:]
+    e_x = expectation[:,1,:]
 
 
     print((potential_scale_reduction(e_x2)))
     print(relative_fluctuations(e_x2))
 
-    e_x2_avg = (e_x2[:,-1,:].mean(axis=0))
-    e_x_avg = (e_x[:,-1,:].mean(axis=0))
+    e_x2_avg = (e_x2.mean(axis=0))
+    e_x_avg = (e_x.mean(axis=0))
 
     print(f"x^2 is {e_x2_avg} and var_x2 = {e_x2_avg - e_x_avg**2}")
 
-print(nuts_rhat(
+toc = time.time()
+(nuts_rhat(
     
-    model=Gaussian(10)))
+    model=U1(Lt=3,Lx=2,)
+    # model=Phi4(L=10,lam=0.5)
+    # model=Gaussian(ndims=11,condition_number=1)
+    # model=Brownian()
+))
+tic = time.time()
+print(f"time: {tic-toc}")
