@@ -56,7 +56,9 @@ def grads_to_low_error(err_t, grad_evals_per_step=1, low_error=0.01):
     b^2 = 1/neff"""
 
     cutoff_reached = err_t[-1] < low_error
-    return find_crossing(err_t, low_error) * grad_evals_per_step, cutoff_reached
+    crossing =  find_crossing(err_t, low_error) * grad_evals_per_step
+    # jax.debug.print("crossing {x}", x=crossing)
+    return crossing, cutoff_reached
 
 
 def calculate_ess(err_t, grad_evals_per_step, num_tuning_steps, neff=100):
@@ -82,7 +84,7 @@ def find_crossing(array, cutoff):
     indices = jnp.argwhere(b)
     if indices.shape[0] == 0:
         print("\n\n\nNO CROSSING FOUND!!!\n\n\n", array, cutoff)
-        return 1
+        return -1
 
     return jnp.max(indices) + 1
 
@@ -323,7 +325,7 @@ def grid_search_langevin_mams(model, key, grid_size, num_iter, integrator_type, 
 
     integrator = map_integrator_type_to_integrator["mclmc"][integrator_type]
 
-    random_trajectory_length = True 
+    random_trajectory_length = False 
     if random_trajectory_length:
         integration_steps_fn = lambda avg_num_integration_steps: lambda k: jnp.ceil(
         jax.random.uniform(k) * rescale(avg_num_integration_steps))
@@ -831,10 +833,13 @@ def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
     )(init_pos, keys)
     avg_grad_calls_per_traj = jnp.nanmean(grad_calls_per_traj, axis=0)
 
+    jax.debug.print("finished running sampler; now collecting results")
+
     num_tuning_steps = jnp.mean(num_tuning_steps, axis=0)
     # jax.debug.print("{x} num tuning steps", x=num_tuning_steps)
 
     err_t_mean_avg = jnp.median(expectation[:, :, 0], axis=0)
+    jax.debug.print("err_t_mean_avg shape {x}", x=err_t_mean_avg.shape)
     esses_avg, grads_to_low_avg, _ = calculate_ess(
         err_t_mean_avg, 
         grad_evals_per_step=avg_grad_calls_per_traj,
@@ -842,6 +847,7 @@ def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
     )
 
     err_t_mean_max = jnp.median(expectation[:, :, 1], axis=0)
+    jax.debug.print("err_t_mean_max shape {x}", x=err_t_mean_max.shape)
     esses_max, grads_to_low_max, _ = calculate_ess(
         err_t_mean_max, 
         grad_evals_per_step=avg_grad_calls_per_traj,
@@ -869,4 +875,5 @@ def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
     # jax.debug.print("{x}",x=jnp.mean(1/ess_corr))
 
     # return esses_max, esses_avg.item(), jnp.mean(1/ess_corr).item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
+    jax.debug.print("results collected")
     return esses_max.item(), esses_avg.item(), ess_corr, params, jnp.mean(acceptance_rate, axis=0), grads_to_low_max, err_t_mean_avg, err_t_mean_max
