@@ -199,10 +199,10 @@ def run_mclmc(logdensity_fn, num_steps, initial_position, key, transform):
 
 
     # build the kernel
-    kernel = lambda sqrt_diag_cov : blackjax.mcmc.mclmc.build_kernel(
+    kernel = lambda inverse_mass_matrix : blackjax.mcmc.mclmc.build_kernel(
         logdensity_fn=logdensity_fn,
         integrator=blackjax.mcmc.integrators.isokinetic_mclachlan,
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
     )
     # jax.debug.print("{x} state before tuning", x=initial_state)
 

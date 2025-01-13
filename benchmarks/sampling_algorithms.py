@@ -182,7 +182,7 @@ def with_only_statistics(model, alg, initial_state, key, num_steps, incremental_
     # return out
 
 
-def unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov, num_tuning_steps, return_ess_corr=False):
+def unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, inverse_mass_matrix, num_tuning_steps, return_ess_corr=False):
 
     def s(model, num_steps, initial_position, key):
 
@@ -192,7 +192,7 @@ def unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqr
             model.logdensity_fn,
             L=L,
             step_size=step_size,
-            sqrt_diag_cov=sqrt_diag_cov,
+            inverse_mass_matrix=inverse_mass_matrix,
             integrator=map_integrator_type_to_integrator["mclmc"][integrator_type],
         )
 
@@ -209,7 +209,7 @@ def unadjusted_mclmc_no_tuning(initial_state, integrator_type, step_size, L, sqr
             progress_bar=False)[1])[None, ...]))/num_steps)
 
         return (
-            MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),
+            MCLMCAdaptationState(L=L, step_size=step_size, inverse_mass_matrix=inverse_mass_matrix),
             calls_per_integrator_step(integrator_type),
             1.0,
             expectations, 
@@ -224,7 +224,7 @@ def adjusted_mclmc_no_tuning(
     integrator_type,
     step_size,
     L,
-    sqrt_diag_cov,
+    inverse_mass_matrix,
     num_tuning_steps,
     L_proposal_factor=jnp.inf,
     return_ess_corr=False,
@@ -244,13 +244,13 @@ def adjusted_mclmc_no_tuning(
             step_size=step_size,
             integration_steps_fn=integration_steps_fn,
             integrator= map_integrator_type_to_integrator["mclmc"][integrator_type],
-            sqrt_diag_cov=sqrt_diag_cov,
+            inverse_mass_matrix=inverse_mass_matrix,
             L_proposal_factor=L_proposal_factor,
         )
 
         fast_key, slow_key = jax.random.split(key, 2)
 
-        # jax.debug.print("running inference algorithm {x}", x=(L,step_size, sqrt_diag_cov))
+        # jax.debug.print("running inference algorithm {x}", x=(L,step_size, inverse_mass_matrix))
 
         # jax.debug.print("num_steps {x}", x=num_steps)
         results = with_only_statistics(model, alg, initial_state, fast_key, num_steps)
@@ -279,7 +279,7 @@ def adjusted_mclmc_no_tuning(
         # jax.debug.print("acceptance rate indirect {x}", x=info.is_accepted.mean())
 
         return (
-            MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),
+            MCLMCAdaptationState(L=L, step_size=step_size, inverse_mass_matrix=inverse_mass_matrix),
             num_steps_per_traj * calls_per_integrator_step(integrator_type),
             info.acceptance_rate.mean(),
             expectations, 
@@ -294,7 +294,7 @@ def adjusted_hmc_no_tuning(
     integrator_type,
     step_size,
     L,
-    sqrt_diag_cov,
+    inverse_mass_matrix,
     num_tuning_steps,
     # integration_steps_fn,
     return_ess_corr=False,
@@ -341,7 +341,7 @@ def adjusted_hmc_no_tuning(
 
         return (
             # todo fix
-            MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),
+            MCLMCAdaptationState(L=L, step_size=step_size, inverse_mass_matrix=inverse_mass_matrix),
             num_steps_per_traj * calls_per_integrator_step(integrator_type),
             info.acceptance_rate.mean(),
             expectations, 
@@ -364,10 +364,10 @@ def unadjusted_mclmc_tuning(initial_position, num_steps, rng_key, logdensity_fn,
             rng_key=init_key,
         )
 
-    kernel = lambda sqrt_diag_cov: blackjax.mcmc.mclmc.build_kernel(
+    kernel = lambda inverse_mass_matrix: blackjax.mcmc.mclmc.build_kernel(
         logdensity_fn=logdensity_fn,
         integrator=map_integrator_type_to_integrator["mclmc"][integrator_type],
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
     )
 
     return blackjax.mclmc_find_L_and_step_size(
@@ -447,7 +447,7 @@ def unadjusted_mclmc(integrator_type, preconditioning, frac_tune3=0.1, return_es
             integrator_type,
             blackjax_mclmc_sampler_params.step_size,
             blackjax_mclmc_sampler_params.L,
-            blackjax_mclmc_sampler_params.sqrt_diag_cov,
+            blackjax_mclmc_sampler_params.inverse_mass_matrix,
             num_tuning_steps,
             return_ess_corr=return_ess_corr,
         )(model, num_steps, initial_position, run_key)
@@ -488,10 +488,10 @@ def adjusted_mclmc(
         else:
             integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
 
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
         integrator=integrator,
         integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
         )(
             rng_key=rng_key,
             state=state,
@@ -523,7 +523,7 @@ def adjusted_mclmc(
             integrator_type,
             blackjax_mclmc_sampler_params.step_size,
             blackjax_mclmc_sampler_params.L,
-            blackjax_mclmc_sampler_params.sqrt_diag_cov,
+            blackjax_mclmc_sampler_params.inverse_mass_matrix,
             num_tuning_steps,
             L_proposal_factor,
             return_ess_corr=return_ess_corr,
@@ -577,10 +577,10 @@ def adjusted_mclmc_with_nuts_tuning(
         else:
             integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
 
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
         integrator=integrator,
         integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
         )(
             rng_key=rng_key,
             state=state,
@@ -600,8 +600,8 @@ def adjusted_mclmc_with_nuts_tuning(
         dim = pytree_size(initial_position)
         params = MCLMCAdaptationState(
             jnp.sqrt(dim), jnp.sqrt(dim) * 0.2, 
-            sqrt_diag_cov=jnp.sqrt(unadjusted_params["inverse_mass_matrix"]),
-            # sqrt_diag_cov=unadjusted_params.sqrt_diag_cov,
+            inverse_mass_matrix=jnp.sqrt(unadjusted_params["inverse_mass_matrix"]),
+            # inverse_mass_matrix=unadjusted_params.inverse_mass_matrix,
             )
         
         (
@@ -624,7 +624,7 @@ def adjusted_mclmc_with_nuts_tuning(
 
         stage3_key = jax.random.split(stage_3_key, 1)[0]
         blackjax_state_after_tuning, blackjax_mclmc_sampler_params = adjusted_mclmc_make_adaptation_L(
-                        kernel, frac=0.3, Lfactor=0.3, max='avg', eigenvector=None,
+                        kernel, frac=1000/num_steps, Lfactor=0.3, max='avg', eigenvector=None,
                     )(blackjax_state_after_tuning, blackjax_mclmc_sampler_params, num_steps, stage3_key)
 
         (
@@ -654,8 +654,8 @@ def adjusted_mclmc_with_nuts_tuning(
             integrator_type,
             blackjax_mclmc_sampler_params.step_size,
             blackjax_mclmc_sampler_params.L,
-            jnp.sqrt(unadjusted_params["inverse_mass_matrix"]),
-            # unadjusted_params.sqrt_diag_cov,
+            (unadjusted_params["inverse_mass_matrix"]),
+            # unadjusted_params.inverse_mass_matrix,
             num_tuning_steps,
             L_proposal_factor,
             return_ess_corr=return_ess_corr,
@@ -696,7 +696,7 @@ def adjusted_hmc(
 
   
 
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.dynamic_hmc.build_kernel(
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.dynamic_hmc.build_kernel(
         integrator=map_integrator_type_to_integrator["hmc"][integrator_type],
         integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
         )(
@@ -704,7 +704,7 @@ def adjusted_hmc(
             state=state,
             logdensity_fn=model.logdensity_fn,
             step_size=step_size,
-            inverse_mass_matrix=sqrt_diag_cov,
+            inverse_mass_matrix=inverse_mass_matrix,
         )
 
         
@@ -723,7 +723,7 @@ def adjusted_hmc(
             # L = 1.0,
             step_size=blackjax_mclmc_sampler_params.step_size,
             L=blackjax_mclmc_sampler_params.L,
-            sqrt_diag_cov=jnp.ones(pytree_size(initial_position)),
+            inverse_mass_matrix=jnp.ones(pytree_size(initial_position)),
             num_tuning_steps=num_tuning_steps,
             # integration_steps_fn=integration_steps_fn,
             return_ess_corr=return_ess_corr,
@@ -824,7 +824,7 @@ def nuts(integrator_type, preconditioning, return_ess_corr=False, return_samples
 
 
 
-def unadjusted_underdamped_langevin_no_tuning(initial_state, integrator_type, step_size, L, sqrt_diag_cov, num_tuning_steps, return_ess_corr=False):
+def unadjusted_underdamped_langevin_no_tuning(initial_state, integrator_type, step_size, L, inverse_mass_matrix, num_tuning_steps, return_ess_corr=False):
 
     def s(model, num_steps, initial_position, key):
 
@@ -834,7 +834,7 @@ def unadjusted_underdamped_langevin_no_tuning(initial_state, integrator_type, st
             model.logdensity_fn,
             L=L,
             step_size=step_size,
-            sqrt_diag_cov=sqrt_diag_cov,
+            inverse_mass_matrix=inverse_mass_matrix,
             integrator=map_integrator_type_to_integrator["hmc"][integrator_type],
         )
 
@@ -850,7 +850,7 @@ def unadjusted_underdamped_langevin_no_tuning(initial_state, integrator_type, st
             progress_bar=False)[1])[None, ...]))/num_steps)
 
         return (
-            MCLMCAdaptationState(L=L, step_size=step_size, sqrt_diag_cov=sqrt_diag_cov),
+            MCLMCAdaptationState(L=L, step_size=step_size, inverse_mass_matrix=inverse_mass_matrix),
             calls_per_integrator_step(integrator_type),
             1.0,
             expectations, 
@@ -870,10 +870,10 @@ def unadjusted_underdamped_langevin_tuning(initial_position, num_steps, rng_key,
             rng_key=init_key,
         )
 
-    kernel = lambda sqrt_diag_cov: blackjax.mcmc.underdamped_langevin.build_kernel(
+    kernel = lambda inverse_mass_matrix: blackjax.mcmc.underdamped_langevin.build_kernel(
         logdensity_fn=logdensity_fn,
         integrator=map_integrator_type_to_integrator["hmc"][integrator_type],
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
     )
 
     return blackjax.mclmc_find_L_and_step_size(
@@ -908,7 +908,7 @@ def unadjusted_underdamped_langevin(integrator_type, preconditioning, frac_tune3
             integrator_type,
             blackjax_mclmc_sampler_params.step_size,
             blackjax_mclmc_sampler_params.L,
-            blackjax_mclmc_sampler_params.sqrt_diag_cov,
+            blackjax_mclmc_sampler_params.inverse_mass_matrix,
             num_tuning_steps,
             return_ess_corr=return_ess_corr,
         )(model, num_steps, initial_position, run_key)

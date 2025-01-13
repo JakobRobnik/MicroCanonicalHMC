@@ -72,10 +72,10 @@ if random_trajectory_length:
 else:
     integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
 
-kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
 integrator=map_integrator_type_to_integrator["mclmc"]['velocity_verlet'],
 integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
-sqrt_diag_cov=sqrt_diag_cov,
+inverse_mass_matrix=inverse_mass_matrix,
 )(
     rng_key=rng_key,
     state=state,
@@ -100,8 +100,8 @@ from blackjax.adaptation.adjusted_mclmc_adaptation import adjusted_mclmc_make_L_
 dim = pytree_size(initial_position)
 params = MCLMCAdaptationState(
     jnp.sqrt(dim), jnp.sqrt(dim) * 0.2, 
-    sqrt_diag_cov=jnp.sqrt(unadjusted_params["inverse_mass_matrix"]),
-    # sqrt_diag_cov=unadjusted_params.sqrt_diag_cov,
+    inverse_mass_matrix=jnp.sqrt(unadjusted_params["inverse_mass_matrix"]),
+    # inverse_mass_matrix=unadjusted_params.inverse_mass_matrix,
     )
 
 jax.debug.print("params {x}", x=params.L)
@@ -151,7 +151,7 @@ jax.debug.print("params 3 {x}", x=blackjax_mclmc_sampler_params.L)
 sampler = adjusted_mclmc_no_tuning(
     integrator_type="velocity_verlet",
     initial_state=blackjax_state_after_tuning,
-    sqrt_diag_cov=jnp.sqrt(unadjusted_params["inverse_mass_matrix"]),
+    inverse_mass_matrix=jnp.sqrt(unadjusted_params["inverse_mass_matrix"]),
     L=blackjax_mclmc_sampler_params.L,
     random_trajectory_length=random_trajectory_length,
     step_size=blackjax_mclmc_sampler_params.step_size,

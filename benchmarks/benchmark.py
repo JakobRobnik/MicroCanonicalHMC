@@ -196,7 +196,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                 #         integrator_type=integrator_type,
                 #         step_size=out[1],
                 #         L=out[0],
-                #         sqrt_diag_cov=1.0,
+                #         inverse_mass_matrix=1.0,
                 #         initial_state=state_after_tuning,
                 #         return_ess_corr=return_ess_corr,
                 #     ),
@@ -625,7 +625,7 @@ def optimal_L_for_gaussian(dims, kappa):
         frac_tune3=0.0,
         target_acc_rate=0.9,
         diagonal_preconditioning=preconditioning,
-        params = MCLMCAdaptationState(L=L, step_size=L*0.2, sqrt_diag_cov=1.0)
+        params = MCLMCAdaptationState(L=L, step_size=L*0.2, inverse_mass_matrix=1.0)
     )
 
 
@@ -638,7 +638,7 @@ def optimal_L_for_gaussian(dims, kappa):
     #                         sampler=adjusted_mclmc_no_tuning(
     #                             integrator_type=integrator_type,
     #                             initial_state=blackjax_state_after_tuning,
-    #                             sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov,
+    #                             inverse_mass_matrix=blackjax_adjusted_mclmc_sampler_params.inverse_mass_matrix,
     #                             L=blackjax_adjusted_mclmc_sampler_params.L,
     #                             step_size=blackjax_adjusted_mclmc_sampler_params.step_size,
     #                             L_proposal_factor=L_proposal_factor,
@@ -657,7 +657,7 @@ def optimal_L_for_gaussian(dims, kappa):
                             sampler=adjusted_mclmc_no_tuning(
                                 integrator_type=integrator_type,
                                 initial_state=blackjax_state_after_tuning,
-                                sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov,
+                                inverse_mass_matrix=blackjax_adjusted_mclmc_sampler_params.inverse_mass_matrix,
                                 L=L,
                                 step_size=step_size,
                                 L_proposal_factor=jnp.inf,
@@ -726,7 +726,7 @@ def bayes_opt():
         frac_tune3=0.0,
         target_acc_rate=0.9,
         diagonal_preconditioning=preconditioning,
-        params = MCLMCAdaptationState(L=np.sqrt(model.ndims), step_size=np.sqrt(model.ndims)*0.2, sqrt_diag_cov=1.0)
+        params = MCLMCAdaptationState(L=np.sqrt(model.ndims), step_size=np.sqrt(model.ndims)*0.2, inverse_mass_matrix=1.0)
     )
 
     L_proposal_factor = jnp.inf
@@ -747,7 +747,7 @@ def bayes_opt():
                         sampler=adjusted_mclmc_no_tuning(
                             integrator_type=integrator_type,
                             initial_state=blackjax_state_after_tuning,
-                            sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov,
+                            inverse_mass_matrix=blackjax_adjusted_mclmc_sampler_params.inverse_mass_matrix,
                             L=L,
                             step_size=stepsize,
                             L_proposal_factor=L_proposal_factor,
@@ -795,7 +795,7 @@ def bayes_opt():
             # step_size=3.2561126,
             # step_size=4.61,
             # L=4.670475,
-            sqrt_diag_cov=1.0,
+            inverse_mass_matrix=1.0,
             initial_state=blackjax_state_after_tuning,
             return_ess_corr=True
         ),
@@ -842,7 +842,7 @@ def test_benchmarking():
         frac_tune3=0.0,
         target_acc_rate=0.9,
         diagonal_preconditioning=preconditioning,
-        params = MCLMCAdaptationState(L=np.sqrt(model.ndims), step_size=np.sqrt(model.ndims)*0.2, sqrt_diag_cov=1.0)
+        params = MCLMCAdaptationState(L=np.sqrt(model.ndims), step_size=np.sqrt(model.ndims)*0.2, inverse_mass_matrix=1.0)
     )
 
     L_proposal_factor = jnp.inf
@@ -866,7 +866,7 @@ def test_benchmarking():
     #                         sampler=adjusted_mclmc_no_tuning(
     #                             integrator_type=integrator_type,
     #                             initial_state=blackjax_state_after_tuning,
-    #                             sqrt_diag_cov=blackjax_adjusted_mclmc_sampler_params.sqrt_diag_cov,
+    #                             inverse_mass_matrix=blackjax_adjusted_mclmc_sampler_params.inverse_mass_matrix,
     #                             L=L,
     #                             step_size=stepsize,
     #                             L_proposal_factor=L_proposal_factor,
@@ -927,7 +927,7 @@ def test_benchmarking():
     #     #         L=1.888073,
     #     #         integrator_type='velocity_verlet',
     #     #         initial_state=unadjusted_initial_state,
-    #     #         sqrt_diag_cov=1.0,
+    #     #         inverse_mass_matrix=1.0,
     #     #         return_ess_corr=True
     #     #     ),
     #     #     run_key,
@@ -958,7 +958,7 @@ def test_benchmarking():
     #             step_size=0.41058143973350525,
     #             # step_size=4.61,
     #             # L=4.670475,
-    #             sqrt_diag_cov=1.0,
+    #             inverse_mass_matrix=1.0,
     #             initial_state=blackjax_state_after_tuning,
     #             return_ess_corr=True
     #         ),
@@ -1031,7 +1031,7 @@ def test_benchmarking():
                     sampler=adjusted_mclmc_no_tuning(
                         integrator_type=integrator_type,
                         initial_state=blackjax_state_after_tuning,
-                        sqrt_diag_cov=1.,
+                        inverse_mass_matrix=1.,
                         L=L,
                         step_size=step_size,
                         L_proposal_factor=jnp.inf,
@@ -1063,7 +1063,7 @@ def test_benchmarking():
                             integrator_type=integrator_type,
                             step_size=out[1],
                             L=out[0],
-                            sqrt_diag_cov=1.0,
+                            inverse_mass_matrix=1.0,
                             initial_state=blackjax_state_after_tuning,
                             return_ess_corr=False,
                         ),
@@ -1173,7 +1173,7 @@ def test_da_functionality():
     key = jax.random.PRNGKey(20)
     
     params = MCLMCAdaptationState(
-        L=jnp.sqrt(model.ndims)*5, step_size=jnp.sqrt(model.ndims), sqrt_diag_cov=1.0,
+        L=jnp.sqrt(model.ndims)*5, step_size=jnp.sqrt(model.ndims), inverse_mass_matrix=1.0,
     )
 
     init_key, state_key, run_key, tune_key = jax.random.split(key, 4)
@@ -1184,12 +1184,12 @@ def test_da_functionality():
         random_generator_arg=state_key,
     )
 
-    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
         integrator=map_integrator_type_to_integrator["mclmc"]["mclachlan"],
         integration_steps_fn=lambda k: jnp.ceil(
             jax.random.uniform(k) * rescale(avg_num_integration_steps)
         ),
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
     )(
         rng_key=rng_key,
         state=state,
@@ -1255,7 +1255,7 @@ def test_da_functionality():
             integrator_type="mclachlan",
             initial_state=blackjax_state_after_tuning,
             # initial_state=adjusted_initial_state,
-            sqrt_diag_cov=1.0,
+            inverse_mass_matrix=1.0,
             L=params.L,
             step_size=params.step_size,
             L_proposal_factor=jnp.inf,

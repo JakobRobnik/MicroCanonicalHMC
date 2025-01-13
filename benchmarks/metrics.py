@@ -127,10 +127,10 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
         else:
             integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
 
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
         integrator=integrator,
         integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
         )(
             rng_key=rng_key,
             state=state,
@@ -153,7 +153,7 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
                             sampler=adjusted_mclmc_no_tuning(
                                 integrator_type=integrator_type,
                                 initial_state=blackjax_state_after_tuning,
-                                sqrt_diag_cov=blackjax_sampler_params.sqrt_diag_cov,
+                                inverse_mass_matrix=blackjax_sampler_params.inverse_mass_matrix,
                                 L=L,
                                 step_size=step_size,
                                 L_proposal_factor=L_proposal_factor,
@@ -189,7 +189,7 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
                 sampler=unadjusted_mclmc_no_tuning(
                     integrator_type=integrator_type,
                     initial_state=blackjax_state_after_tuning,
-                    sqrt_diag_cov=blackjax_sampler_params.sqrt_diag_cov,
+                    inverse_mass_matrix=blackjax_sampler_params.inverse_mass_matrix,
                     L=L,
                     step_size=step_size,
                     # L_proposal_factor=L_proposal_factor,
@@ -215,7 +215,7 @@ def grid_search(model, key, grid_size, num_iter, sampler_type, integrator_type, 
         else:
             integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps).astype(jnp.int32)
 
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.dynamic_hmc.build_kernel(
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.dynamic_hmc.build_kernel(
         integrator=map_integrator_type_to_integrator["hmc"][integrator_type],
         integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
         )(
@@ -332,10 +332,10 @@ def grid_search_langevin_mams(model, key, grid_size, num_iter, integrator_type, 
     else:
         integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
 
-    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
     integrator=integrator,
     integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
-    sqrt_diag_cov=sqrt_diag_cov,
+    inverse_mass_matrix=inverse_mass_matrix,
     )(
         rng_key=rng_key,
         state=state,
@@ -377,7 +377,7 @@ def grid_search_langevin_mams(model, key, grid_size, num_iter, integrator_type, 
             sampler=adjusted_mclmc_no_tuning(
                 integrator_type=integrator_type,
                 initial_state=blackjax_state_after_tuning,
-                sqrt_diag_cov=blackjax_sampler_params.sqrt_diag_cov,
+                inverse_mass_matrix=blackjax_sampler_params.inverse_mass_matrix,
                 L=L,
                 step_size=params.step_size,
                 L_proposal_factor=L_proposal_factor,
@@ -476,10 +476,10 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
         else:
             integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
 
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
         integrator=integrator,
         integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
         )(
             rng_key=rng_key,
             state=state,
@@ -506,10 +506,10 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
         else:
             integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps)
 
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.mcmc.adjusted_mclmc.build_kernel(
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
         integrator=integrator,
         integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
         )(
             rng_key=rng_key,
             state=state,
@@ -550,7 +550,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
         else:
             integration_steps_fn = lambda avg_num_integration_steps: lambda _: jnp.ceil(avg_num_integration_steps).astype(jnp.int32)
 
-        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, sqrt_diag_cov: blackjax.dynamic_hmc.build_kernel(
+        kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.dynamic_hmc.build_kernel(
         integrator=map_integrator_type_to_integrator["hmc"][integrator_type],
         integration_steps_fn=integration_steps_fn(avg_num_integration_steps),
         )(
@@ -605,7 +605,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
             params = MCLMCAdaptationState(
                 L=Lgrid[i],
                 step_size=Lgrid[i]/5,
-                sqrt_diag_cov=1.0,
+                inverse_mass_matrix=1.0,
             )
 
             if sampler in ['adjusted_mclmc', 'adjusted_mchmc', 'adjusted_hmc']:
@@ -628,10 +628,10 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
 
             elif sampler=='mclmc':
                     
-                kernel = lambda sqrt_diag_cov: blackjax.mcmc.mclmc.build_kernel(
+                kernel = lambda inverse_mass_matrix: blackjax.mcmc.mclmc.build_kernel(
                     logdensity_fn=model.logdensity_fn,
                     integrator=integrator,
-                    sqrt_diag_cov=sqrt_diag_cov,
+                    inverse_mass_matrix=inverse_mass_matrix,
                 )
     
 
@@ -662,7 +662,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
                     adjusted_mclmc_no_tuning(
                         integrator_type=integrator_type,
                         initial_state=blackjax_state_after_tuning,
-                        sqrt_diag_cov=1.0,
+                        inverse_mass_matrix=1.0,
                         L=Lgrid[i],
                         step_size=params.step_size,
                         L_proposal_factor=jnp.inf,
@@ -682,7 +682,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
                     adjusted_mclmc_no_tuning(
                         integrator_type=integrator_type,
                         initial_state=blackjax_state_after_tuning,
-                        sqrt_diag_cov=1.0,
+                        inverse_mass_matrix=1.0,
                         L=Lgrid[i],
                         step_size=params.step_size,
                         L_proposal_factor=L_proposal_factor,
@@ -702,7 +702,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
                     adjusted_hmc_no_tuning(
                         integrator_type=integrator_type,
                         initial_state=blackjax_state_after_tuning,
-                        sqrt_diag_cov=1.0,
+                        inverse_mass_matrix=1.0,
                         L=Lgrid[i],
                         step_size=params.step_size,
                         return_ess_corr=False,
@@ -720,7 +720,7 @@ def grid_search_only_L(model, sampler, num_steps, num_chains, integrator_type, k
                     unadjusted_mclmc_no_tuning(
                         integrator_type=integrator_type,
                         initial_state=blackjax_state_after_tuning,
-                        sqrt_diag_cov=1.0,
+                        inverse_mass_matrix=1.0,
                         L=Lgrid[i],
                         step_size=params.step_size,
                         return_ess_corr=False,
@@ -787,7 +787,7 @@ def grid_search_only_stepsize(L, model, num_steps, num_chains, integrator_type, 
             adjusted_mclmc_no_tuning(
                 integrator_type=integrator_type,
                 initial_state=state,
-                sqrt_diag_cov=1.0,
+                inverse_mass_matrix=1.0,
                 L=L,
                 step_size=step_size_grid[i],
                 L_proposal_factor=jnp.inf,

@@ -116,7 +116,7 @@ for integrator_type, (max, tuning_factor, frac_tune3), (L_proposal_factor, rando
                                             #  L_proposal_factor=3.99,
                                              step_size=results[3][1], 
                                             #  step_size=0.34388438, 
-                                             sqrt_diag_cov=1., random_trajectory_length=random_trajectory_length, num_tuning_steps=0,
+                                             inverse_mass_matrix=1., random_trajectory_length=random_trajectory_length, num_tuning_steps=0,
                                              ),
             key=jax.random.PRNGKey(5), 
             n=num_steps,
@@ -138,7 +138,7 @@ raise Exception
 #                 sampler=unadjusted_mclmc_no_tuning(
 #                     integrator_type='mclachlan',
 #                     initial_state=initial_state,
-#                     sqrt_diag_cov=1.,
+#                     inverse_mass_matrix=1.,
 #                     L=2.,
 #                     step_size=1.,
 #                     # L_proposal_factor=L_proposal_factor,

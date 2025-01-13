@@ -43,30 +43,44 @@ from benchmarks.inference_models import (
 # model = Phi4()
 # model = StochasticVolatility()
 # model = Gaussian(ndims=100, condition_number=10)
-model = Rosenbrock()
+model = Gaussian(10)
 # model = Brownian()
 # model = Brownian()
-n = 20000
+n = 1000
 num_chains = 64
 
 # print(Phi4(100,1.0).E_x2 )
 # # raise Exception
 
-# tic = time.time()
-# ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias = benchmark(
-#     model=Phi4(100,1.0),
-#     sampler=unadjusted_mclmc(integrator_type="mclachlan", preconditioning=False, num_windows=1,),
-#     key=jax.random.PRNGKey(1), 
-#     n=n,
-#     batch=num_chains, 
-#     pvmap=jax.pmap 
-# )
-# toc = time.time()
-# print(f"Time elapsed {toc-tic}")
+tic = time.time()
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias = benchmark(
+    model=model,
+    sampler=unadjusted_mclmc(integrator_type="mclachlan", preconditioning=False, num_windows=1,),
+    key=jax.random.PRNGKey(1), 
+    n=n,
+    batch=num_chains, 
+    pvmap=jax.pmap 
+)
+toc = time.time()
+print(f"Time elapsed {toc-tic}")
 
-# print(f"\nGradient calls for unadjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+print(f"\nGradient calls for unadjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
 
-# raise Exception
+tic = time.time()
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias = benchmark(
+    model=model,
+    sampler=adjusted_mclmc(integrator_type="mclachlan", preconditioning=False, num_windows=1,),
+    key=jax.random.PRNGKey(1), 
+    n=n,
+    batch=num_chains, 
+    pvmap=jax.pmap 
+)
+toc = time.time()
+print(f"Time elapsed {toc-tic}")
+
+print(f"\nGradient calls for unadjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+
+raise Exception
 
 # print(jnp.sqrt(jnp.mean(model.E_x2)*model.ndims))
 # raise Exception
@@ -105,7 +119,7 @@ num_chains = 64
 #                                             #  L_proposal_factor=3.99,
 #                                              step_size=params.step_size, 
 #                                             #  step_size=0.34388438, 
-#                                              sqrt_diag_cov=params.sqrt_diag_cov, random_trajectory_length=True, 
+#                                              inverse_mass_matrix=params.inverse_mass_matrix, random_trajectory_length=True, 
 #                                              num_tuning_steps=1000,
 #                                              ),
 #             key=jax.random.PRNGKey(5), 
@@ -127,7 +141,7 @@ num_chains = 64
 
 # ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _,_ = benchmark(
 #     model=model,
-#     sampler=unadjusted_underdamped_langevin_no_tuning(initial_state=initial_state, integrator_type="velocity_verlet", L=jnp.sqrt(model.ndims), step_size=jnp.sqrt(model.ndims)/5,num_tuning_steps=1 , sqrt_diag_cov=(jnp.ones(model.ndims))  ),
+#     sampler=unadjusted_underdamped_langevin_no_tuning(initial_state=initial_state, integrator_type="velocity_verlet", L=jnp.sqrt(model.ndims), step_size=jnp.sqrt(model.ndims)/5,num_tuning_steps=1 , inverse_mass_matrix=(jnp.ones(model.ndims))  ),
 #     key=jax.random.PRNGKey(1), 
 #     n=n,
 #     batch=num_chains,  
