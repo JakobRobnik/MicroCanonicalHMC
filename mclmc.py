@@ -15,10 +15,10 @@ def _run_mclmc(logdensity_fn, num_steps, initial_position, transform= lambda x: 
     )
 
     # build the kernel
-    kernel = lambda sqrt_diag_cov : blackjax.mcmc.mclmc.build_kernel(
+    kernel = lambda inverse_mass_matrix : blackjax.mcmc.mclmc.build_kernel(
         logdensity_fn=logdensity_fn,
         integrator=blackjax.mcmc.integrators.isokinetic_mclachlan,
-        sqrt_diag_cov=sqrt_diag_cov,
+        inverse_mass_matrix=inverse_mass_matrix,
     )
 
     # find values for the hyperparameters: L (typical momentum decoherence length) and step_size

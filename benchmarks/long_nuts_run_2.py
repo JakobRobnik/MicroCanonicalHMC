@@ -1,4 +1,5 @@
 import itertools
+import pickle
 import sys
 
 sys.path.append("./")
@@ -11,8 +12,8 @@ import jax.numpy as jnp
 import blackjax
 import time 
 
-# os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(128)
-# num_cores = jax.local_device_count()
+os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=" + str(128)
+num_cores = jax.local_device_count()
 
 from benchmarks.sampling_algorithms import (
 
@@ -33,6 +34,14 @@ from benchmarks.inference_models import (
     Rosenbrock,
 )
 
+# import os 
+# cwd = os.getcwd()
+# print(os.listdir("benchmarks/"), "fpp")
+# raise Exception
+# with open('./benchmarks/ground_truth/Phi4/e_x2.pkl', 'wb') as f:
+#         pickle.dump(jnp.zeros(10,), f)
+
+# raise Exception
 # model = Gaussian(ndims=10,condition_number=1)
 # model = Phi4(L=2, lam=1)
 # model = GermanCredit()
@@ -41,6 +50,10 @@ from benchmarks.inference_models import (
 n = 100000
 num_chains = 4
 
+
+L = 200
+lam = 1.0
+model = Phi4(L=L,lam=lam)
 # print(U1(Lt=20,Lx=20,).ndims)
 
 def relative_fluctuations(E_x2):
@@ -78,6 +91,7 @@ def nuts_rhat(model):
     # raise Exception
     e_x2 = expectation[:,0,:]
     e_x = expectation[:,1,:]
+    e_x4 = expectation[:,2,:]
 
 
     print("potential scale reduction", (potential_scale_reduction(e_x2)))
@@ -86,13 +100,18 @@ def nuts_rhat(model):
     e_x2_avg = (e_x2.mean(axis=0))
     e_x_avg = (e_x.mean(axis=0))
 
-    print(f"x^2 is {e_x2_avg} and var_x2 = {e_x2_avg - e_x_avg**2}")
+    print(f"x^2 is {e_x2_avg} and var_x = {e_x2_avg - e_x_avg**2}")
+
+    with open(f'./benchmarks/ground_truth/Phi4/e_x2_{model.L}_{model.lam}.pkl', 'wb') as f:
+        pickle.dump(e_x2, f)
+    with open(f'./benchmarks/ground_truth/Phi4/e_x4_{model.L}_{model.lam}.pkl', 'wb') as f:
+        pickle.dump(e_x4, f)
 
 toc = time.time()
 (nuts_rhat(
     
-    model=U1(Lt=200,Lx=200,)
-    # model=Phi4(L=10,lam=0.5)
+    # model=U1(Lt=200,Lx=200,)
+    model=model,
     # model=Gaussian(ndims=11,condition_number=1)
     # model=Brownian()
 ))

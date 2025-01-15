@@ -75,7 +75,7 @@ def objective(config):
                             sampler=adjusted_mclmc_no_tuning(
                                 integrator_type=config.integrator_type,
                                 initial_state=initial_state,
-                                sqrt_diag_cov=1.,
+                                inverse_mass_matrix=1.,
                                 L=config.L,
                                 random_trajectory_length=False,
                                 step_size=config.step_size,
@@ -103,10 +103,12 @@ def main():
 # 2: Define the search space
 sweep_configuration = {
     "method": "random",
+
     "metric": {"goal": "minimize", "name": "score"},
     "parameters": {
         "L": {"max": jnp.sqrt(model.ndims).item() * 4, "min": jnp.sqrt(model.ndims).item() / 4},
         "step_size": {"max": jnp.sqrt(model.ndims).item(), "min": jnp.sqrt(model.ndims).item() / 16},
+        
         "integrator_type": {"values": ["mclachlan"]},
     },
 }

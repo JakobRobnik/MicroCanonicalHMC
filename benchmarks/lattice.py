@@ -1,7 +1,14 @@
 
 
+import pickle
+import warnings
 import jax
 import jax.numpy as jnp
+import sys
+import time
+
+sys.path.append("./")
+import os
 
 
 
@@ -16,6 +23,16 @@ class Phi4:
         self.ndims = L**2
         self.L = L
         self.lam = lam
+
+        # import os
+        # print(os.getcwd(), "foo")
+        try:
+            print(f'./ground_truth/Phi4/e_x2_{self.L}_{self.lam}.pkl')
+            self.E_x2 = pickle.load(open(f'./ground_truth/Phi4/e_x2_{self.L}_{self.lam}.pkl', 'rb'))
+            self.E_x4 = pickle.load(open(f'./ground_truth/Phi4/e_x4_{self.L}_{self.lam}.pkl', 'rb'))
+            self.Var_x2 = self.E_x4 - self.E_x2**2
+        except:
+            warnings.warn(f"ground truth for e_x2_{self.L}_{self.lam} not found")
         
         self.transform = self.psd
 
@@ -29,8 +46,9 @@ class Phi4:
         return -jnp.sum(action_density)
 
     def psd(self, phi):
-        return jnp.square(jnp.abs(jnp.fft.fft2(phi))) / self.L ** 2
+        return jnp.square(jnp.abs(jnp.fft.fft2(phi.reshape(self.L, self.L)))) / self.L ** 2
 
+# print(Phi4(3,1).transform(jnp.ones((9,))))
 
 
 class U1:
@@ -48,6 +66,10 @@ class U1:
         """
         
         self.name = 'U1'
+
+        # self.E_x2 = jnp.zeros(10,)
+        # self.Var_x2 = 2 * jnp.square(self.E_x2)
+
         self.ndims = 2 * Lt*Lx
         self.Lt, self.Lx, self.beta = Lt, Lx, beta
         self.beta = beta
