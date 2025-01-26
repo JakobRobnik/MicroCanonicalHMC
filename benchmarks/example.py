@@ -43,19 +43,35 @@ from benchmarks.inference_models import (
 # model = Phi4()
 # model = StochasticVolatility()
 # model = Gaussian(ndims=100, condition_number=10)
-model = Gaussian(10)
+# model = Gaussian(10)
+model = Funnel()
 # model = Brownian()
 # model = Brownian()
-n = 1000
-num_chains = 64
+n = 10000000
+num_chains = 128
 
 # print(Phi4(100,1.0).E_x2 )
 # # raise Exception
 
+# tic = time.time()
+# ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias = benchmark(
+#     model=model,
+#     sampler=unadjusted_mclmc(integrator_type="mclachlan", preconditioning=False, num_windows=1,),
+#     key=jax.random.PRNGKey(1), 
+#     n=n,
+#     batch=num_chains, 
+#     pvmap=jax.pmap 
+# )
+# toc = time.time()
+# print(f"Time elapsed {toc-tic}")
+
+# print(f"\nGradient calls for unadjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+
+
 tic = time.time()
-ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias = benchmark(
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias, _ = benchmark(
     model=model,
-    sampler=unadjusted_mclmc(integrator_type="mclachlan", preconditioning=False, num_windows=1,),
+    sampler=adjusted_mclmc(target_acc_rate=0.99, integrator_type="velocity_verlet", preconditioning=True, num_windows=2,num_tuning_steps=100000),
     key=jax.random.PRNGKey(1), 
     n=n,
     batch=num_chains, 
@@ -64,12 +80,32 @@ ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias = benc
 toc = time.time()
 print(f"Time elapsed {toc-tic}")
 
-print(f"\nGradient calls for unadjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+print(f"\nacc rate 0.9, lprop inf, Gradient calls for adjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+
+print(f"L and step size {params.L.mean()} {params.step_size.mean()}")
+
+raise Exception
 
 tic = time.time()
-ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias = benchmark(
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias, _ = benchmark(
     model=model,
-    sampler=adjusted_mclmc(integrator_type="mclachlan", preconditioning=False, num_windows=1,),
+    sampler=adjusted_mclmc(target_acc_rate=0.99, integrator_type="velocity_verlet", preconditioning=True, num_windows=2,L_proposal_factor=5.0, num_tuning_steps=100000),
+    key=jax.random.PRNGKey(1), 
+    n=n,
+    batch=num_chains, 
+    pvmap=jax.pmap 
+)
+toc = time.time()
+print(f"Time elapsed {toc-tic}")
+print(f"\n acc rate 0.99, lprop 5, Gradient calls for adjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+
+print(f"L and step size {params.L.mean()} {params.step_size.mean()}")
+
+
+tic = time.time()
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias, _ = benchmark(
+    model=model,
+    sampler=adjusted_mclmc(target_acc_rate=0.9, integrator_type="velocity_verlet", preconditioning=True, num_windows=2,L_proposal_factor=5.0, num_tuning_steps=100000),
     key=jax.random.PRNGKey(1), 
     n=n,
     batch=num_chains, 
@@ -78,7 +114,40 @@ ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias = benc
 toc = time.time()
 print(f"Time elapsed {toc-tic}")
 
-print(f"\nGradient calls for unadjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+print(f"\n acc rate 0.9, lprop 5, Gradient calls for adjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+
+print(f"L and step size {params.L.mean()} {params.step_size.mean()}")
+
+tic = time.time()
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,bias, _ = benchmark(
+    model=model,
+    sampler=adjusted_mclmc(target_acc_rate=0.9, integrator_type="velocity_verlet", preconditioning=True, num_windows=2, num_tuning_steps=100000),
+    key=jax.random.PRNGKey(1), 
+    n=n,
+    batch=num_chains, 
+    pvmap=jax.pmap 
+)
+toc = time.time()
+print(f"Time elapsed {toc-tic}")
+
+print(f"\n acc rate 0.9, lprop inf, Gradient calls for adjusted MCLMC to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
+
+print(f"L and step size {params.L.mean()} {params.step_size.mean()}")
+
+raise Exception
+
+ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_max, _,_, _ = benchmark(
+        model=model,
+        sampler=nuts(
+            integrator_type="velocity_verlet", 
+            preconditioning=True, 
+            num_tuning_steps=100000,
+            target_acc_rate=0.99),
+        key=jax.random.PRNGKey(0), 
+        n=n,
+        batch=num_chains,
+    )
+print(f"\nGradient calls for nuts to reach standardized RMSE of X^2 of 0.1: {grads_to_low_max} (avg over {num_chains} chains and dimensions)")
 
 raise Exception
 

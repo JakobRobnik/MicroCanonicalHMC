@@ -826,7 +826,7 @@ def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
     init_keys = jax.random.split(init_key, batch)
     init_pos = pvmap(model.sample_init)(init_keys)  # [batch_size, dim_model]
 
-    params, grad_calls_per_traj, acceptance_rate, expectation, ess_corr, num_tuning_steps = pvmap(
+    params, grad_calls_per_traj, acceptance_rate, expectation, ess_corr, num_tuning_steps, tuning_integrator_steps = pvmap(
         lambda pos, key: sampler(
             model=model, num_steps=n, initial_position=pos, key=key
         )
@@ -876,4 +876,4 @@ def benchmark(model, sampler, key, n=10000, batch=None, pvmap=jax.pmap):
 
     # return esses_max, esses_avg.item(), jnp.mean(1/ess_corr).item(), params, jnp.mean(acceptance_rate, axis=0), step_size_over_da
     jax.debug.print("results collected")
-    return esses_max.item(), esses_avg.item(), ess_corr, params, jnp.mean(acceptance_rate, axis=0), grads_to_low_max, err_t_mean_avg, err_t_mean_max
+    return esses_max.item(), esses_avg.item(), ess_corr, params, jnp.mean(acceptance_rate, axis=0), grads_to_low_max, err_t_mean_avg, err_t_mean_max, tuning_integrator_steps.mean().item()
