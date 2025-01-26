@@ -1,0 +1,6 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,ESS
+Gaussian_log_1,100,adjusted_mclmc:0.91.3,10.0,5.35689115524292,velocity_verlet,standard,0.9104257822036743,True,0.0,0.22010448575019836,inf,inf,inf,10000,128,avg,1,1000,0.02927498146891594
+Gaussian_log_1,100,adjusted_unadjusted_mclmc:0.91.3,10.0,5.648768424987793,velocity_verlet,standard,0.9024076461791992,True,0.0,0.22322697937488556,inf,inf,inf,10000,128,avg,1,1000,0.03056083805859089
+Gaussian_log_1,100,adjusted_mclmc:0.91.3,10.0,9.090902328491211,mclachlan,standard,0.9622583389282227,True,0.0,0.20850692689418793,inf,inf,inf,10000,128,avg,1,1000,0.02763191983103752
+Gaussian_log_1,100,adjusted_unadjusted_mclmc:0.91.3,10.0,9.090909004211426,mclachlan,standard,0.9628767967224121,True,0.0,0.20946794748306274,inf,inf,inf,10000,128,avg,1,1000,0.029212431982159615
+Gaussian_log_1,100,nuts,4.893921375274658,0.44884130358695984,velocity_verlet,standard,0.8559667468070984,True,0.0,0.03898794203996658,inf,inf,inf,2000,128,,-1,1000,0.005250133108347654

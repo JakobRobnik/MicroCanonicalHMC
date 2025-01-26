@@ -1,0 +1,2 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,ESS
+Gaussian_log_600,100,adjusted_mclmc:grid_edgeFalse,23.364452362060547,3.549394369125366,mclachlan,gridsearch,0.9337676763534546,False,0.0,0.022741662338376045,0.7346096038818359,0.7247354388237,0.7345927953720093,40000,128,True,1,0.0027234547305852175

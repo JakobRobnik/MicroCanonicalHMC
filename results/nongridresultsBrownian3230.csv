@@ -1,0 +1,5 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,ESS
+Brownian,32,nuts,0.567818820476532,0.03623422607779503,velocity_verlet,standard,0.7900515794754028,False,0,0.01864457130432129,inf,inf,inf,20000,128,,-1,500,0.003202921012416482
+Brownian,32,nuts,0.5699009299278259,0.035504069179296494,velocity_verlet,standard,0.7982023358345032,False,0,0.01970626227557659,inf,inf,inf,20000,128,,-1,250,0.003478227648884058
+Brownian,32,nuts,4.583004951477051,0.203302800655365,velocity_verlet,standard,0.8749374151229858,True,0,0.016760466620326042,inf,inf,inf,20000,128,,-1,500,0.0038524516858160496
+Brownian,32,nuts,4.64793586730957,0.20700860023498535,velocity_verlet,standard,0.8760412931442261,True,0,0.019282536581158638,inf,inf,inf,20000,128,,-1,250,0.0030040163546800613

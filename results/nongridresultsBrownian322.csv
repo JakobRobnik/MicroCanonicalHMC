@@ -1,0 +1,2 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,tuning_integrator_steps,ESS
+Brownian,32,mclmc:st3,12.677739143371582,1.8273338079452515,mclachlan,standard,1.0,True,0,0.059241704642772675,inf,inf,inf,20000,128,False,2,20000,-1.0,0.010940918698906898

@@ -1,0 +1,5 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,ESS
+GermanCredit,51,nuts,6.061834335327148,0.04418250918388367,velocity_verlet,standard,0.804537296295166,False,0,0.004883986432105303,inf,inf,inf,40000,128,,-1,500,0.0004661844577640295
+GermanCredit,51,nuts,6.064396858215332,0.0423048734664917,velocity_verlet,standard,0.8252923488616943,False,0,0.004674492869526148,inf,inf,inf,40000,128,,-1,250,0.0004499350325204432
+GermanCredit,51,nuts,4.306797504425049,0.056653253734111786,velocity_verlet,standard,0.8924399614334106,True,0,0.008209032006561756,inf,inf,inf,40000,128,,-1,500,0.0010821310570463538
+GermanCredit,51,nuts,4.613059043884277,0.0564940944314003,velocity_verlet,standard,0.8946911692619324,True,0,0.0077739255502820015,inf,inf,inf,40000,128,,-1,250,0.000913881347514689

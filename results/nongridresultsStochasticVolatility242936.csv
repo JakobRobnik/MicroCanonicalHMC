@@ -1,0 +1,5 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,ESS
+StochasticVolatility,2429,adjusted_mclmc_with_nuts_tuning:0.91.3,98.56977081298828,2.07334303855896,velocity_verlet,standard,0.9025903940200806,True,0.0,0.00281115947291255,inf,inf,inf,40000,64,avg,1,1000,0.0002183112665079534
+StochasticVolatility,2429,adjusted_mclmc_with_nuts_tuning:0.91.3,98.56977081298828,2.0283684730529785,velocity_verlet,standard,0.900964617729187,True,0.1,0.0022397444117814302,inf,inf,inf,40000,64,avg,1,1000,0.00017279479652643204
+StochasticVolatility,2429,adjusted_mclmc_with_nuts_tuning:0.91.3,98.56977081298828,4.201717376708984,mclachlan,standard,0.9001458287239075,True,0.0,0.0029571070335805416,inf,inf,inf,40000,64,avg,1,1000,0.00020735459111165255
+StochasticVolatility,2429,adjusted_mclmc_with_nuts_tuning:0.91.3,98.56977081298828,4.03993558883667,mclachlan,standard,0.9014853239059448,True,0.1,0.002143571386113763,inf,inf,inf,40000,64,avg,1,1000,0.00015114519919734448

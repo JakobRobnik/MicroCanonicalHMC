@@ -1,0 +1,5 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,ESS
+GermanCredit,51,adjusted_mclmc_with_nuts_tuning:0.91.3,14.218733787536621,0.39190441370010376,velocity_verlet,standard,0.8964803814888,True,0.0,0.014499290846288204,inf,inf,inf,40000,128,avg,1,1000,0.001770479022525251
+GermanCredit,51,adjusted_mclmc_with_nuts_tuning:0.91.3,14.282856941223145,0.3811359405517578,velocity_verlet,standard,0.8971434235572815,True,0.1,0.019187575206160545,inf,inf,inf,40000,128,avg,1,1000,0.00250429380685091
+GermanCredit,51,adjusted_mclmc_with_nuts_tuning:0.91.3,14.276819229125977,0.6022266149520874,mclachlan,standard,0.896023154258728,True,0.0,0.010280278511345387,inf,inf,inf,40000,128,avg,1,1000,0.0010936465114355087
+GermanCredit,51,adjusted_mclmc_with_nuts_tuning:0.91.3,14.282695770263672,0.5929331183433533,mclachlan,standard,0.8976784348487854,True,0.1,0.01502282079309225,inf,inf,inf,40000,128,avg,1,1000,0.0014209385262802243

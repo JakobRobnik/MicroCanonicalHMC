@@ -1,0 +1,10 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,ESS
+Gaussian_outliers_100000,100,mclmc:st3,0.13187569379806519,7.070447463775054e-05,mclachlan,standard,1.0,False,0.0,0.0,inf,inf,inf,100000,128,False,1,0.0
+Gaussian_outliers_100000,100,mclmc:st3,0.041511669754981995,3.917307185474783e-05,mclachlan,standard,1.0,False,0.0,0.0,inf,inf,inf,100000,128,False,2,0.0
+Gaussian_outliers_100000,100,adjusted_mclmc:0.91.0,273.54156494140625,13.27926254272461,mclachlan,standard,0.9062317609786987,False,0.0,0.004881944973021746,inf,inf,inf,40000,128,max,2,7.410215039271861e-05
+Gaussian_outliers_100000,100,adjusted_mclmc:0.91.3,265.9887390136719,13.308259963989258,mclachlan,standard,0.9057755470275879,False,0.0,0.00486017856746912,inf,inf,inf,40000,128,avg,2,7.369978993665427e-05
+Gaussian_outliers_100000,100,adjusted_mclmc:0.91.0,257.65771484375,13.116166114807129,mclachlan,standard,0.9039759635925293,False,0.8,0.006431277841329575,inf,inf,inf,40000,128,max,2,0.0
+Gaussian_outliers_100000,100,adjusted_mclmc:0.91.3,251.2666015625,12.951895713806152,mclachlan,standard,0.9041500091552734,False,0.8,0.005944779142737389,inf,inf,inf,40000,128,avg,2,0.0
+Gaussian_outliers_100000,100,adjusted_hmc:0.91.3,70.65547180175781,1.7783479690551758,mclachlan,standard,0.719476580619812,False,0.0,0.0008904895512387156,inf,inf,inf,40000,128,max,3,0.0
+Gaussian_outliers_100000,100,adjusted_hmc:0.91.3,72.06692504882812,1.8383944034576416,mclachlan,standard,0.6806151270866394,False,0.0,0.0008444507257081568,inf,inf,inf,40000,128,avg,3,0.0
+Gaussian_outliers_100000,100,nuts,0.0,0.0,velocity_verlet,standard,0.8029857873916626,False,0.0,0.020893752574920654,inf,inf,inf,40000,128,,-1,0.0

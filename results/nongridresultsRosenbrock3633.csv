@@ -1,0 +1,2 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,ESS
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.28054600954055786,velocity_verlet,standard,0.9003393054008484,True,0.0,0.004047093912959099,inf,inf,inf,160000,128,avg,1,1000,0.0006396269309334457

@@ -1,0 +1,10 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,ESS
+Gaussian_linear_1.0,1000,adjusted_mclmc:grid_edgeFalse,45.86981964111328,41.747093200683594,omelyan,gridsearch,0.9952043890953064,False,0.0,0.129095196723938,inf,inf,inf,5000,4,True,1,0.011889238841831684
+Gaussian_linear_1.0,1000,adjusted_mclmc:grid_edgeTrue,5.505008697509766,62.36650848388672,omelyan,gridsearch,1.0,False,0.8,0.0,inf,inf,inf,5000,4,True,1,0.0
+Gaussian_linear_1.0,1000,mclmc:grid_edgeTrue,12.528684616088867,42.07838439941406,omelyan,gridsearch,1.0,False,0.0,0.18867924809455872,inf,inf,inf,10000,4,True,1,0.013937283307313919
+Gaussian_linear_1.0,1000,adjusted_mclmc:grid_edgeFalse,34.01996612548828,29.33153533935547,mclachlan,gridsearch,0.8698772192001343,False,0.0,0.16644516587257385,inf,inf,inf,5000,4,True,1,0.014663026668131351
+Gaussian_linear_1.0,1000,adjusted_mclmc:grid_edgeTrue,5.49696159362793,31.20836067199707,mclachlan,gridsearch,1.0,False,0.8,0.0,inf,inf,inf,5000,4,True,1,0.0
+Gaussian_linear_1.0,1000,mclmc:grid_edgeTrue,9.694435119628906,40.281951904296875,mclachlan,gridsearch,1.0,False,0.0,0.4587155878543854,inf,inf,inf,10000,4,True,1,0.03298152983188629
+Gaussian_linear_1.0,1000,adjusted_mclmc:grid_edgeFalse,27.949756622314453,15.633573532104492,velocity_verlet,gridsearch,0.7981827259063721,False,0.0,0.16597792506217957,inf,inf,inf,5000,4,True,1,0.012935837730765343
+Gaussian_linear_1.0,1000,adjusted_mclmc:grid_edgeFalse,24.902944564819336,18.973140716552734,velocity_verlet,gridsearch,0.7282082438468933,False,0.8,0.1437515914440155,inf,inf,inf,5000,4,True,1,0.0
+Gaussian_linear_1.0,1000,mclmc:grid_edgeFalse,26.85561752319336,18.63449478149414,velocity_verlet,gridsearch,1.0,False,0.0,0.29154521226882935,inf,inf,inf,10000,4,True,1,0.015610366128385067
