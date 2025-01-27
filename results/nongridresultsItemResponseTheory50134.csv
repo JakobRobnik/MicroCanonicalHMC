@@ -1,0 +1,3 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,ESS
+ItemResponseTheory,501,adjusted_unadjusted_mclmc:0.91.3,22.38302993774414,3.3450307846069336,velocity_verlet,standard,0.9019637703895569,True,0.0,0.020768102258443832,inf,inf,inf,40000,128,avg,1,1000,0.0014285572106018662
+ItemResponseTheory,501,adjusted_unadjusted_mclmc:0.91.3,22.38302993774414,6.2463059425354,mclachlan,standard,0.894752562046051,True,0.0,0.015007405541837215,inf,inf,inf,40000,128,avg,1,1000,0.00143454282078892

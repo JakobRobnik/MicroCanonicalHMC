@@ -1,0 +1,4 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,tuning_integrator_steps,ESS
+StochasticVolatility,2429,adjusted_mclmc_with_nuts_tuning_alba_True:0.91.3,98.56977081298828,1.828476905822754,velocity_verlet,standard,0.9055778980255127,True,0.0,0.0031335700768977404,inf,inf,inf,40000,128,avg,2,0,191899.3125,0.0002530725905671716
+StochasticVolatility,2429,adjusted_mclmc_with_nuts_tuning_alba_True:0.91.3,98.56977081298828,1.7654119729995728,velocity_verlet,standard,0.9063087105751038,True,0.2,0.0029098407831043005,inf,inf,inf,40000,128,avg,2,0,193152.3125,0.00021042025764472783
+StochasticVolatility,2429,nuts,13.523098945617676,0.05319978669285774,velocity_verlet,standard,0.8435368537902832,True,0.0,0.0033266027458012104,inf,inf,inf,10000,128,,-1,3000,792528.5,8.078599057625979e-05

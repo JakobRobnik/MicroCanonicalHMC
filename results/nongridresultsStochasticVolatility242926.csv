@@ -1,0 +1,12 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,ESS
+StochasticVolatility,2429,mclmc:st3,55.02079772949219,1.2876808643341064,mclachlan,standard,1.0,False,0.0,0.0,inf,inf,inf,40000,4,False,2,0.0
+StochasticVolatility,2429,adjusted_mclmc:0.91.0,9.748504638671875,0.8289339542388916,mclachlan,standard,0.9069517850875854,False,0.0,0.0012939248699694872,inf,inf,inf,40000,4,max,2,0.0001035398745443672
+StochasticVolatility,2429,adjusted_mclmc:0.91.3,8.669839859008789,0.8796106576919556,mclachlan,standard,0.8995587825775146,False,0.0,0.0011539635015651584,inf,inf,inf,40000,4,avg,2,0.0
+StochasticVolatility,2429,adjusted_mclmc:0.91.0,7.880522727966309,0.8917205929756165,mclachlan,standard,0.9014126062393188,False,0.8,0.0008591903024353087,inf,inf,inf,40000,4,max,2,0.0
+StochasticVolatility,2429,adjusted_mclmc:0.91.3,7.495654106140137,0.8459843993186951,mclachlan,standard,0.9120920896530151,False,0.8,0.001031943946145475,inf,inf,inf,40000,4,avg,2,0.0
+StochasticVolatility,2429,mclmc:st3,65.32215118408203,0.4964619278907776,velocity_verlet,standard,1.0,False,0.0,0.010919414460659027,inf,inf,inf,40000,4,False,2,0.0
+StochasticVolatility,2429,adjusted_mclmc:0.91.0,2.5204432010650635,0.23222769796848297,velocity_verlet,standard,0.9758189916610718,False,0.0,0.00024677111650817096,inf,inf,inf,40000,4,max,2,0.0
+StochasticVolatility,2429,adjusted_mclmc:0.91.3,4.6398820877075195,0.3194912075996399,velocity_verlet,standard,0.9453434944152832,False,0.0,0.0003955301071982831,inf,inf,inf,40000,4,avg,2,0.0
+StochasticVolatility,2429,adjusted_mclmc:0.91.0,2.5490856170654297,0.14985664188861847,velocity_verlet,standard,0.9876933097839355,False,0.8,0.0,inf,inf,inf,40000,4,max,2,0.0
+StochasticVolatility,2429,adjusted_mclmc:0.91.3,2.703854560852051,0.16412118077278137,velocity_verlet,standard,0.9857219457626343,False,0.8,0.0,inf,inf,inf,40000,4,avg,2,0.0
+StochasticVolatility,2429,nuts,0.0,0.0,velocity_verlet,standard,0.7929553389549255,False,0.0,0.002913150005042553,inf,inf,inf,40000,4,,-1,2.2936888854019344e-05

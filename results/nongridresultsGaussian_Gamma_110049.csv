@@ -1,0 +1,2 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,tuning_integrator_steps,ESS
+Gaussian_Gamma_1,100,nuts,11.042359352111816,0.01519055850803852,velocity_verlet,standard,0.8646313548088074,True,0,0.0007491487194783986,inf,inf,inf,2000,128,,-1,1000,641130.3125,0.0001141500542871654

@@ -1,0 +1,11 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,ESS
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.28092437982559204,velocity_verlet,standard,0.900093674659729,True,0.0,0.004224586766213179,inf,inf,inf,160000,128,avg,1,1000,0.0007253746152855456
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.2571006417274475,velocity_verlet,standard,0.8999824523925781,True,0.8,0.002443685894832015,inf,inf,inf,160000,128,avg,1,1000,0.0004318328283261508
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.25745975971221924,velocity_verlet,standard,0.8999713659286499,True,0.8,0.002617277903482318,inf,inf,inf,160000,128,avg,1,1000,0.000497878179885447
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.2712022066116333,velocity_verlet,standard,0.9002189636230469,True,0.2,0.003038776572793722,inf,inf,inf,160000,128,avg,1,1000,0.0004906787653453648
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.27572357654571533,velocity_verlet,standard,0.9000600576400757,True,0.1,0.003028365084901452,inf,inf,inf,160000,128,avg,1,1000,0.0005449620075523853
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.5744631886482239,mclachlan,standard,0.8871896266937256,True,0.0,0.004004606045782566,inf,inf,inf,160000,128,avg,1,1000,0.0005536855896934867
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.5657891035079956,mclachlan,standard,0.8855814933776855,True,0.8,0.002782257506623864,inf,inf,inf,160000,128,avg,1,1000,0.000424798927269876
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.5686930418014526,mclachlan,standard,0.885627269744873,True,0.8,0.003403220558539033,inf,inf,inf,160000,128,avg,1,1000,0.00045241933548823
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.567458987236023,mclachlan,standard,0.8869463205337524,True,0.2,0.0029824746306985617,inf,inf,inf,160000,128,avg,1,1000,0.0004873927391599864
+Rosenbrock,36,adjusted_unadjusted_mclmc:0.91.3,6.0,0.5652700662612915,mclachlan,standard,0.8872987031936646,True,0.1,0.003254186362028122,inf,inf,inf,160000,128,avg,1,1000,0.0004968669381923974

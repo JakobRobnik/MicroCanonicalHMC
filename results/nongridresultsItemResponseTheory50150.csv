@@ -1,0 +1,4 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,tuning_integrator_steps,ESS
+ItemResponseTheory,501,adjusted_mclmc_with_nuts_tuning_alba_True:0.91.3,28.69563102722168,3.0057907104492188,velocity_verlet,standard,0.9216365218162537,True,0.0,0.02387656271457672,inf,inf,inf,40000,128,avg,2,0,75174.71875,0.0022418098524212837
+ItemResponseTheory,501,adjusted_mclmc_with_nuts_tuning_alba_True:0.91.3,23.678808212280273,2.866138458251953,velocity_verlet,standard,0.9202250242233276,True,0.2,0.01623617857694626,inf,inf,inf,40000,128,avg,2,0,75062.53125,0.001469688257202506
+ItemResponseTheory,501,nuts,3.892765522003174,0.1247873306274414,velocity_verlet,standard,0.9286516904830933,True,0.0,0.01674708165228367,inf,inf,inf,10000,128,,-1,1000,37255.21875,0.0012908362550660968

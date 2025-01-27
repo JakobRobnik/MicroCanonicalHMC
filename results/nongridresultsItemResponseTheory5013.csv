@@ -1,0 +1,2 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,tuning_integrator_steps,ESS
+ItemResponseTheory,501,adjusted_mclmc_with_nuts_tuning_alba_False:0.91.3,22.38302993774414,2.9499094486236572,velocity_verlet,standard,0.9210678339004517,True,0.0,0.020480619743466377,inf,inf,inf,40000,64,avg,2,0,156697.734375,0.002006188267841935
