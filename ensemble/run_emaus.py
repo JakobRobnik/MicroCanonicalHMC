@@ -61,12 +61,23 @@ def _main(dir,
                              #ensemble_observables = lambda x: vec @ x
                              ) # run the algorithm
         
-        X = np.concatenate((info1[1], info2[1]))
+        # X = np.concatenate((info1[1], info2[1]))
+        # print(info1[0].shape)
+        X = info2[1]
         print(X.shape)
         print(X[0][0], X[-1][-1], "result")
+
+        X = X.reshape(X.shape[0]*X.shape[1], X.shape[2])
         
         # np.save('ensemble/movie/samples_' + target.name + '.npy', X)
         
+        # plot the results
+        import seaborn as sns
+        sns.scatterplot(x= X[:, 0], y= X[:, 1], alpha= 0.1)
+        # save plot
+        plt.savefig(dir + target.name + '.png')
+        # saved to
+        print(dir + target.name + '.png')
         
         # result = plot_trace(info1, info2, target, grads_per_step, _acc_prob, dir) # do plots and compute the results
         # #plot_trace_sv(info1, info2, grads_per_step)
