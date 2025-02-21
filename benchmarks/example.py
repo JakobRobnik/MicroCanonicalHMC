@@ -38,7 +38,8 @@ from benchmarks.inference_models import (
     StochasticVolatility,
 )
 
-# model = Gaussian(ndims=10,condition_number=100)
+model = Banana()
+# model = Gaussian(ndims=10,condition_number=1)
 # model = GermanCredit()
 # model = Phi4()
 # model = StochasticVolatility()
@@ -215,7 +216,6 @@ raise Exception
 #     n=n,
 #     batch=num_chains,  
 # )
-
 
 
 

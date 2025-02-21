@@ -1,3 +1,8 @@
+
+import os, sys
+sys.path.append('../blackjax/')
+sys.path.append('../')
+sys.path.append('./')
 import jax
 import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
