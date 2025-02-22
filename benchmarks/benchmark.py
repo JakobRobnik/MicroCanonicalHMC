@@ -30,7 +30,7 @@ from blackjax.adaptation.mclmc_adaptation import make_L_step_size_adaptation
 import itertools
 
 import numpy as np
-from blackjax.mcmc.adjusted_mclmc import rescale
+from blackjax.mcmc.adjusted_mclmc_dynamic import rescale
 
 import blackjax
 from benchmarks.sampling_algorithms import (
@@ -299,7 +299,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                 
                 if do_adjusted_mclmc:
                     for j, (target_acc_rate, (L_proposal_factor, random_trajectory_length), (max, tuning_factor), num_windows, preconditioning, num_tuning_steps_mams) in enumerate(itertools.product(
-                            [0.9], [(jnp.inf, True),], [('avg', 1.3)], [3,], [False],  [500000],
+                            [0.9], [(jnp.inf, True),], [('avg', 1.3), ], [5,], [False],  [10000],
                         )):  # , 3., 1.25, 0.5] ):
                         ####### run adjusted_mclmc with standard tuning
                     
@@ -368,7 +368,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
                                     integrator_type=integrator_type, preconditioning=preconditioning, frac_tune3=0.0, L_proposal_factor=L_proposal_factor,
                                     target_acc_rate=target_acc_rate, return_ess_corr=return_ess_corr, max=max, num_windows=num_windows, random_trajectory_length=random_trajectory_length,
                                     tuning_factor=tuning_factor,
-                                    num_tuning_steps=100000,
+                                    num_tuning_steps=20000,
                                     alba_tuning=alba_tuning),
                                 adjusted_with_tuning_key,
                                 n=models[model]["adjusted_mclmc"],
@@ -456,7 +456,7 @@ def run_benchmarks(batch_size, models, key_index=1, do_grid_search=True, do_non_
             if do_nuts:
                 print("running nuts")
 
-                for i, (integrator_type, preconditioning, num_tuning_steps) in enumerate(itertools.product(["velocity_verlet"], [True], [5000,])):
+                for i, (integrator_type, preconditioning, num_tuning_steps) in enumerate(itertools.product(["velocity_verlet"], [True], [10000,])):
                     nuts_key_with_tuning = jax.random.fold_in(nuts_key_with_tuning, i)
                     ####### run nuts
                     ess, ess_avg, ess_corr, params, acceptance_rate, grads_to_low_avg, _, _, tuning_integrator_steps = benchmark(
@@ -829,7 +829,7 @@ def test_benchmarking():
     unadjusted_initial_state = blackjax.mcmc.mclmc.init(
         position=initial_position, logdensity_fn=model.logdensity_fn, rng_key=state_key
     )
-    adjusted_initial_state = blackjax.mcmc.adjusted_mclmc.init(
+    adjusted_initial_state = blackjax.mcmc.adjusted_mclmc_dynamic.init(
         position=initial_position,
         logdensity_fn=model.logdensity_fn,
         random_generator_arg=state_key,
@@ -1185,13 +1185,13 @@ def test_da_functionality():
 
     init_key, state_key, run_key, tune_key = jax.random.split(key, 4)
     initial_position = model.sample_init(init_key)
-    adjusted_initial_state = blackjax.mcmc.adjusted_mclmc.init(
+    adjusted_initial_state = blackjax.mcmc.adjusted_mclmc_dynamic.init(
         position=initial_position,
         logdensity_fn=model.logdensity_fn,
         random_generator_arg=state_key,
     )
 
-    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc.build_kernel(
+    kernel = lambda rng_key, state, avg_num_integration_steps, step_size, inverse_mass_matrix: blackjax.mcmc.adjusted_mclmc_dynamic.build_kernel(
         integrator=map_integrator_type_to_integrator["mclmc"]["mclachlan"],
         integration_steps_fn=lambda k: jnp.ceil(
             jax.random.uniform(k) * rescale(avg_num_integration_steps)

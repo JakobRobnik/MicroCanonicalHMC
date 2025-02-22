@@ -292,9 +292,3 @@ if __name__ == '__main__':
     #grid({'steps_per_sample': np.logspace(np.log10(5), np.log10(30), 10).astype(int)})
     
 
-# TODO for package release:
-# - make stage 1 a while loop
-# - remove true bias calculations
-# - test on multiple nodes
-# - test on other targets, initializations
-# - nan handling (check also that initial condition is not nan)

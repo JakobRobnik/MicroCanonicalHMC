@@ -4,7 +4,7 @@ import sys
 sys.path.append("./")
 sys.path.append("../blackjax")
 
-from blackjax.mcmc.adjusted_mclmc import rescale
+from blackjax.mcmc.adjusted_mclmc_dynamic import rescale
 from blackjax.adaptation.mclmc_adaptation import MCLMCAdaptationState
 
 import blackjax

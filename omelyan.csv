@@ -1,0 +1,3 @@
+model,dims,sampler,integrator,acc_rate,convergence,L,step_size,ESS AVG
+StandardNormal,10,mclmc,mclachlan,0.9503285884857178,True,-4.394038200378418,-4.377493381500244,0.40829288959503174
+StandardNormal,10,mclmc,omelyan,0.9875555634498596,False,5.42898416519165,5.408969879150391,0.22140298783779144

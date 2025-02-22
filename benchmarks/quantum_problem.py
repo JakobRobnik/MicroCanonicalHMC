@@ -222,5 +222,7 @@ if __name__ == "__main__":
         U = lambda x : 0.5*m*(omega**2)*(x**2),
         r=jax.random.normal(jax.random.PRNGKey(3), (r_length,)),
         # r=jax.random.uniform(jax.random.PRNGKey(1), (r_length,)),
-        num_steps=500000,
+        num_steps=5000,
         )
+    
+    print(samples.sum())

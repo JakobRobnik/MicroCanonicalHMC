@@ -1,0 +1,4 @@
+model,dims,sampler,L,step_size,integrator,tuning,acc_rate,preconditioning,inv_L_prop,ess_avg,ess_corr_avg,ess_corr_min,ess_corr_inv_mean,num_steps,num_chains,worst,num_windows,num_tuning_steps,tuning_integrator_steps,ESS
+Rosenbrock,2,adjusted_mclmc_with_nuts_tuning_alba_True:0.91.3,2.789496898651123,0.08253282308578491,velocity_verlet,standard,0.8984795808792114,True,0.0,0.008294753730297089,inf,inf,inf,40000,128,avg,2,0,232796.5,0.007667042315006256
+Rosenbrock,2,adjusted_mclmc_with_nuts_tuning_alba_True:0.91.3,2.7684082984924316,0.08338750898838043,velocity_verlet,standard,0.8986924886703491,True,0.2,0.007901583798229694,inf,inf,inf,40000,128,avg,2,0,229440.796875,0.0057997629046440125
+Rosenbrock,2,nuts,1.736499547958374,0.1309862732887268,velocity_verlet,standard,0.8398436307907104,True,0.0,0.003600915428251028,inf,inf,inf,50000,128,,-1,5000,57012.9140625,0.0020874871406704187

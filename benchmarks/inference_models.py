@@ -53,6 +53,9 @@ class Gaussian():
         
         if numpy_seed != None:
             rng = np.random.RandomState(seed=numpy_seed)
+        else:
+            rng = np.random.RandomState(seed=jax.random.PRNGKey(0))
+
 
         # fix the eigenvalues of the covariance matrix
         if eigenvalues == 'linear':

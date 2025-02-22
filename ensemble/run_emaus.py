@@ -24,7 +24,7 @@ plt.rcParams['font.size'] = 16
 
 rng_key_int = 1 # int(sys.argv[1])
 
-targets = [[Banana(), 100, 300],
+targets = [[Banana(), 100, 50],
             # [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 500, 500],
             # [GermanCredit(), 500, 400],
             # [Brownian(), 500, 500],
@@ -38,7 +38,7 @@ annotations = False
 
 def _main(dir,
           chains= 4096, 
-          alpha = 1.9, bias_type= 3, C= 0.1, power= 3./8., # unadjusted parameters
+          alpha = 1.9, C= 0.1, power= 3./8., # unadjusted parameters
           early_stop=1, r_end= 1e-2, # switch parameters
           diagonal_preconditioning= 1, integrator= 0, steps_per_sample= 15, acc_prob= None # adjusted parameters
           ):
@@ -52,10 +52,18 @@ def _main(dir,
         target, num_steps1, num_steps2 = t
         #print(target.name)
         #vec = (target.R.T)[[0, -1], :]
+
+
         
         
-        info1, info2, grads_per_step, _acc_prob = emaus(target, num_steps1, num_steps2, chains, mesh, key, 
-                             alpha= alpha, bias_type= bias_type, C= C, power= power, early_stop= early_stop, r_end= r_end,
+        info, grads_per_step, _acc_prob, final_state = emaus(
+            logdensity_fn=target.logdensity_fn, 
+            sample_init=target.sample_init, 
+            transform=target.transform,
+            ndims=target.ndims,
+            num_steps1=num_steps1, 
+            num_steps2=num_steps2, num_chains=chains, mesh=mesh, rng_key=key, 
+                             alpha= alpha, C= C, early_stop= early_stop, r_end= r_end,
                              diagonal_preconditioning= diagonal_preconditioning, integrator_coefficients= integrator_coefficients, steps_per_sample= steps_per_sample, acc_prob= acc_prob,
                              ensemble_observables= lambda x: x
                              #ensemble_observables = lambda x: vec @ x
@@ -63,11 +71,15 @@ def _main(dir,
         
         # X = np.concatenate((info1[1], info2[1]))
         # print(info1[0].shape)
-        X = info2[1]
-        print(X.shape)
-        print(X[0][0], X[-1][-1], "result")
+        # X = info2[1]
+        # print(X.shape)
 
-        X = X.reshape(X.shape[0]*X.shape[1], X.shape[2])
+        # X = X.reshape(X.shape[0]*X.shape[1], X.shape[2])
+
+        X = final_state.position
+
+        print(X[0][0], X[-1][-1], "result")
+       
         
         # np.save('ensemble/movie/samples_' + target.name + '.npy', X)
         
@@ -101,9 +113,9 @@ if __name__ == '__main__':
 
 
 # TODO for package release:
-# - update re main branch
 # - make stage 1 a while loop
 # - remove true bias calculations
 # - test on multiple nodes
 # - test on other targets, initializations
 # - nan handling (check also that initial condition is not nan)
+# two running modes: naive, with diagnostics
