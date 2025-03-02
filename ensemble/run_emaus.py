@@ -24,10 +24,11 @@ plt.rcParams['font.size'] = 16
 
 rng_key_int = 1 # int(sys.argv[1])
 
-targets = [[Banana(), 100, 50],
+targets = [
+            # [Banana(), 100, 50],
             # [Gaussian(ndims=100, eigenvalues='Gamma', numpy_seed= rng_inference_gym_icg), 500, 500],
             # [GermanCredit(), 500, 400],
-            # [Brownian(), 500, 500],
+            [Brownian(), 500, 500],
             # [ItemResponseTheory(), 500, 3000],#500], # change to 3000 for M dependence plot
             # [StochasticVolatility(), 800, 3000]#1500]# change to 3000 for M dependence plot
             ]
@@ -37,7 +38,7 @@ annotations = False
 
 
 def _main(dir,
-          chains= 4096, 
+          chains= 100, 
           alpha = 1.9, C= 0.1, power= 3./8., # unadjusted parameters
           early_stop=1, r_end= 1e-2, # switch parameters
           diagonal_preconditioning= 1, integrator= 0, steps_per_sample= 15, acc_prob= None # adjusted parameters

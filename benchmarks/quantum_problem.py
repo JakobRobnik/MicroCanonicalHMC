@@ -1,9 +1,15 @@
+import functools
+import time
 import matplotlib.pyplot as plt
 # from sampling_algorithms import da_adaptation
 import jax
 import blackjax
 import numpy as np
 import jax.numpy as jnp
+from blackjax.adaptation.ensemble_mclmc import emaus
+from blackjax.mcmc.integrators import mclachlan_coefficients
+import jax.scipy.stats as stats
+
 
 im = 0 + 1j
 
@@ -49,6 +55,52 @@ def run_mclmc(logdensity_fn, num_steps, initial_position, key, transform, desire
     )
 
     return samples, blackjax_state_after_tuning, blackjax_mclmc_sampler_params, run_key
+
+def run_emaus(
+        sample_init,
+        logdensity_fn,
+        ndims,
+        transform,
+        key,
+        diagonal_preconditioning,
+    ):
+        mesh = jax.sharding.Mesh(jax.devices(), "chains")
+
+        integrator_coefficients = mclachlan_coefficients
+
+        info, grads_per_step, _acc_prob, final_state = emaus(
+            logdensity_fn=logdensity_fn,
+            sample_init=sample_init,
+            transform=transform,
+            ndims=ndims,
+            num_steps1=200,
+            num_steps2=100,
+            num_chains=25000,
+            mesh=mesh,
+            rng_key=key,
+            alpha=1.9,
+            C=0.1,
+            early_stop=0,
+            r_end=1e-2,
+            diagonal_preconditioning=diagonal_preconditioning,
+            integrator_coefficients=integrator_coefficients,
+            steps_per_sample=15,
+            acc_prob=None,
+            ensemble_observables=lambda x: x,
+            # ensemble_observables = lambda x: vec @ x
+        )  # run the algorithm
+
+        print((info["phase_2"][1].shape), "SHAPE")
+
+        # output = info["phase_2"][1][:, :, :]
+
+        # print((output.shape), "output SHAPE")
+
+        # output =  output.reshape(output.shape[0] * output.shape[1], output.shape[2])
+
+        # return output
+
+        return final_state.position
 
 def run_nuts(logdensity_fn, num_steps, initial_position, key, transform,):
 
@@ -110,6 +162,7 @@ def mod_index(arr, i):
 
 def sample_s_chi(U, r, t=1, i=1, beta=1, hbar=1, m =1, num_steps=100000, rng_key=jax.random.PRNGKey(0)):
 
+
     P = r.shape[0] - 1
 
     sqnorm = lambda x: x.dot(x)
@@ -147,25 +200,65 @@ def sample_s_chi(U, r, t=1, i=1, beta=1, hbar=1, m =1, num_steps=100000, rng_key
     def transform(state, info):
         x = state.position
         return (xi(x),x[i])
+        
     
     init_key, run_key = jax.random.split(rng_key)
-    (samples, weights), initial_state, params, chain_key = run_mclmc(
-            logdensity_fn=logdensity_fn,
-            num_steps=num_steps,
-            initial_position=jax.random.normal(init_key, (P-1,)),
-            key=run_key,
-            transform=transform,
-            # desired_energy_variance=0.0005
-        )
-    # (samples, weights), initial_state, params, chain_key = run_nuts(
-    #         logdensity_fn=logdensity_fn,
-    #         num_steps=num_steps,
-    #         initial_position=jax.random.normal(init_key, (P-1,)),
-    #         key=run_key,
-    #         transform=transform,
-    #         # desired_energy_variance=0.0005
-    #     )
     
+    toc = time.time()
+
+    sequential = False
+    if sequential:
+        (samples, weights), initial_state, params, chain_key = run_mclmc(
+                logdensity_fn=logdensity_fn,
+                num_steps=num_steps,
+                initial_position=jax.random.normal(init_key, (P-1,)),
+                key=run_key,
+                transform=transform,
+                # desired_energy_variance=0.0005
+            )
+        # (samples, weights), initial_state, params, chain_key = run_nuts(
+        #         logdensity_fn=logdensity_fn,
+        #         num_steps=num_steps,
+        #         initial_position=jax.random.normal(init_key, (P-1,)),
+        #         key=run_key,
+        #         transform=transform,
+        #         # desired_energy_variance=0.0005
+        #     )
+        # print(samples.shape, "sshape")
+        # samples, weights = samples[::3], weights[::3]
+
+    else:
+
+        sample_init = lambda init_key: jax.random.normal(key=init_key, shape=(P-1,))
+
+        
+        # sample_init = lambda key: jax.random.normal(key, shape=(2,)) * jnp.array([10.0, 5.0]) * 2
+        # sample_init = lambda key: jax.random.normal(key, shape=(3,))
+
+        # def logdensity_fn(x):
+        #      return 1.0
+
+        # def logdensity_fn(x):
+        #     mu2 = 0.03 * (x[0] ** 2 - 100)
+        #     return -0.5 * (jnp.square(x[0] / 10.0) + jnp.square(x[1] - mu2))
+
+        raw_samples = run_emaus(
+            sample_init=sample_init,
+            logdensity_fn=logdensity_fn,
+            transform=lambda x: x,
+            # transform=lambda x : jnp.array([xi(x), x[i]]),
+            ndims=P-1,
+            # ndims=2,
+            key=jax.random.key(0),
+            diagonal_preconditioning=False,
+        )
+
+        print(raw_samples.shape, "sample shape")
+        samples, weights = (jax.vmap(lambda x : (xi(x), x[i]))(raw_samples))
+        # samples, weights = raw_samples # (jax.vmap(lambda x : (xi(x), x[i]))(raw_samples))
+        # raise Exception
+    tic = time.time()
+    print(tic - toc, "time")
     
     
     def analytic_gaussian(l):
@@ -202,6 +295,7 @@ def sample_s_chi(U, r, t=1, i=1, beta=1, hbar=1, m =1, num_steps=100000, rng_key
     return samples, weights
 
 
+
 beta_hbar_omega = 15.8
 m_omega_over_hbar = 0.03
 m = 1.0
@@ -213,6 +307,37 @@ r_length = 33
 
 if __name__ == "__main__":
 
+    # def regression_logprob(log_scale, coefs, preds, x):
+    #     """Linear regression"""
+    #     scale = jnp.exp(log_scale)
+    #     scale_prior = stats.expon.logpdf(scale, 0, 1) + log_scale
+    #     coefs_prior = stats.norm.logpdf(coefs, 0, 5)
+    #     y = jnp.dot(x, coefs)
+    #     logpdf = stats.norm.logpdf(preds, y, scale)
+    #     # reduce sum otherwise broacasting will make the logprob biased.
+    #     return sum(x.sum() for x in [scale_prior, coefs_prior, logpdf])
+
+    # init_key0, init_key1, inference_key = jax.random.split(jax.random.key(0), 3)
+
+    # x_data = jax.random.normal(init_key0, shape=(1000, 1))
+    # y_data = 3 * x_data + jax.random.normal(init_key1, shape=x_data.shape)
+
+    # logposterior_fn_ = functools.partial(
+    #     regression_logprob, x=x_data, preds=y_data
+    # )
+     
+    # logdensity_fn = lambda x: logposterior_fn_(
+    #         coefs=x["coefs"][0], log_scale=x["log_scale"][0]
+    #     )
+
+    # def sample_init(key):
+    #     key1, key2 = jax.random.split(key)
+    #     coefs = jax.random.uniform(key1, shape=(1,), minval=1, maxval=2)
+    #     log_scale = jax.random.uniform(key2, shape=(1,), minval=1, maxval=2)
+    #     return {"coefs": coefs, "log_scale": log_scale}
+
+    
+    
     samples, weights = sample_s_chi(
         t=1,
         i=1,
@@ -222,7 +347,6 @@ if __name__ == "__main__":
         U = lambda x : 0.5*m*(omega**2)*(x**2),
         r=jax.random.normal(jax.random.PRNGKey(3), (r_length,)),
         # r=jax.random.uniform(jax.random.PRNGKey(1), (r_length,)),
-        num_steps=5000,
+        num_steps=50000,
         )
     
-    print(samples.sum())
