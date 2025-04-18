@@ -10,6 +10,8 @@ from collections import namedtuple
 import numpy as np
 import sys
 
+import sys
+sys.path.append('../blackjax')
 import blackjax
 from blackjax.mcmc.integrators import isokinetic_velocity_verlet
 from blackjax.util import run_inference_algorithm, store_only_expectation_values, thinning
@@ -97,8 +99,9 @@ def sample(m, sampling_alg, L, n):
     burn_in_steps = m.burn_in_steps if mclmc else (m.burn_in_steps // L)
     
     # total number of steps = num_saved_steps * num_thinning * steps_per_trajectory ( = L for HMC, 1 for MCLMC)
+    # all samples are used for computing expectation values, but bias is saved only every 'num_thinning' steps
     num_saved_steps = 10000
-    num_thinning = (n // num_saved_steps) if mclmc else (n // (L * num_saved_steps)) # all samples are used for computing expectation values, but bias is saved only every 'num_thinning' steps
+    num_thinning = (n // num_saved_steps) if mclmc else (n // (L * num_saved_steps)) 
     
     keys = jax.random.split(key, num_chains)
     step_size = jnp.logspace(*np.log10(m.stepsize_bounds), num_eps)
@@ -126,6 +129,7 @@ models = [Model(StandardNormal(d=100), [2.5, 20.], 0), # [2.5, 14.]
 
 
 if __name__ == '__main__':
+    
     ialg, imodel, L, step_power = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
     num_steps = 10**step_power 
     sample(models[imodel], sampling_algs[ialg], L, num_steps)

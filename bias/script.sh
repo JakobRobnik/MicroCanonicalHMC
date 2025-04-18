@@ -1,21 +1,20 @@
 #!/bin/bash
 
 #SBATCH -N 1
+#SBATCH --image=reubenharry/cosmo:1.0
 #SBATCH -C cpu
 #SBATCH -q regular
-#SBATCH -J funnelMCLMC
-#SBATCH -t 01:00:00
+#SBATCH -J bias
+#SBATCH -t 05:00:00
 #SBATCH --mail-type=end,fail
 #SBATCH --mail-user=jakob_robnik@berkeley.edu
+#SBATCH --array=0-5
 
 
 # load environment
 cd ..
-module load python
-conda activate jaxenv
 
-
-python3 -m bias.main 0 5 1 8
+shifter python3 -m bias.main 1 $SLURM_ARRAY_TASK_ID 1 8
 #python3 -m bias.main 0 5 1 8
 
 #python3 -m bias.main 1 5 5 8
