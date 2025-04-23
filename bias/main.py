@@ -1,16 +1,13 @@
 import jax 
 import jax.numpy as jnp
-import os
+from collections import namedtuple
+import numpy as np
+import os, sys, argparse
 jax.config.update('jax_platform_name', 'cpu')
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
 
-from collections import namedtuple
-import numpy as np
-import sys
-
-import sys
 sys.path.append('../blackjax')
 import blackjax
 from blackjax.mcmc.integrators import isokinetic_velocity_verlet
@@ -54,7 +51,7 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
     
     alg, initial_state = sampling_alg(init_key, step_size, model, L)
     
-    def frobenious(cov):
+    def trace_squared(cov):
         """directly convert the covariance matrix expectation values to the bias scalar (to save memory)"""
         residual = jnp.eye(model.ndims) - model.inv_cov @ cov
         return jnp.average(jnp.diag(residual @ residual))
@@ -68,7 +65,7 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
     memory_efficient_sampling_alg, transform = store_only_expectation_values(
         sampling_algorithm= alg,
         state_transform= xixj,
-        exp_vals_transform= frobenious,
+        exp_vals_transform= trace_squared,
         burn_in = burn_in_steps
     )
     
@@ -90,12 +87,13 @@ def _sample(model, sampling_alg, num_steps, burn_in_steps, num_thinning, step_si
     return b, eevpd
 
 
-def sample(m, sampling_alg, L, n):
+def sample(m, sampling_alg, Lfactor, n):
     
     key = jax.random.PRNGKey(42)
     num_eps, num_chains = 32, 4
 
     mclmc= sampling_alg.name == 'mclmc'
+    L = Lfactor if mclmc else m.hmc_L * Lfactor
     burn_in_steps = m.burn_in_steps if mclmc else (m.burn_in_steps // L)
     
     # total number of steps = num_saved_steps * num_thinning * steps_per_trajectory ( = L for HMC, 1 for MCLMC)
@@ -117,20 +115,27 @@ def sample(m, sampling_alg, L, n):
 SamplingAlg = namedtuple('Algorithm', ['alg', 'name'])
 sampling_algs = [SamplingAlg(mclmc, 'mclmc'), SamplingAlg(hmc, 'hmc')]
 
-Model = namedtuple('Model', ['model', 'stepsize_bounds', 'burn_in_steps'])
+Model = namedtuple('Model', ['model', 'stepsize_bounds', 'burn_in_steps', 'hmc_L'])
 num_burnin = 10**4
-models = [Model(StandardNormal(d=100), [2.5, 20.], 0), # [2.5, 14.]
-          Model(IllConditionedGaussian(d= 100, condition_number= 1000.), [0.4, 7.], num_burnin),
-          Model(Rosenbrock(), [0.1, 1.5], num_burnin), #[0.1, 0.6]
-          Model(Brownian(), [0.06, 1.], num_burnin),
-          Model(GermanCredit(), [0.05, 0.4], num_burnin),
-          Model(Funnel_with_Data(), [0.4, 2.5], num_burnin)
+models = [Model(StandardNormal(d=100), [2.5, 20.], 0, 3), # [2.5, 14.]
+          Model(IllConditionedGaussian(d= 100, condition_number= 1000.), [0.4, 7.], num_burnin, 5),
+          Model(Rosenbrock(), [0.1, 1.5], num_burnin, 20), #[0.1, 0.6]
+          Model(Brownian(), [0.06, 1.], num_burnin, 10),
+          Model(GermanCredit(), [0.05, 0.4], num_burnin, 10),
+          Model(Funnel_with_Data(), [0.4, 2.5], num_burnin, 10)
           ]
 
 
 if __name__ == '__main__':
     
-    ialg, imodel, L, step_power = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
-    num_steps = 10**step_power 
-    sample(models[imodel], sampling_algs[ialg], L, num_steps)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('algorithm_index', type=int)
+    parser.add_argument('model_index', type=int)
+    parser.add_argument('Lfactor', type=int)
+    parser.add_argument('step_power', type=int)
+    args = parser.parse_args()
+
+    num_steps = 10**args.step_power
+
+    sample(models[args.model_index], sampling_algs[args.algorithm_index], args.Lfactor, num_steps)
     
