@@ -4,6 +4,7 @@ from collections import namedtuple
 import numpy as np
 import os, sys, argparse
 jax.config.update('jax_platform_name', 'cpu')
+jax.config.update("jax_enable_x64", True)
 os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=128'
 num_cores = jax.local_device_count()
 print(num_cores, jax.lib.xla_bridge.get_backend().platform)
@@ -36,9 +37,7 @@ def mclmc(key, step_size, model, L):
     return sampling_alg, initial_state
     
 
-def hmc(key, mclmc_step_size, model, L):
-    step_size = mclmc_step_size / jnp.sqrt(model.ndims)
-    
+def hmc(key, step_size, model, L):    
     hmc = blackjax.uhmc(logdensity_fn= model.logdensity_fn, step_size= step_size, inverse_mass_matrix = jnp.ones(model.ndims), num_integration_steps= L)
     initial_state = hmc.init(model.sample_init(key))
 
@@ -103,6 +102,9 @@ def sample(m, sampling_alg, Lfactor, n):
     
     keys = jax.random.split(key, num_chains)
     step_size = jnp.logspace(*np.log10(m.stepsize_bounds), num_eps)
+    if not mclmc:
+        step_size /= jnp.sqrt(m.model.ndims)
+
     #_sample(m.model, sampling_alg.alg, num_saved_steps, burn_in_steps, num_thinning, step_size[0], keys[0], L)
     
     b, eevpd = jax.pmap(lambda stepsize: jax.pmap(
