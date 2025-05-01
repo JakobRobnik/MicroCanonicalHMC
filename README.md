@@ -55,7 +55,7 @@ It also provides a library of distributions (benchmarks/inference_models.py) and
 
 ## Microcanonical Langevin Monte Carlo
 
-Microcaninical Langevin Monte Carlo (MCLMC) is intended as a alternative for HMC and NUTS. On the metric described above (gradient calls to reach a target RMSE of X^2), we have found that MCLMC gets better results than NUTS, *but are very interested in hearing about cases where this is not true*. As a simple example, here's a Gaussian with a high condition number:
+Microcaninical Langevin Monte Carlo (MCLMC) is intended as a alternative for HMC and NUTS. On the metric described above (gradient calls to reach a target RMSE of X^2) and on many other metrics, we have found that MCLMC gets better results than NUTS, *but are very interested in hearing about cases where this is not true*. As a simple example, here's a Gaussian with a high condition number:
 
 ```python
 model = Gaussian(ndims=100,condition_number=1e5)
