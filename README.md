@@ -1,3 +1,7 @@
+# REPO DEPRECATED!
+
+This repo is deprecated. Please see the implementation of Microcanonical Langevin Monte Carlo at https://blackjax-devs.github.io/sampling-book/algorithms/mclmc.html instead.
+
 # Benchmarking Samplers 
 
 This repository exists to benchmark sampling algorithms implemented in blackjax, currently focusing on the family of Microcanonical Hamiltonian Monte Carlo algorithms.
